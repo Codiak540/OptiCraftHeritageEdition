@@ -2200,6 +2200,9 @@ void EntityRenderer::renderRainSnow(float partialTicks)
     if (rainStrength <= 0.0f)
         return;
 
+    if (Config::isRainOff())
+        return;
+
     enableLightmap(static_cast<double>(partialTicks));
 
     if (!rainCoordsInitialized)
@@ -2218,9 +2221,6 @@ void EntityRenderer::renderRainSnow(float partialTicks)
         }
         rainCoordsInitialized = true;
     }
-
-    if (Config::isRainOff())
-        return;
 
     EntityLiving* entity = mc->renderViewEntity;
     World* world = mc->theWorld;
@@ -2249,7 +2249,11 @@ void EntityRenderer::renderRainSnow(float partialTicks)
     const double renderPosZ = entity->lastTickPosZ + (entity->posZ - entity->lastTickPosZ) * static_cast<double>(partialTicks);
 #endif
     const int_t interpolatedY = MathHelper::floor_double(renderPosY);
+#if PLATFORM_PS2
+    const int_t range = PS2_RAIN_SNOW_RENDER_RANGE;
+#else
     const int_t range = Config::isRainFancy() ? 10 : 5;
+#endif
     int_t activeWeatherTexture = -1;
     const float weatherTime = static_cast<float>(rendererUpdateCount) + partialTicks;
 
