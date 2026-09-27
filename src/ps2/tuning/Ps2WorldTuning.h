@@ -669,9 +669,10 @@
 //                               never stands on (or falls through) un-generated air.
 //                               1 = the 3x3 the player stands and collides in.
 //                               0 = ONLY the chunk the player is in is forced
-//                               synchronous. Setting to 1 prevents falling into void
-//                               when walking/sprinting across chunk boundaries before async generation.
-#define PS2_GENERATE_SYNC_RADIUS 1
+//                               synchronous; the surrounding ring streams at
+//                               GENERATE_CHUNKS_PER_TICK. Eliminates the ~1s border-cross freeze.
+//                               Void drop is prevented in physics collision checks.
+#define PS2_GENERATE_SYNC_RADIUS 0
 #define PS2_GENERATE_CHUNKS_PER_TICK 1
 #define PS2_INCREMENTAL_CHUNK_GENERATION 1
 #define PS2_GENERATION_STEPS_PER_TICK    16
