@@ -122,8 +122,8 @@ void GuiCreateWorld::updateButtonText()
         if (limitedWorld)
         {
             worldSizeButton->displayString = isEs
-                ? "Tamaño: Clásico 256x256"
-                : "World Size: Classic 256x256";
+                ? "Tamaño: Antiguo (256x256)"
+                : "World Size: Old (256x256)";
         }
         else
         {

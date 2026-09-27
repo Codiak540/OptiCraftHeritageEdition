@@ -229,6 +229,14 @@ void updateMenu(const Ps2PadSnapshot& primary, bool specializedMenuNavigation) {
         if (stickScroll <= 0.0f) { stickScroll = interval; lwjgl::Mouse::detail::pushWheel(rsv < 0.0f ? 1 : -1, cx, cy); }
     } else stickScroll = 0.0f;
 
+    static float bumperScroll = 0.0f;
+    if (p.held & (PAD_L1 | PAD_R1)) {
+        bool fire = (p.pressed & (PAD_L1 | PAD_R1)) != 0;
+        bumperScroll -= dt;
+        if (bumperScroll <= 0.0f) { fire = true; bumperScroll = 0.15f; }
+        if (fire) lwjgl::Mouse::detail::pushWheel((p.held & PAD_L1) ? 1 : -1, cx, cy);
+    } else bumperScroll = 0.0f;
+
     if (!specializedMenuNavigation)
     {
         if (p.pressed & PAD_CROSS) lwjgl::Mouse::detail::pushButton(0, true, cx, cy);
