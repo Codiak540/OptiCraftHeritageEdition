@@ -19,7 +19,15 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     set_source_files_properties(
         "${CMAKE_CURRENT_SOURCE_DIR}/src/java/StrictMathCompat.cpp"
         ${FDLIBM_SOURCES}
-        PROPERTIES COMPILE_OPTIONS "-ffp-contract=off"
+        # -fno-strict-aliasing: fdlibm's __HI/__LO macros read and write the
+        # halves of a double through int* type-punning, which strict aliasing
+        # is allowed to miscompile -- on armv6k/-O3 the 3DS toolchain turned
+        # __ieee754_sqrt(0.93) into -0.0, which made MathHelper::sqrt_float
+        # return zero for every positive argument and moveFlying's
+        # "if (f3 < 0.01f) return" eat all grounded movement (the 3DS
+        # walk report). Every consumer of sqrt/atan2/log/pow on the console
+        # goes through these TUs, so the flag rides with -ffp-contract=off.
+        PROPERTIES COMPILE_OPTIONS "-ffp-contract=off;-fno-strict-aliasing"
     )
 elseif(MSVC)
     set_source_files_properties(
