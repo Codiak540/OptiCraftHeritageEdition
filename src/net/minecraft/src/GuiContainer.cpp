@@ -355,14 +355,16 @@ void GuiContainer::mouseClicked(int_t x, int_t y, int_t button)
 {
 #if PLATFORM_PS2 || PLATFORM_WII
 	ContainerSlotNavigator &navigator = ContainerSlotNavigator::instance(getOwnerPlayerIndex());
+	const bool pointerActive = platformMenuPointerActive();
 	// Console confirm buttons are exposed both as controller input and mouse
-	// clicks. When D-pad selection owns the inventory, ignore the synthesized
+	// clicks. When D-pad selection owns the inventory (and the user is not pointing
+	// with a hardware pointer like the Wii remote IR sensor), ignore the synthesized
 	// mouse edge so the selected slot is activated exactly once.
-	if (!mc->isSplitScreenActive() && mc != nullptr && mc->gameSettings != nullptr && mc->gameSettings->legacyUI
+	if (!pointerActive && !mc->isSplitScreenActive() && mc != nullptr && mc->gameSettings != nullptr && mc->gameSettings->legacyUI
 	    && navigator.controllerSelectionActive() && (button == 0 || button == 1))
 		return;
 	Slot *controllerSlot = nullptr;
-	if (navigator.controllerSelectionActive())
+	if (navigator.controllerSelectionActive() && !pointerActive)
 		controllerSlot = navigator.selectedSlot();
 	navigator.notePointerActivity();
 #endif
