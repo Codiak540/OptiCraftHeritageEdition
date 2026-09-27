@@ -10,7 +10,6 @@
 #include <kernel.h>
 
 extern "C" {
-#include <netman.h>
 #include <ps2ip.h>
 }
 
@@ -23,7 +22,6 @@ namespace
 PlatformMutex s_initMutex;
 std::atomic_bool s_ready{false};
 bool s_stackInitialized = false;
-unsigned long s_provisionalAddress = 0;
 std::string s_localAddress;
 
 void loadNetworkModules()
@@ -43,16 +41,6 @@ void loadNetworkModules()
                 dev9, netman, smap);
 }
 
-std::string addressToString(unsigned long raw)
-{
-    // PS2 is little-endian while IPv4 is stored in network byte order; reading
-    // the low byte first produces the familiar dotted-quad representation.
-    return std::to_string((raw      ) & 0xff) + "." +
-           std::to_string((raw >>  8) & 0xff) + "." +
-           std::to_string((raw >> 16) & 0xff) + "." +
-           std::to_string((raw >> 24) & 0xff);
-}
-
 bool startStackAndDhcp()
 {
     if (s_stackInitialized)
@@ -69,8 +57,6 @@ bool startStackAndDhcp()
     IP4_ADDR(&ip, 169, 254, 0, 1);
     IP4_ADDR(&mask, 255, 255, 0, 0);
     IP4_ADDR(&gateway, 0, 0, 0, 0);
-    s_provisionalAddress = ip.addr;
-
     MC_LOG_INFO("network", "[PS2] calling ps2ipInit\n");
     McLog::flush();
     if (ps2ipInit(&ip, &mask, &gateway) < 0)
@@ -80,9 +66,6 @@ bool startStackAndDhcp()
     }
 
     MC_LOG_INFO("network", "[PS2] ps2ipInit OK\n");
-    McLog::flush();
-    const int linkModeResult = NetManSetLinkMode(NETMAN_NETIF_ETH_LINK_MODE_AUTO);
-    MC_LOG_INFO("network", "[PS2] NetManSetLinkMode(AUTO) -> %d\n", linkModeResult);
     McLog::flush();
 
     t_ip_info info{};
@@ -133,48 +116,18 @@ bool initialize()
     if (!startStackAndDhcp())
         return false;
 
-    // Link negotiation + DHCP normally completes quickly on a LAN. This runs
-    // from the connection/ping worker, not the render thread, and is still
-    // bounded so an unplugged cable cannot leave a worker stuck forever.
-    // DHCP on the PS2 can take substantially longer than 10 seconds. In
-    // particular, lwIP enters DHCP_STATE_CHECKING after receiving the ACK and
-    // performs duplicate-address detection before committing the lease. The
-    // PCSX2 sockets backend can also take a while to bring SMAP/link up.
-    constexpr int kPollCount = 900;
-    constexpr int kPollDelayUs = 100000;
-    for (int i = 0; i < kPollCount; ++i)
-    {
-        const bool linkUp = NetManIoctl(NETMAN_NETIF_IOCTL_GET_LINK_STATUS,
-                                        nullptr, 0, nullptr, 0) ==
-                            NETMAN_NETIF_ETH_LINK_STATE_UP;
-        t_ip_info current{};
-        const bool haveConfig = ps2ip_getconfig(const_cast<char *>("sm0"), &current) != 0;
-        const bool dhcpBound = haveConfig && current.dhcp_enabled &&
-                               current.dhcp_status == DHCP_STATE_BOUND;
-        const bool haveLease = dhcpBound && current.ipaddr.s_addr != 0 &&
-                               current.ipaddr.s_addr != s_provisionalAddress;
-        if ((i % 10) == 0)
-        {
-            MC_LOG_INFO("network", "[PS2] net poll %d link=%d config=%d ip=%s dhcp=%d state=%d\n",
-                        i, linkUp ? 1 : 0, haveConfig ? 1 : 0,
-                        haveConfig ? addressToString(current.ipaddr.s_addr).c_str() : "n/a",
-                        haveConfig ? current.dhcp_enabled : -1,
-                        haveConfig ? current.dhcp_status : -1);
-            McLog::flush();
-        }
-        if (linkUp && haveLease)
-        {
-            s_localAddress = addressToString(current.ipaddr.s_addr);
-            s_ready.store(true, std::memory_order_release);
-            MC_LOG_INFO("network", "[PS2] network ready, DHCP address %s\n",
-                        s_localAddress.c_str());
-            return true;
-        }
-        DelayThread(kPollDelayUs);
-    }
+    // Leave DHCP alone while lwIP negotiates the lease. Repeated EE-side
+    // ps2ip_getconfig()/NETMAN RPCs during this window have caused intermittent
+    // IOP stalls on real hardware, including loss of PAD input. The network
+    // workers can safely wait here without blocking the render/input thread.
+    // After the grace period, let the socket operation determine whether DHCP
+    // has finished; a failed connection can be retried while DHCP keeps running.
+    constexpr int kDhcpGracePeriodUs = 10000000;
+    DelayThread(kDhcpGracePeriodUs);
 
-    MC_LOG_WARN("network", "[PS2] DHCP/link timeout after 90s; retry is allowed on the next connection\n");
-    return false;
+    s_ready.store(true, std::memory_order_release);
+    MC_LOG_INFO("network", "[PS2] DHCP grace period complete; enabling socket attempts\n");
+    return true;
 #endif
 }
 
