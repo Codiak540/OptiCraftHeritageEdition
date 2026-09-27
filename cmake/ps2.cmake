@@ -374,8 +374,9 @@ target_link_libraries(OptiCraft
     patches pad mc vux
     $<$<BOOL:${PS2_ENABLE_SOUND}>:audsrv>
     z
-    $<$<BOOL:${PS2_ENABLE_NETWORK}>:ps2ip>
-    $<$<BOOL:${PS2_ENABLE_NETWORK}>:netman>
+    $<$<AND:$<BOOL:${PS2_ENABLE_NETWORK}>,$<BOOL:${PS2_REMOTE_DEBUG}>>:ps2ips>
+    $<$<AND:$<BOOL:${PS2_ENABLE_NETWORK}>,$<NOT:$<BOOL:${PS2_REMOTE_DEBUG}>>>:ps2ip>
+    $<$<AND:$<BOOL:${PS2_ENABLE_NETWORK}>,$<NOT:$<BOOL:${PS2_REMOTE_DEBUG}>>>:netman>
     kernel c
 )
 
@@ -400,8 +401,10 @@ target_link_options(OptiCraft PRIVATE
 )
 
 # Mirror the desktop build's predictable output location.
+set(PS2_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/bin/ps2" CACHE PATH
+    "PS2 executable and USB staging output directory")
 set_target_properties(OptiCraft PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/ps2"
+    RUNTIME_OUTPUT_DIRECTORY "${PS2_OUTPUT_DIR}"
 )
 
 # --- Post-link validation, size pass and packaging -----------------------------
@@ -422,7 +425,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT PS2_OBJCOPY)
     message(FATAL_ERROR "PS2 build: objcopy is required to strip and package a Release ELF")
 endif()
 
-set(PS2_USB_ROOT "${CMAKE_SOURCE_DIR}/bin/ps2/usb")
+set(PS2_USB_ROOT "${PS2_OUTPUT_DIR}/usb")
 set(PS2_APP_DIR  "${PS2_USB_ROOT}/MCBETA")
 set(_PS2_ELF_VALIDATOR "${CMAKE_SOURCE_DIR}/cmake/ps2_validate_elf.cmake")
 set(_PS2_LINKED_SIZE_REPORT "${CMAKE_BINARY_DIR}/OptiCraft.linked-size.txt")
@@ -509,6 +512,7 @@ if(PS2_ENABLE_SOUND)
     set(_AUDSRV_IRX "${PS2SDK}/iop/irx/audsrv.irx")
     if(EXISTS "${_AUDSRV_IRX}")
         add_custom_command(TARGET OptiCraft POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${PS2_APP_DIR}/data/irx"
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${_AUDSRV_IRX}" "${PS2_APP_DIR}/data/irx/audsrv.irx"
             COMMENT "Packaging ${PS2_APP_DIR}/data/irx/audsrv.irx"
@@ -519,11 +523,19 @@ if(PS2_ENABLE_SOUND)
     endif()
 endif()
 
-# PS2 TCP multiplayer uses the modern EE-side ps2ip stack. Package the three
-# IOP modules required by the Ethernet path next to the rest of the runtime
-# assets so Ps2IrxLoader can bring them up lazily when Multiplayer is opened.
+# Normal PS2 TCP multiplayer owns the EE-side ps2ip path and therefore ships
+# the Ethernet/NETMAN modules it initializes. Remote-debug builds reuse the
+# IOP-side PS2IP-NM stack already started by ps2link, but still need ps2ips.irx:
+# that module is the RPC server which exposes the resident IOP sockets to the
+# EE-side libps2ips client.
 if(PS2_ENABLE_NETWORK)
-    foreach(_PS2_NET_IRX IN ITEMS ps2dev9 netman smap)
+    if(PS2_REMOTE_DEBUG)
+        set(_PS2_NET_IRX_LIST ps2ips)
+    else()
+        set(_PS2_NET_IRX_LIST ps2dev9 netman smap)
+    endif()
+
+    foreach(_PS2_NET_IRX IN LISTS _PS2_NET_IRX_LIST)
         set(_PS2_NET_IRX_SOURCE "${PS2SDK}/iop/irx/${_PS2_NET_IRX}.irx")
         if(NOT EXISTS "${_PS2_NET_IRX_SOURCE}")
             message(FATAL_ERROR "PS2_ENABLE_NETWORK requires ${_PS2_NET_IRX_SOURCE}")
@@ -536,4 +548,5 @@ if(PS2_ENABLE_NETWORK)
             VERBATIM
         )
     endforeach()
+    unset(_PS2_NET_IRX_LIST)
 endif()

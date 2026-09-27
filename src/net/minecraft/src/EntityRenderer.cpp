@@ -1,6 +1,9 @@
 #include "EntityRenderer.h"
 #if PLATFORM_PS2
 #include "ps2/minecraft/Ps2WeatherMath.h"
+#if MC_LOG_LEVEL >= 2
+#include "platform/Log.h"
+#endif
 #endif
 #include "Minecraft.h"
 #include "Gui.h"
@@ -2230,6 +2233,18 @@ void EntityRenderer::addRainParticles()
 void EntityRenderer::renderRainSnow(float partialTicks)
 {
     const float rainStrength = mc->theWorld->getRainStrength(partialTicks);
+#if PLATFORM_PS2 && MC_LOG_LEVEL >= 2
+    static unsigned int weatherFrames = 0;
+    const bool reportWeather = ++weatherFrames >= 120;
+    int weatherColumns = 0;
+    if (reportWeather)
+    {
+        weatherFrames = 0;
+        MC_LOG_DEBUG("ps2.weather", "rain=%.3f rainOff=%d splashes=%d particles=%d multiplayer=%d\n",
+            (double)rainStrength, Config::isRainOff() ? 1 : 0, Config::isRainSplash() ? 1 : 0,
+            (int)mc->gameSettings->particleSetting, mc->theWorld->multiplayerWorld ? 1 : 0);
+    }
+#endif
     if (rainStrength <= 0.0f)
         return;
 
@@ -2332,6 +2347,9 @@ void EntityRenderer::renderRainSnow(float partialTicks)
 
             if (minY == maxY)
                 continue;
+#if PLATFORM_PS2 && MC_LOG_LEVEL >= 2
+            ++weatherColumns;
+#endif
 
             const int_t xSquared = JavaArithmetic::intMul(x, x);
             const int_t zSquared = JavaArithmetic::intMul(z, z);
@@ -2473,6 +2491,10 @@ void EntityRenderer::renderRainSnow(float partialTicks)
 
     if (activeWeatherTexture >= 0)
         tessellator->draw();
+#if PLATFORM_PS2 && MC_LOG_LEVEL >= 2
+    if (reportWeather)
+        MC_LOG_DEBUG("ps2.weather", "submittedColumns=%d lastKind=%d\n", weatherColumns, activeWeatherTexture);
+#endif
 
     renderEnable(RenderCapability::CullFace);
     renderDisable(RenderCapability::Blend);

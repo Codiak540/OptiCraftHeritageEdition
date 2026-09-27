@@ -10,19 +10,28 @@
 #include <kernel.h>
 
 extern "C" {
+#ifdef PS2_REMOTE_DEBUG
+#include <ps2ips.h>
+#include <ps2ip_rpc.h>
+
+// libps2ips keeps this low-level configuration RPC internal instead of
+// exposing it through ps2ips.h. Read the ps2link-owned sm0 address so client
+// sockets can bind to the existing interface without replacing its config.
+int ps2ipc_ps2ip_getconfig(char *netif_name, t_ip_info *ip_info);
+#else
 #include <ps2ip.h>
+#endif
 }
 
 #include <atomic>
 #include <mutex>
-#include <string>
 
 namespace
 {
 PlatformMutex s_initMutex;
 std::atomic_bool s_ready{false};
 bool s_stackInitialized = false;
-std::string s_localAddress;
+std::uint32_t s_localAddressNetworkOrder = 0;
 
 void loadNetworkModules()
 {
@@ -46,6 +55,46 @@ bool startStackAndDhcp()
     if (s_stackInitialized)
         return true;
 
+#ifdef PS2_REMOTE_DEBUG
+    // ps2link already owns DEV9/SMAP and PS2IP-NM, but it does not load the
+    // ps2ips RPC socket server. Load only that bridge module; reloading the
+    // hardware/network stack would compete with ps2link and break remote I/O.
+    MC_LOG_INFO("network", "[PS2] loading ps2ips RPC bridge for ps2link stack\n");
+    McLog::flush();
+    const int ps2ips = Ps2IrxLoader::load("irx/ps2ips.irx", "host:ps2ips.irx");
+    if (ps2ips < 0)
+    {
+        // ps2ip_init() retries SIF RPC binding forever when no PS2IPS server is
+        // present. Fail here instead of freezing the multiplayer worker/UI.
+        MC_LOG_ERROR("network", "[PS2] ps2ips.irx unavailable; refusing blocking RPC bind\n");
+        return false;
+    }
+
+    MC_LOG_INFO("network", "[PS2] ps2ips RPC bridge loaded id=%d; binding EE client\n", ps2ips);
+    McLog::flush();
+    if (ps2ip_init() < 0)
+    {
+        MC_LOG_ERROR("network", "[PS2] ps2ips RPC initialization failed\n");
+        return false;
+    }
+
+    s_stackInitialized = true;
+    MC_LOG_INFO("network", "[PS2] ps2ips RPC client ready; preserving ps2link network config\n");
+
+    // Keep the exact network-order address returned by PS2IP-NM. Reusing the
+    // binary value avoids reparsing it through the incompatible EE inet_aton()
+    // path before the explicit client bind.
+    t_ip_info info{};
+    if (ps2ipc_ps2ip_getconfig(const_cast<char *>("sm0"), &info) > 0)
+        s_localAddressNetworkOrder = info.ipaddr.s_addr;
+    else
+    {
+        MC_LOG_WARN("network", "[PS2] failed to read ps2link sm0 configuration through ps2ips\n");
+    }
+
+    McLog::flush();
+    return true;
+#else
     loadNetworkModules();
 
     // ps2ipInit initializes NETMAN itself, then registers the EE-side lwIP
@@ -93,6 +142,7 @@ bool startStackAndDhcp()
     MC_LOG_INFO("network", "[PS2] DHCP client started\n");
     McLog::flush();
     return true;
+#endif
 }
 }
 
@@ -116,17 +166,21 @@ bool initialize()
     if (!startStackAndDhcp())
         return false;
 
+#ifndef PS2_REMOTE_DEBUG
     // Leave DHCP alone while lwIP negotiates the lease. Repeated EE-side
     // ps2ip_getconfig()/NETMAN RPCs during this window have caused intermittent
     // IOP stalls on real hardware, including loss of PAD input. The network
     // workers can safely wait here without blocking the render/input thread.
-    // After the grace period, let the socket operation determine whether DHCP
-    // has finished; a failed connection can be retried while DHCP keeps running.
     constexpr int kDhcpGracePeriodUs = 10000000;
     DelayThread(kDhcpGracePeriodUs);
+#endif
 
     s_ready.store(true, std::memory_order_release);
+#ifdef PS2_REMOTE_DEBUG
+    MC_LOG_INFO("network", "[PS2] ps2link shared network ready; enabling socket attempts\n");
+#else
     MC_LOG_INFO("network", "[PS2] DHCP grace period complete; enabling socket attempts\n");
+#endif
     return true;
 #endif
 }
@@ -136,10 +190,13 @@ bool isReady()
     return s_ready.load(std::memory_order_acquire);
 }
 
-std::string localAddress()
+bool localAddressNetworkOrder(std::uint32_t &address)
 {
     std::lock_guard<PlatformMutex> guard(s_initMutex);
-    return s_localAddress;
+    if (s_localAddressNetworkOrder == 0)
+        return false;
+    address = s_localAddressNetworkOrder;
+    return true;
 }
 }
 

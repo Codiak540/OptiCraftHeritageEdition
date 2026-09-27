@@ -1599,13 +1599,13 @@ int_t RenderGlobal::renderSortedRenderers(int_t i, int_t j, int_t k, double d)
 		renderedNow++;
 	}
 
-#ifdef PS2_RENDER_STATS
+#if MC_LOG_LEVEL >= 2
 	// Pass 1 (water/ice/glass) was never instrumented: every counter above is
 	// gated on k == 0. Without it there is no way to tell "the section was never
 	// submitted" (culled, no mesh yet, or dropped by the cap) from "it was
 	// submitted and the GS discarded it" (depth test, blend, alpha) — which is
 	// exactly the ambiguity behind water that comes and goes. The extra sweep
-	// only exists in PS2_RENDER_STATS builds.
+	// runs every 120 passes without enabling per-vertex PS2_RENDER_STATS timers.
 	static int s_ps2TerrainLogTick[2] = { 0, 0 };
 	if (k >= 0 && k <= 1 && ++s_ps2TerrainLogTick[k] >= 120)
 	{

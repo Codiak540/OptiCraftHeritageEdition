@@ -3,6 +3,7 @@
 #ifdef PS2_PLATFORM
 
 #include <cstddef>
+#include "platform/Log.h"
 
 #include "ps2/render/Ps2RenderBackend.h"
 #include "ps2/render/Ps2TerrainMesh.h"
@@ -154,20 +155,37 @@ void ps2_terrain_submit_vu0_commands()
     submitVu0List(runtime.commands.vu0Commands,
                   runtime.commands.vu0Slices);
 
-    // Path1 has been released by terrain_end. Failed VU1 sections skipped
-    // normal VU0 commands above; hand them to its existing whole-section
-    // VU0 replay loop instead of prebuilding an unused fallback every frame.
+    // Path1 has been released by terrain_end. Replay failed VU1 sections and
+    // failed VU0 command lists through the existing whole-section VU0 path.
+    // Otherwise commandReady would hide a failed list from the recovery loop.
     // Invalidate classification because command-ready sections do not fill
     // the legacy cache, which may still describe an earlier queued section.
     for (int i = 0; i < runtime.queuedCount; ++i)
     {
         Ps2QueuedTerrainSection& queued = runtime.queued[i];
-        if (queued.commandReady && queued.forceVu0All)
+        if (queued.commandReady && (queued.forceVu0All || queued.commandFailed))
         {
+            // Opaque depth testing permits replay of any successful prefix.
+            queued.forceVu0All = true;
             queued.classification.valid = false;
             queued.commandReady = false;
         }
     }
+#if MC_LOG_LEVEL >= 2
+    static unsigned int samples = 0, vu1Replays = 0, vu0Failures = 0;
+    for (int i = 0; i < runtime.queuedCount; ++i)
+    {
+        const Ps2QueuedTerrainSection& queued = runtime.queued[i];
+        if (queued.commandFailed) ++vu0Failures;
+        else if (queued.forceVu0All) ++vu1Replays;
+    }
+    if (++samples == 120)
+    {
+        MC_LOG_DEBUG("terrain", "recovery passes=%u vu1Replay=%u vu0Failed=%u\n",
+            samples, vu1Replays, vu0Failures);
+        samples = vu1Replays = vu0Failures = 0;
+    }
+#endif
     runtime.traceSection = -1;
 }
 
