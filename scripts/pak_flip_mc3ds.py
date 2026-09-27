@@ -3,28 +3,39 @@
 OptiCraft assets.pak between Minecraft 3DS Edition and Java Edition.
 
 Minecraft 3DS Edition stores its art upside down relative to Java: plain
-images are vertically flipped, and skins are flipped on both axes (the
-reason github.com/Cracko298/MC-3DS-Flip exists, and the reason art taken
-from the MC-3DS ecosystem renders upside down in this port). This script
-applies those flips to the matching entries of a pak, so a pak whose art
-came from MC-3DS renders correctly in OptiCraft -- which addresses
-textures in the Java convention.
+images are vertically flipped, and its own skin files are rotated 180
+degrees (the reason github.com/Cracko298/MC-3DS-Flip exists). OptiCraft
+renders on the 3DS with the file's row order natively, so a pak for this
+port flips every image -- skins included -- on the Y axis only. The X
+half of MC-3DS Edition's skin rotation must NOT be reproduced here: the
+player model keeps the Java UV layout, and the 3DS sampler only mirrors
+V (row order), never U, so an X-flipped skin reads the sheet mirrored
+against those UVs and every body part samples the wrong region (the face
+reads the arm texture, and so on).
 
 A flip is its own inverse, so running the script again converts back.
 
 Usage:
-    pak_flip_mc3ds.py <assets.pak> <output.pak>
-        flips the default MC-3DS-derived set (see below)
     pak_flip_mc3ds.py <in.pak> <out.pak> --all
-        flips EVERY PNG in the pak: Y for plain images, X+Y for skins.
-        Use this only when the whole pack came from the MC-3DS side --
-        flipping a mixed pack breaks the Java-convention half (terrain,
-        gui, font), and a flip is its own inverse: never run it twice on
-        the same art.
+        flips EVERY PNG in the pak on the Y axis, skins included: the 3DS
+        deployment recipe (run it on assetsps2.pak to build the pak this
+        port ships, or on a 3DS pak to convert it back for the other
+        platforms). Use it only on a pack that sits wholly in one
+        convention -- flipping a mixed pack breaks the other half, and a
+        flip is its own inverse: never run it twice on the same art.
+    pak_flip_mc3ds.py <assets.pak> <output.pak>
+        flips the default MC-3DS-derived set (see below): the targeted
+        conversion of MC-3DS Edition title/skin art into the Java
+        convention for the other platforms.
     pak_flip_mc3ds.py <in.pak> <out.pak> --yflip PATTERN [--yflip ...]
                                              --xyflip PATTERN [--xyflip ...]
+                                              --xflip PATTERN [--xflip ...]
         flips only the entries whose pak key matches a pattern (fnmatch,
-        case-insensitive, forward slashes: "assets/skins/*.png")
+        case-insensitive, forward slashes: "assets/skins/*.png"); --xflip
+        moves an MC-3DS-style 180-degree skin into the plain-Y layout
+        this port needs -- and repairs a pak that was given the X half it
+        must never have had:
+            --xflip "assets/skins/*.png"
     ... --skip PATTERN [--skip ...]
         exempts matching entries from every flip -- for building a
         uniformly-oriented pak out of a mixed one: flip what is still in
@@ -32,15 +43,30 @@ Usage:
     ... --dry-run
         lists what would be flipped and exits
 
-Defaults (used when no --yflip/--xyflip/--all is given):
+Defaults (used when no --yflip/--xyflip/--xflip/--all is given):
     --yflip  assets/legacy/title.png      the legacy menu title
     --xyflip assets/skins/*.png           every skin (full sheet, _32 and
-                                          _Front thumbnails alike)
+                                          _Front thumbnails alike) as
+                                          MC-3DS Edition stores it: X+Y
+                                          against the Java layout
 
 Only 8-bit non-interlaced PNGs are flipped; anything else that matches a
 pattern is left untouched with a warning. Non-PNG entries are copied
 verbatim, and the output pak is byte-format identical to what
 scripts/make_pak.py builds.
+
+CPU-side colour lookup tables are excluded from the blanket flips (the
+default set and --all): the game decodes those into colour tables on load
+(Minecraft::startGame, CustomColorizer::loadColors) and never uploads them
+as textures, so their row order is semantic rather than display-side -- a
+flipped grasscolor.png makes biome colour lookups sample the wrong row (a
+jungle reads the savanna row). A targeted --yflip (without --all) still
+overrides the exclusion, which is how a pak produced before the exclusion
+existed gets repaired:
+
+    pak_flip_mc3ds.py in.pak out.pak --yflip assets/misc/grasscolor.png \
+                                     --yflip assets/misc/foliagecolor.png \
+                                     --yflip assets/misc/watercolor.png
 """
 
 import fnmatch
@@ -61,6 +87,27 @@ PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 DEFAULT_YFLIP = ("assets/legacy/title.png",)
 DEFAULT_XYFLIP = ("assets/skins/*.png",)
+
+# Entries the game reads on the CPU as colour lookup tables, never as GPU
+# textures: RenderEngine::readTextureImageData feeds ColorizerGrass/
+# ColorizerFoliage/ColorizerWater and CustomColorizer::loadColors, which
+# index a 256x256 temperature/rainfall map by (row << 8) | column in the
+# Java row order. These are kept in the Java convention even in a pak whose
+# displayed images all flip to the MC-3DS orientation; a targeted
+# --yflip/--xyflip (without --all) can still name one explicitly.
+CPU_LUT_SKIP = (
+    "assets/misc/grasscolor.png",
+    "assets/misc/foliagecolor.png",
+    "assets/misc/watercolor.png",
+    "assets/misc/watercolorx.png",
+    "assets/misc/pinecolor.png",
+    "assets/misc/birchcolor.png",
+    "assets/misc/swampgrasscolor.png",
+    "assets/misc/swampfoliagecolor.png",
+    "assets/misc/redstonecolor.png",
+    "assets/misc/stemcolor.png",
+    "assets/misc/myceliumparticlecolor.png",
+)
 
 
 class SkipPng(Exception):
@@ -293,6 +340,7 @@ def main():
     flip_all = False
     yflip = []
     xyflip = []
+    xflip = []
     skip = []
     positional = []
     i = 0
@@ -303,6 +351,9 @@ def main():
             i += 2
         elif arg == "--xyflip":
             xyflip.append(args[i + 1])
+            i += 2
+        elif arg == "--xflip":
+            xflip.append(args[i + 1])
             i += 2
         elif arg == "--skip":
             skip.append(args[i + 1])
@@ -321,12 +372,17 @@ def main():
     pak_path, out_path = positional
 
     if flip_all:
-        # Every PNG gets the plain-image flip unless a skin pattern claims
-        # it first (the match order in the loop below checks xyflip first).
+        # Every PNG -- skins included -- gets the plain Y flip: this
+        # target's sampler compensates row order (V) only, and the player
+        # model keeps the Java UV layout, so skins must not gain the X
+        # half of MC-3DS Edition's rotation. An explicit --xyflip/--xflip
+        # still applies on top for the patterns it names (X wins over Y
+        # in the loop below). The CPU-side colour tables never join the
+        # blanket flip.
+        skip = list(CPU_LUT_SKIP) + skip
         yflip.insert(0, "*")
-        if not xyflip:
-            xyflip = list(DEFAULT_XYFLIP)
-    elif not yflip and not xyflip:
+    elif not yflip and not xyflip and not xflip:
+        skip = list(CPU_LUT_SKIP) + skip
         yflip = list(DEFAULT_YFLIP)
         xyflip = list(DEFAULT_XYFLIP)
 
@@ -339,20 +395,23 @@ def main():
     skipped = 0
     for key, payload in read_pak(pak_path):
         exempt = match(key, skip)
-        flip_x = not exempt and match(key, xyflip)
-        flip_y = flip_x or (not exempt and match(key, yflip))
-        if exempt and (match(key, yflip) or match(key, xyflip)):
-            print("skipped %s (matches --skip)" % key)
+        hit_xy = not exempt and match(key, xyflip)
+        hit_x = not exempt and match(key, xflip)
+        hit_y = not exempt and match(key, yflip)
+        flip_x = hit_xy or hit_x
+        flip_y = hit_xy or hit_y
+        if exempt and (match(key, yflip) or match(key, xyflip) or match(key, xflip)):
+            print("skipped %s (excluded from flip)" % key)
         elif (flip_x or flip_y) and not dry_run:
             try:
                 payload = flip_png(payload, flip_x, flip_y)
                 flipped += 1
-                print("flipped %s (%s)" % (key, "X+Y" if flip_x else "Y"))
+                print("flipped %s (%s)" % (key, "X+Y" if flip_x and flip_y else "X" if flip_x else "Y"))
             except SkipPng as reason:
                 skipped += 1
                 print("LEFT AS-IS %s (%s)" % (key, reason))
         elif flip_x or flip_y:
-            print("would flip %s (%s)" % (key, "X+Y" if flip_x else "Y"))
+            print("would flip %s (%s)" % (key, "X+Y" if flip_x and flip_y else "X" if flip_x else "Y"))
         entries.append((key, payload))
 
     if dry_run:

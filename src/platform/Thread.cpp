@@ -10,6 +10,7 @@
 #elif defined(CTR_PLATFORM)
 #include <3ds.h>
 #include <algorithm>
+#include <atomic>
 #include <new>
 #else
 #include <thread>
@@ -45,6 +46,10 @@ void PlatformThread::join()
 bool PlatformThread::joinable() const { return static_cast<lwp_t>(handle_) != LWP_THREAD_NULL; }
 bool PlatformThread::isCurrent() const { return joinable() && static_cast<lwp_t>(handle_) == LWP_GetSelf(); }
 std::uintptr_t PlatformThread::currentId() { return static_cast<std::uintptr_t>(LWP_GetSelf()); }
+// The Broadway's one core is always the application's; there is nothing to
+// gate. The priority mapping in WiiStreamingTuning.h is what shapes the
+// worker's share of it.
+void PlatformThread::setSecondaryCoreAvailable(bool) {}
 
 #elif defined(PS2_PLATFORM)
 
@@ -199,6 +204,9 @@ std::uintptr_t PlatformThread::currentId()
     return static_cast<std::uintptr_t>(GetThreadId());
 }
 
+// The EE's one core is always the application's; nothing to gate.
+void PlatformThread::setSecondaryCoreAvailable(bool) {}
+
 #elif defined(CTR_PLATFORM)
 
 namespace
@@ -212,6 +220,13 @@ struct CtrThreadStartContext
     PlatformThread::Entry entry = nullptr;
     void* argument = nullptr;
 };
+
+// Set by main_3ds.cpp after APT_SetAppCpuTimeLimit() succeeds: the OS only
+// grants the application time on core 1 once the limit is requested, so a
+// thread pinned there before the grant would simply never run. While false,
+// start() falls back to the default core for every affinity, which keeps the
+// worker correct -- merely time-sliced against the game thread.
+std::atomic<bool> g_ctrSecondaryCoreAvailable{false};
 
 void ctrThreadEntry(void* raw)
 {
@@ -252,7 +267,6 @@ bool PlatformThread::start(Entry entry, void* argument, std::size_t stackSize,
 {
     if (!impl_ || !entry || joinable())
         return false;
-    (void)affinityMask; // Phase 1 pins to the default core; see core_id below.
 
     CtrThreadStartContext* context = new (std::nothrow) CtrThreadStartContext();
     if (!context)
@@ -272,10 +286,19 @@ bool PlatformThread::start(Entry entry, void* argument, std::size_t stackSize,
     else if (prio > 0x3F)
         prio = 0x3F;
 
-    // -2 = the CPU the Exheader selects (core 0 on Old 3DS, and legal there;
-    // running on core 1 would need APT_SetAppCpuTimeLimit first, and on New 3DS
-    // cores 2/3 need kernel flags -- deferred to a later phase).
-    Thread thread = threadCreate(ctrThreadEntry, context, stackSize, prio, -2, false);
+    // Affinity is a core bitmask in the shared signature; the only core this
+    // port can offer beyond the default is core 1, and only once
+    // APT_SetAppCpuTimeLimit() has been granted (see g_ctrSecondaryCoreAvailable).
+    // -2 is libctru's "the CPU the Exheader selects" (core 0 on every app).
+    // On New 3DS cores 2/3 need kernel flags and stay out of reach; core 1
+    // exists on Old and New hardware alike and is what the async generation
+    // worker requests through PLATFORM_ASYNC_GENERATION_AFFINITY_MASK.
+    int coreId = -2;
+    if ((affinityMask & (std::uintptr_t{1} << 1)) != 0 &&
+        g_ctrSecondaryCoreAvailable.load(std::memory_order_acquire))
+        coreId = 1;
+
+    Thread thread = threadCreate(ctrThreadEntry, context, stackSize, prio, coreId, false);
     if (thread == nullptr)
     {
         delete context;
@@ -315,6 +338,11 @@ std::uintptr_t PlatformThread::currentId()
     return reinterpret_cast<std::uintptr_t>(threadGetCurrent());
 }
 
+void PlatformThread::setSecondaryCoreAvailable(bool available)
+{
+    g_ctrSecondaryCoreAvailable.store(available, std::memory_order_release);
+}
+
 #else
 struct PlatformThread::Impl { std::thread thread; };
 PlatformThread::PlatformThread() : impl_(new (std::nothrow) Impl()) {}
@@ -350,5 +378,8 @@ void PlatformThread::join() { if (joinable() && !isCurrent()) impl_->thread.join
 bool PlatformThread::joinable() const { return impl_ && impl_->thread.joinable(); }
 bool PlatformThread::isCurrent() const { return joinable() && impl_->thread.get_id() == std::this_thread::get_id(); }
 std::uintptr_t PlatformThread::currentId() { return std::hash<std::thread::id>()(std::this_thread::get_id()); }
+
+// Every core the OS reports is already the process's to use; nothing to gate.
+void PlatformThread::setSecondaryCoreAvailable(bool) {}
 
 #endif

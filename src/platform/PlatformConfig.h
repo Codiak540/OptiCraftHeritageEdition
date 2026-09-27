@@ -62,14 +62,18 @@
 // Game-side optimization policies. These describe the reason a code path exists
 // instead of naming the console that first needed it.
 #ifndef PLATFORM_CACHE_NEAREST_PLAYER
-#  define PLATFORM_CACHE_NEAREST_PLAYER (PLATFORM_PS2 || PLATFORM_WII || PLATFORM_PC_LEGACY)
+#  define PLATFORM_CACHE_NEAREST_PLAYER (PLATFORM_PS2 || PLATFORM_WII || PLATFORM_PC_LEGACY || PLATFORM_3DS)
 #endif
 
 // The Wii takes the throttle too: it is a tick-rate policy over distance, not
 // an arithmetic shortcut, so it does not belong to PLATFORM_CONSOLE_LOW. The
 // radii and divisors it reads come from WiiWorldTuning.h.
+//
+// The 3DS takes it for the same reason the Wii does -- every mob's decision AI
+// is a per-tick cost the ARM11 pays in full, and the TINY render distance means
+// everything past the fog edge is invisible anyway. Radii in DsWorldTuning.h.
 #ifndef PLATFORM_THROTTLE_ENTITY_AI
-#  define PLATFORM_THROTTLE_ENTITY_AI (PLATFORM_PS2 || PLATFORM_WII || PLATFORM_PC_LEGACY)
+#  define PLATFORM_THROTTLE_ENTITY_AI (PLATFORM_PS2 || PLATFORM_WII || PLATFORM_PC_LEGACY || PLATFORM_3DS)
 #endif
 
 // Entities with a chunk retention radius (the Ender Dragon) keep their
@@ -83,8 +87,13 @@
 // java.util.Random's 48-bit LCG step as 32-bit multiplies (see Random::next).
 // Bit-identical to the 64-bit product, so seeds stay compatible; it only
 // matters on cores where a 64-bit multiply is a library call.
+//
+// The ARM11 joins the PS2/PPC here: it has no 64x64 multiply instruction, so
+// the full product is a __muldi3 libcall, while the split's one widening
+// 32x32 multiply is a single UMULL. Random sits under every worldgen feature,
+// every entity RNG draw and both lighting passes.
 #ifndef PLATFORM_RANDOM_SPLIT_MULTIPLY
-#  define PLATFORM_RANDOM_SPLIT_MULTIPLY (PLATFORM_PS2 || PLATFORM_WII)
+#  define PLATFORM_RANDOM_SPLIT_MULTIPLY (PLATFORM_PS2 || PLATFORM_WII || PLATFORM_3DS)
 #endif
 
 // The 3DS circle pad feeds the same PlatformGamepadSnapshot the PS2's sticks
@@ -98,8 +107,16 @@
 #  define PLATFORM_DIRECT_ANALOG_MOVEMENT (PLATFORM_PS2 || PLATFORM_3DS)
 #endif
 
+// Async chunk generation, the Wii's streaming shape: a worker thread builds
+// terrain/cave buffers (and decodes saved chunks) while the game thread keeps
+// ticking, and a per-frame publish budget lands finished columns without ever
+// blocking a frame on a full generation. The PS2 instead slices generation
+// inside the tick (PLATFORM_INCREMENTAL_CHUNK_GENERATION); that trade needs a
+// weaker CPU profile than the 3DS wants for its worldgen, so the port takes
+// the Wii's model. Knobs in DsWorldTuning.h / PlatformAsyncTuning.h; the
+// worker's core/priority handoff lives in Thread.cpp's CTR branch.
 #ifndef PLATFORM_ASYNC_CHUNK_GENERATION
-#  define PLATFORM_ASYNC_CHUNK_GENERATION (PLATFORM_WII || PLATFORM_PC_LEGACY)
+#  define PLATFORM_ASYNC_CHUNK_GENERATION (PLATFORM_WII || PLATFORM_PC_LEGACY || PLATFORM_3DS)
 #endif
 
 // OptiFine custom animations (/anim/*.properties, custom_terrain_N.png,
@@ -148,7 +165,7 @@
 #endif
 
 #ifndef PLATFORM_FAST_REGION_COMPRESSION
-#  define PLATFORM_FAST_REGION_COMPRESSION (PLATFORM_PS2 || PLATFORM_WII)
+#  define PLATFORM_FAST_REGION_COMPRESSION (PLATFORM_PS2 || PLATFORM_WII || PLATFORM_3DS)
 #endif
 
 #ifndef PLATFORM_PROFILE_STREAMING
@@ -180,7 +197,10 @@
 #endif
 
 #ifndef PLATFORM_BOUNDED_PATHFIND
-#  define PLATFORM_BOUNDED_PATHFIND (PLATFORM_CONSOLE_LOW || PLATFORM_WII || PLATFORM_PC_LEGACY)
+// The 3DS takes it with the values DsWorldTuning.h already tunes (the same
+// 2 paths/tick, 160 nodes the Wii ships): an A* over the resident window is a
+// worst-case hitch source, and the ARM11 has less headroom than the Broadway.
+#  define PLATFORM_BOUNDED_PATHFIND (PLATFORM_CONSOLE_LOW || PLATFORM_WII || PLATFORM_PC_LEGACY || PLATFORM_3DS)
 #endif
 
 #ifndef PLATFORM_HAS_VIRTUAL_KEYBOARD

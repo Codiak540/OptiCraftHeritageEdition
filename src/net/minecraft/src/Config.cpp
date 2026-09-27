@@ -190,8 +190,13 @@ bool Config::isCustomFonts()
 
 int_t Config::getMaxRenderDistanceFine()
 {
-#if defined(PS2_PLATFORM) || defined(WII_PLATFORM) || PLATFORM_PC_LEGACY
+#if defined(PS2_PLATFORM) || defined(WII_PLATFORM) || defined(CTR_PLATFORM) || PLATFORM_PC_LEGACY
 	// PLATFORM_VISIBLE_CHUNK_RADIUS is authoritative on fixed-grid backends.
+	// The 3DS joins the console guard here: without it the fine-distance
+	// slider kept the desktop 256-block ceiling, so the Video Settings
+	// screen could raise the render distance -- and with it RenderGlobal's
+	// section grid -- far past the fixed-grid profile this hardware runs at.
+	// The PS2/Wii pin is what keeps both the slider and options.txt at Tiny.
 	return limit(PLATFORM_VISIBLE_CHUNK_RADIUS * 16, 32, 256);
 #else
 	return 256;

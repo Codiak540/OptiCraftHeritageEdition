@@ -835,8 +835,15 @@ float GameSettings::getOptionFloatValue(const EnumOptions *enumoptions)
     if (enumoptions == EnumOptions::AO_LEVEL)
         return ofAoLevel;
     if (enumoptions == EnumOptions::RENDER_DISTANCE_FINE)
-        return (float)(ofRenderDistanceFine - 32) /
-               (float)(Config::getMaxRenderDistanceFine() - 32);
+    {
+        const int_t maxFine = Config::getMaxRenderDistanceFine();
+        // On a fixed-grid backend (PS2/Wii/3DS) maxFine equals the 32-block
+        // floor, leaving the slider no travel: report 0 instead of 0/0 so
+        // the knob draws at Tiny rather than at a NaN position.
+        if (maxFine <= 32)
+            return 0.0f;
+        return (float)(ofRenderDistanceFine - 32) / (float)(maxFine - 32);
+    }
     return 0.0f;
 }
 

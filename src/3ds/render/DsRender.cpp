@@ -102,11 +102,6 @@
 #include "3ds/render/DsTexture.h"
 #include "platform/Log.h"
 
-#if defined(CTR_DUMP_MESHES)
-#include <sys/stat.h>
-#include <unordered_set>
-#endif
-
 namespace ds
 {
 namespace
@@ -420,62 +415,6 @@ void splitCommandBufferIfNeeded()
 		C3D_FrameSplit(0);
 }
 
-#if defined(CTR_DUMP_MESHES)
-// The mesh dump diagnostic (cmake option 3DS_DUMP_MESHES): the first draw
-// of every texture id has its interleaved vertices written out as text
-// under sdmc:/opticraft/dumps/mesh_tex_<id>.txt -- position, UV and vertex
-// colour exactly as they reach the GPU. Paired with the texture PNG dumps
-// (and the source PNGs), this pins an orientation report to one side of the
-// pipeline with no guesswork: the UV values in the file are the game's own
-// quad math, so a UV that maps the top of the screen to v=0 while the
-// texture is stored upright names the draw path; UVs that already carry the
-// inverted mapping name the shared code that built the quad.
-void dumpMeshOnce(int texture, const RenderInterleavedMesh& mesh, const GpuState& state)
-{
-	static std::unordered_set<int> s_seen;
-	// Untextured draws are far too common to key by texture alone: the very
-	// first one (a startup fade quad) eats the -1 slot and the menu's
-	// gradient washes would never be captured. Key those by their first
-	// vertex colour instead, so each distinct overlay (fades, gradients,
-	// vignettes) gets its own file -- bounded in practice by the handful of
-	// styles the UI uses. Offset by two so no colour key collides with the
-	// genuine texture -1 slot.
-	int key = texture;
-	if (texture < 0 && mesh.count > 0 && mesh.data != nullptr)
-	{
-		const std::uint8_t* v = static_cast<const std::uint8_t*>(mesh.data) +
-		                        static_cast<std::size_t>(mesh.first) * mesh.stride;
-		key = -(2 + static_cast<int>(*reinterpret_cast<const std::uint32_t*>(v + 20) & 0xFFFFFFu));
-	}
-	if (!s_seen.insert(key).second)
-		return;
-
-	::mkdir("sdmc:/opticraft", 0777);
-	::mkdir("sdmc:/opticraft/dumps", 0777);
-	char path[96];
-	std::snprintf(path, sizeof(path), "sdmc:/opticraft/dumps/mesh_tex_%d.txt", key);
-	std::FILE* file = std::fopen(path, "w");
-	if (file == nullptr)
-		return;
-	std::fprintf(file, "texture=%d primitive=%d count=%d stride=%d textured=%d blend=%d depthTest=%d\n",
-	             texture, renderPrimitiveValue(mesh.primitive), mesh.count, mesh.stride,
-	             state.texture2d ? 1 : 0, state.blend ? 1 : 0, state.depthTest ? 1 : 0);
-	const std::uint8_t* base = static_cast<const std::uint8_t*>(mesh.data) +
-	                           static_cast<std::size_t>(mesh.first) * mesh.stride;
-	for (int i = 0; i < mesh.count; ++i)
-	{
-		const std::uint8_t* v = base + static_cast<std::size_t>(i) * mesh.stride;
-		const float* position = reinterpret_cast<const float*>(v);
-		const float* texcoord = reinterpret_cast<const float*>(v + 12);
-		const std::uint32_t color = *reinterpret_cast<const std::uint32_t*>(v + 20);
-		std::fprintf(file, "v%d pos=%.4f,%.4f,%.4f uv=%.6f,%.6f color=%08lX\n",
-		             i, position[0], position[1], position[2],
-		             texcoord[0], texcoord[1], static_cast<unsigned long>(color));
-	}
-	std::fclose(file);
-}
-#endif // CTR_DUMP_MESHES
-
 // Translate the GL-shaped state into citro3d calls and point the vertex fetch
 // at the staged copy. citro3d flushes all of this per C3D_DrawArrays, so this
 // is safe to call with different values for every draw in a frame.
@@ -550,108 +489,6 @@ void applyState(const GpuState& state, const void* vertexBase)
 	BufInfo_Add(bufInfo, vertexBase, kVertexStride, kAttribCount,
 	            kAttribPermutation);
 }
-
-#if defined(CTR_RENDER_PROBE)
-// The orientation probe (cmake option 3DS_RENDER_PROBE): four vertex-coloured
-// corner squares drawn through the live pipeline every frame -- red at the
-// GUI's top-left, green top-right, blue bottom-left, yellow bottom-right.
-// Whichever panel corner each colour lands in names the transform actually
-// applied, no matter how garbled everything else is: all four in place says
-// the tilt is right and any remaining "flipped" impression came from the
-// corrupted frames the other fixes in this change address; a 180-degree swap
-// or a mirror says the tilt needs the matching sign fix before the port is
-// playable where it was measured.
-//
-// It borrows the game's draw path wholesale (staging, quad expansion, the
-// tilt), but with matrices of its own: a push/loadIdentity/ortho pair on both
-// stacks -- the same sequence the game itself would issue -- restored exactly
-// on the way out, so nothing of the probe leaks into the game's next frame
-// (and every draw re-uploads the full state anyway; see applyState).
-void drawOrientationProbe()
-{
-	if (!s_inFrame)
-		return; // Nothing was drawn this frame; the probe cannot open one.
-
-	// The fixed 32-byte Minecraft vertex layout, in probe-local form. The
-	// colour packs (A<<24)|(B<<16)|(G<<8)|R exactly like the Tessellator's
-	// setColorRGBA: memory bytes R,G,B,A, which attribute fetch loads in
-	// order (no texture-format byte swap on this path; see DsTexture.cpp).
-	struct ProbeVertex
-	{
-		float position[3];
-		float texcoord[2];
-		std::uint32_t color;
-		std::uint8_t normal[4];
-		float brightness;
-	};
-	static_assert(sizeof(ProbeVertex) == kVertexStride,
-	              "the probe must use the fixed vertex layout");
-
-	const auto quad = [](ProbeVertex* out, float x0, float y0, float x1,
-	                     float y1, std::uint32_t rgba)
-	{
-		for (int corner = 0; corner < 4; ++corner)
-		{
-			out[corner].position[0] = (corner & 1) != 0 ? x1 : x0;
-			out[corner].position[1] = (corner & 2) != 0 ? y1 : y0;
-			out[corner].position[2] = 0.0f;
-			out[corner].texcoord[0] = 0.0f;
-			out[corner].texcoord[1] = 0.0f;
-			out[corner].color = rgba;
-			out[corner].normal[0] = 0;
-			out[corner].normal[1] = 0;
-			out[corner].normal[2] = 0;
-			out[corner].normal[3] = 0;
-			out[corner].brightness = 1.0f;
-		}
-	};
-
-	constexpr float kSize = 48.0f;
-	constexpr float kRight = static_cast<float>(kPanelWidth);
-	constexpr float kBottom = static_cast<float>(kPanelHeight);
-	ProbeVertex vertices[4 * 4];
-	quad(vertices + 0, 0.0f, 0.0f, kSize, kSize, 0xFF0000FFu);          // red
-	quad(vertices + 4, kRight - kSize, 0.0f, kRight, kSize, 0xFF00FF00u); // green
-	quad(vertices + 8, 0.0f, kBottom - kSize, kSize, kBottom, 0xFFFF0000u); // blue
-	quad(vertices + 12, kRight - kSize, kBottom - kSize, kRight, kBottom,
-	     0xFF00FFFFu);                                                  // yellow
-
-	RenderInterleavedMesh mesh;
-	mesh.data = vertices;
-	mesh.stride = kVertexStride;
-	mesh.first = 0;
-	mesh.count = 16;
-	mesh.primitive = RenderPrimitive::Quads;
-	mesh.positionShort = false;
-	mesh.hasColor = true;
-	mesh.colorOffset = 20;
-	mesh.texCoordOffset = 12;
-	mesh.normalOffset = 24;
-	mesh.brightnessOffset = 28;
-
-	// Untextured, unblended, depth-blind squares: whatever the game's last
-	// state was, the probe's own has nothing that can hide it.
-	GpuState probeState;
-	probeState.depthWrite = false;
-
-	const RenderMatrixMode previousMode = matrix::currentMode();
-	matrix::setMode(RenderMatrixMode::Projection);
-	matrix::push();
-	matrix::loadIdentity();
-	matrix::ortho(0.0, kPanelWidth, kPanelHeight, 0.0, -1.0, 1.0);
-	matrix::setMode(RenderMatrixMode::ModelView);
-	matrix::push();
-	matrix::loadIdentity();
-
-	draw(mesh, probeState);
-
-	matrix::setMode(RenderMatrixMode::ModelView);
-	matrix::pop();
-	matrix::setMode(RenderMatrixMode::Projection);
-	matrix::pop();
-	matrix::setMode(previousMode);
-}
-#endif // CTR_RENDER_PROBE
 
 } // namespace
 
@@ -793,9 +630,6 @@ void fini()
 
 void submitFrame()
 {
-#if defined(CTR_RENDER_PROBE)
-	drawOrientationProbe();
-#endif
 	endFrame();
 }
 
@@ -915,10 +749,6 @@ bool draw(const RenderInterleavedMesh& mesh, const GpuState& state)
 	if (quads && quadCount == 0)
 		return true; // Fewer than four vertices cannot form even one quad.
 	const int outCount = quads ? quadCount * 6 : mesh.count;
-
-#if defined(CTR_DUMP_MESHES)
-	dumpMeshOnce(state.texture2d ? state.boundTexture : -1, mesh, state);
-#endif
 
 	frameBegin();
 	if (s_target == nullptr || !s_inFrame)

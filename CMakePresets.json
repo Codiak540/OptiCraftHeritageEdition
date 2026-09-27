@@ -153,8 +153,10 @@
         "PLATFORM": "3DS",
         "3DS_BRINGUP": "OFF",
         "3DS_ENABLE_SOUND": "ON",
-        "3DS_ENABLE_NETWORK": "OFF",
-        "CMAKE_MAKE_PROGRAM": "${sourceDir}/ninja.exe"
+        "3DS_ENABLE_NETWORK": "ON",
+        "CMAKE_MAKE_PROGRAM": "${sourceDir}/ninja.exe",
+        "CMAKE_TRY_COMPILE_TARGET_TYPE": "STATIC_LIBRARY",
+        "MC_LOG_LEVEL": "0"
       }
     },
     {

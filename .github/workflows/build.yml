@@ -225,7 +225,8 @@ jobs:
           -DPLATFORM=3DS
           -D3DS_BRINGUP=OFF
           -D3DS_ENABLE_SOUND=ON
-          -D3DS_ENABLE_NETWORK=OFF
+          -D3DS_ENABLE_NETWORK=ON
+          -DMC_LOG_LEVEL=0
           -DCMAKE_C_COMPILER_LAUNCHER=ccache
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 

@@ -11,6 +11,7 @@
 #include <cstdio>
 
 #include "platform/Log.h"
+#include "platform/Thread.h"
 #include "client/Minecraft.h"
 #include "java/String.h"
 #include "3ds/DsBootstrap.h"
@@ -108,21 +109,18 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	// Boot breadcrumb: plain printf, not MC_LOG, because it has to survive a
-	// build with MC_LOG_LEVEL=0 -- the one configuration where the console
-	// would otherwise stay blank and a hang would be indistinguishable from a
-	// dead binary. fflush matches waitForDismissal(): a run that hangs never
-	// returns for a second write.
-	//
 	// The sink is re-opened here as well as in dsEnsureStorage(). That earlier
 	// call can run from a static initialiser (java::File, Resource -- see
 	// DsBootstrap.cpp), before stdio and the bottom console exist, where
 	// fopen() fails and nothing ever tries again; openSessionFile()
 	// short-circuits only on success, so this retry is free when the early call
 	// did work, and replays whatever the early buffer caught.
-	std::printf("[boot] storage ok; log sink %s\n",
-	            McLog::openSessionFile(dsGetAppDir()) ? "open" : "FAILED");
-	std::fflush(stdout);
+	//
+	// The call itself stays unconditional, not under MC_LOG: CrashHandler_3ds
+	// writes crash reports straight to McLog::write regardless of the build's
+	// log level, so the sink must be open even in a silent release build.
+	const bool logSinkOpen = McLog::openSessionFile(dsGetAppDir());
+	MC_LOG_INFO("3ds", "log sink %s\n", logSinkOpen ? "open" : "failed");
 
 	// The data tree is staged at bin/3ds/sd/opticraft by the 3ds-data target;
 	// without it the game would die much later behind a missing-resource
@@ -141,8 +139,11 @@ int main(int argc, char **argv)
 		shutdownServices();
 		return 0;
 	}
-	std::printf("[boot] game data ok\n");
-	std::fflush(stdout);
+	// Game data presence is a boot milestone, not a user-facing problem:
+	// the missing case above already printed its instructions. MC_LOG_INFO
+	// keeps it out of a silent release build (level 0), matching the
+	// milestone logging the Wii main does.
+	MC_LOG_INFO("3ds", "game data present\n");
 
 	// New 3DS 804 MHz boost -- but ONLY when the console really is a New 3DS.
 	//
@@ -162,20 +163,32 @@ int main(int argc, char **argv)
 		model = isNew3ds ? "New 3DS" : "Old 3DS";
 	if (isNew3ds)
 		osSetSpeedupEnable(true);
-	std::printf("[boot] cpu: %s, boost %s\n", model, isNew3ds ? "on" : "off");
-	std::fflush(stdout);
+	MC_LOG_INFO("3ds", "cpu: %s, boost %s\n", model, isNew3ds ? "on" : "off");
 
-	// The last marker before the hand-off. Everything above it is this file;
-	// everything below it is the game -- so a bottom screen that stops here
-	// names the hang without needing a debugger.
-	std::printf("[boot] entering Minecraft::start()\n");
-	std::fflush(stdout);
+	// Ask the OS for time on the second ARM11. Old and New 3DS alike grant an
+	// application a share of core 1 only after APT_SetAppCpuTimeLimit, and
+	// without it a thread pinned to that core would never be scheduled at all
+	// -- so Thread.cpp refuses the affinity until this call reports success,
+	// and the async chunk-generation worker then runs beside the game thread
+	// instead of time-slicing core 0 with it. 80 is the value every serious
+	// 3DS port ships: the OS keeps its own slice, the game keeps a full core,
+	// and the worker gets the rest. On a loader that refuses the request the
+	// worker falls back to the default core, where the per-frame publish
+	// budget still keeps generation off the frame path.
+	const Result cpuLimitResult = APT_SetAppCpuTimeLimit(80);
+	if (R_SUCCEEDED(cpuLimitResult))
+	{
+		PlatformThread::setSecondaryCoreAvailable(true);
+		MC_LOG_INFO("3ds", "secondary core granted (cpu time limit 80%%)\n");
+	}
+	else
+		MC_LOG_WARN("3ds", "APT_SetAppCpuTimeLimit failed (%08lx); workers share the main core\n",
+		             cpuLimitResult);
+
 	MC_LOG_INFO("3ds", "handing off to Minecraft::start()\n");
 	jstring username = "Player";
 	jstring auth = "-";
 	Minecraft::start(&username, &auth);
-	std::printf("[boot] Minecraft::start returned\n");
-	std::fflush(stdout);
 	MC_LOG_INFO("3ds", "Minecraft::start returned; exiting to loader\n");
 
 	// The game's frame loop ended (close requested via Display, a handled

@@ -38,19 +38,8 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <unordered_map>
-#include <vector>
-
-#if defined(CTR_DUMP_TEXTURES)
-// The texture dump diagnostic (cmake option 3DS_DUMP_TEXTURES): stb's PNG
-// writer, compiled into exactly one translation unit of this build.
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
-#endif
 
 #include "platform/Log.h"
 
@@ -72,10 +61,6 @@ struct Record
 	int downshift = 0;  // reduced to fit; downshift is log2 of that factor
 	bool blur = true;
 	bool clamp = false;
-#if defined(CTR_DUMP_TEXTURES)
-	bool dumped = false;  // one PNG per texture: animated re-uploads would
-	                     // otherwise rewrite the same file every frame
-#endif
 };
 
 std::unordered_map<int, Record> s_records;
@@ -147,63 +132,6 @@ void ensureFallback()
 	C3D_TexSetWrap(&s_fallback, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
 	s_fallbackReady = true;
 }
-
-#if defined(CTR_DUMP_TEXTURES)
-// The texture dump diagnostic (cmake option 3DS_DUMP_TEXTURES): write each
-// uploaded texture out as a PNG under sdmc:/opticraft/dumps/, reconstructed
-// row by row exactly as the GPU samples it -- dump row 0 is what texcoord
-// v=0 reads, the reversal of upload()'s swizzle. The dump answers, with no
-// emulator tooling at all, the bisect question behind every "the assets are
-// upside down" report: a dump PNG that shows the image upside down says the
-// upload path stores it flipped; a dump that matches the source PNG says
-// the texture is upright in GPU memory and the flip happens at draw time.
-// The file name carries the logical size and the downscale factor so a
-// halved HD atlas is recognisable next to its source.
-void dumpRecord(Record& record, int id)
-{
-	if (!record.valid || record.dumped)
-		return;
-	record.dumped = true;
-
-	std::vector<unsigned char> image(
-		static_cast<std::size_t>(record.storedW) *
-		static_cast<std::size_t>(record.storedH) * 4u);
-	const int tilesAcross = record.tex.width / 8;
-	const std::uint32_t* storage = static_cast<const std::uint32_t*>(record.tex.data);
-	for (int y = 0; y < record.storedH; ++y)
-	{
-		// The dump shows storage as the GPU sees it, in storage row order
-		// (see upload(): rows are the file's own).
-		for (int x = 0; x < record.storedW; ++x)
-		{
-			const std::uint32_t tileRow = static_cast<std::uint32_t>(y / 8);
-			const std::uint32_t tileCol = static_cast<std::uint32_t>(x / 8);
-			const std::uint32_t inTile = mortonInTile(static_cast<std::uint32_t>(x & 7),
-			                                         static_cast<std::uint32_t>(y & 7));
-			const std::size_t word =
-				(static_cast<std::size_t>(tileRow * tilesAcross + tileCol) << 6) + inTile;
-			// Native (R<<24)|(G<<16)|(B<<8)|A -> the game's byte order the PNG
-			// writer takes.
-			const std::uint32_t game = __builtin_bswap32(storage[word]);
-			unsigned char* out = image.data() +
-				(static_cast<std::size_t>(y) * record.storedW + x) * 4u;
-			out[0] = static_cast<unsigned char>(game & 0xFFu);         // R
-			out[1] = static_cast<unsigned char>((game >> 8) & 0xFFu);   // G
-			out[2] = static_cast<unsigned char>((game >> 16) & 0xFFu);  // B
-			out[3] = static_cast<unsigned char>((game >> 24) & 0xFFu);  // A
-		}
-	}
-
-	::mkdir("sdmc:/opticraft", 0777);
-	::mkdir("sdmc:/opticraft/dumps", 0777);
-	char path[96];
-	std::snprintf(path, sizeof(path), "sdmc:/opticraft/dumps/tex_%d_%dx%d_d%d.png",
-	              id, record.logicalW, record.logicalH, record.downshift);
-	if (stbi_write_png(path, record.storedW, record.storedH, 4, image.data(),
-	                   record.storedW * 4) == 0)
-		MC_LOG_WARN("render", "3ds: texture %d dump write failed (%s)\n", id, path);
-}
-#endif // CTR_DUMP_TEXTURES
 
 } // namespace
 
@@ -325,9 +253,14 @@ void upload(int id, int x, int y, int width, int height, const void* rgba)
 		// asset orientation natively (the official ecosystem's art is
 		// stored upside down relative to Java -- that is the convention
 		// the white-button/sub-rect mirroring reports attributed to the
-		// sampler), so packs sourced from MC-3DS work unmodified here.
-		// scripts/pak_flip_mc3ds.py converts between the two conventions
-		// when a pack must be shared with the other platforms.
+		// sampler), so packs sourced from MC-3DS work unmodified here --
+		// except their skins: MC-3DS Edition rotates those 180 degrees
+		// against its own player model, while the sampler here mirrors
+		// rows and never columns and the model keeps the Java UV layout,
+		// so the X half has to be stripped (scripts/pak_flip_mc3ds.py
+		// --all for the whole-pack recipe, --xflip for skins alone).
+		// The script converts between the two conventions when a pack
+		// must be shared with the other platforms.
 		for (int row = 0; row < height; ++row)
 		{
 			const int dstY = y + row;
@@ -348,9 +281,6 @@ void upload(int id, int x, int y, int width, int height, const void* rgba)
 				dst[word] = __builtin_bswap32(srcRow[col]);
 			}
 		}
-#if defined(CTR_DUMP_TEXTURES)
-		dumpRecord(*record, id);
-#endif
 		return;
 	}
 
@@ -410,9 +340,6 @@ void upload(int id, int x, int y, int width, int height, const void* rgba)
 			dst[word] = __builtin_bswap32((a << 24) | (b << 16) | (g << 8) | r);
 		}
 	}
-#if defined(CTR_DUMP_TEXTURES)
-	dumpRecord(*record, id);
-#endif
 }
 
 void bind(int id, float (&uvScale)[2])

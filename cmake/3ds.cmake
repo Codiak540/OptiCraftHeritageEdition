@@ -31,7 +31,7 @@ include(${CMAKE_SOURCE_DIR}/cmake/SourceSelection.cmake)
 # --- 3DS feature options ------------------------------------------------------
 option(3DS_BRINGUP "Build only the 3DS toolchain smoke test instead of the game" OFF)
 option(3DS_ENABLE_SOUND "Enable the ndsp sound backend" ON)
-option(3DS_ENABLE_NETWORK "Enable TCP multiplayer (no backend yet; OFF keeps the NO_NETWORK stubs)" OFF)
+option(3DS_ENABLE_NETWORK "Enable TCP multiplayer through the libctru soc:U socket service (OFF keeps the NO_NETWORK stubs)" ON)
 # The New 3DS doubles RAM (124 MB vs 64 MB for apps) and triples the CPU clock;
 # Old 3DS is the floor the port must stay playable on, so the CPU gameplay
 # profile defaults OFF exactly like the Wii (whose Broadway has a real FPU too --
@@ -51,33 +51,6 @@ option(3DS_BOUNDED_WORLD "Bound the resident world to a fixed memory budget" ON)
 # costs memory twice over. Turn OFF only if C++ unwinding (.ARM.exidx) ever
 # misbehaves under gc; the link itself stays gc'd either way (specs, not us).
 option(3DS_GC_SECTIONS "Compile with -ffunction-sections/-fdata-sections (the linker's --gc-sections comes from 3dsx.specs regardless)" ON)
-# Diagnostic: four vertex-coloured corner squares drawn through the live
-# pipeline every frame (red top-left, green top-right, blue bottom-left,
-# yellow bottom-right in GUI space), so a screenshot names the transform
-# actually being applied no matter how garbled the rest of the frame is.
-# Enable for a measurement run with:
-#     build 3ds.bat game -D3DS_RENDER_PROBE=ON
-# (or add the -D to a direct preset configure). OFF ships no probe code.
-option(3DS_RENDER_PROBE "Draw the four-corner orientation probe on the game screen every frame" OFF)
-# Diagnostic: write every uploaded texture back out as PNG under
-# sd:/opticraft/dumps/, reconstructed row by row exactly as the GPU samples
-# it (dump row 0 = what texcoord v=0 reads). Comparing a dump against the
-# source PNG answers in one look which side of the pipeline an "upside-down
-# asset" lives on: the dump itself upside down -> the upload stores it
-# flipped; the dump matching the source -> the flip happens at draw time.
-# One PNG per texture (animated re-uploads do not rewrite the file); the
-# name carries the logical size and the downscale factor.
-#     build 3ds.bat -D3DS_DUMP_TEXTURES=ON
-option(3DS_DUMP_TEXTURES "Dump every uploaded texture to sd:/opticraft/dumps as PNG" OFF)
-# Diagnostic companion to 3DS_DUMP_TEXTURES: write the first mesh drawn with
-# each texture to sd:/opticraft/dumps/mesh_tex_<id>.txt -- position, UV and
-# vertex colour exactly as the mesh reaches the GPU. Reading a dumped UV
-# against the texture dump (and the source PNG) pins an orientation report
-# to one side of the pipeline: UVs mapping the top of the screen to v=0 on
-# an upright texture name the draw path; inverted UVs name the shared code
-# that built the quad.
-#     build 3ds.bat -D3DS_DUMP_MESHES=ON
-option(3DS_DUMP_MESHES "Dump the first mesh drawn per texture to sd:/opticraft/dumps as text" OFF)
 # Diagnostic verbosity shared by every target. See src/platform/Log.h.
 set(MC_LOG_LEVEL "0" CACHE STRING "Unified diagnostic verbosity: 0=off, 1=info, 2=debug, 3=trace")
 set_property(CACHE MC_LOG_LEVEL PROPERTY STRINGS 0 1 2 3)
@@ -148,10 +121,10 @@ else()
     # unreachable and must not enter the target. Same on 3DS (saves are on SD).
     mcbeta_exclude_remote_stats_sources(3DS_SOURCES)
 
-    # JavaNetwork.cpp is the SDL_net desktop backend. No 3DS native socket
-    # backend exists yet, so with networking OFF (the default) the desktop file
-    # stays compiled behind its NO_NETWORK stubs, mirroring cmake/wii.cmake;
-    # flip the branches here when src/3ds network code lands.
+    # JavaNetwork.cpp is the SDL_net desktop backend. With networking enabled
+    # (the default) the implementation lives in src/3ds/JavaNetwork_3ds.cpp +
+    # DsNetwork.cpp, mirroring cmake/wii.cmake; with it OFF the desktop file
+    # stays compiled behind its NO_NETWORK stubs.
     if(3DS_ENABLE_NETWORK)
         mcbeta_exclude_sources(3DS_SOURCES "[/\\]java[/\\]JavaNetwork\\.cpp$")
     else()
@@ -261,13 +234,6 @@ target_compile_definitions(OptiCraft PRIVATE
     # PLATFORM_BOUNDED_WORLD for the 3DS profile (Phase 1 wiring), so ON is the
     # guarded default and this predefine exists purely to A/B it back off.
     $<$<NOT:$<BOOL:${3DS_BOUNDED_WORLD}>>:PLATFORM_BOUNDED_WORLD=0>
-    # Orientation probe (see the option block above): compile the probe into
-    # DsRender.cpp only when it is asked for.
-    $<$<BOOL:${3DS_RENDER_PROBE}>:CTR_RENDER_PROBE=1>
-    # Texture dump diagnostic (see the option block above).
-    $<$<BOOL:${3DS_DUMP_TEXTURES}>:CTR_DUMP_TEXTURES=1>
-    # Mesh dump diagnostic (see the option block above).
-    $<$<BOOL:${3DS_DUMP_MESHES}>:CTR_DUMP_MESHES=1>
     # A level, not a boolean, so it is passed through as-is rather than through
     # $<BOOL:>, which would collapse 2 to 1.
     MC_LOG_LEVEL=${MC_LOG_LEVEL}
