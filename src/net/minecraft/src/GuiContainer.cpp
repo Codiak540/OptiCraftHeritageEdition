@@ -22,6 +22,7 @@
 #include "platform/RenderAPI.h"
 #include "platform/PlatformConfig.h"
 #include "pc/lwjgl/Keyboard.h"
+#include "pc/lwjgl/Mouse.h"
 #include <algorithm>
 
 #if defined(PS2_PLATFORM) || defined(WII_PLATFORM)
@@ -407,8 +408,9 @@ void GuiContainer::mouseMovedOrUp(int_t x, int_t y, int_t button)
 {
 #if PLATFORM_PS2 || PLATFORM_WII
 	// Button release is not pointer motion. Only actual movement should take
-	// authority away from the controller-selected slot.
-	if (button < 0)
+	// authority away from the controller-selected slot. Wheel and click events
+	// have dx=0 and dy=0 and must not clear the controller slot selection.
+	if (button < 0 && (lwjgl::Mouse::getEventDX() != 0 || lwjgl::Mouse::getEventDY() != 0))
 		ContainerSlotNavigator::instance(getOwnerPlayerIndex()).notePointerActivity();
 #endif
 	(void)x;
