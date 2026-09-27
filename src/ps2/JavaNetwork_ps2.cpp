@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <delaythread.h>
 #include <cerrno>
 #include <cstring>
 #include <istream>
@@ -89,15 +90,35 @@ public:
 
     int read(char *buffer, int length) override
     {
-        const int socketFd = fd.load(std::memory_order_acquire);
-        if (socketFd < 0 || buffer == nullptr || length <= 0 ||
-            closing.load(std::memory_order_acquire))
+        if (buffer == nullptr || length <= 0)
             return -1;
 
-        const int count = static_cast<int>(::recv(socketFd, buffer, static_cast<std::size_t>(length), 0));
-        if (count > 0)
-            receivedBytes.fetch_add(static_cast<std::size_t>(count), std::memory_order_relaxed);
-        return count;
+        while (!closing.load(std::memory_order_acquire))
+        {
+            const int socketFd = fd.load(std::memory_order_acquire);
+            if (socketFd < 0)
+                return -1;
+
+            const int count = static_cast<int>(::recv(socketFd, buffer,
+                                                      static_cast<std::size_t>(length),
+                                                      MSG_DONTWAIT));
+            if (count > 0)
+            {
+                receivedBytes.fetch_add(static_cast<std::size_t>(count), std::memory_order_relaxed);
+                return count;
+            }
+            if (count == 0)
+                return 0;
+            if (errno != EAGAIN && errno != EWOULDBLOCK)
+                return count;
+
+            // Keep recv cooperative on real hardware. A blocking recv() otherwise
+            // has to be interrupted with shutdown(), which can stall the PS2
+            // network stack during disconnect.
+            DelayThread(2000);
+        }
+
+        return -1;
     }
 
     bool write(const char *buffer, int length) override
@@ -115,11 +136,20 @@ public:
             if (socketFd < 0 || closing.load(std::memory_order_acquire))
                 return false;
             const int count = static_cast<int>(::send(socketFd, buffer + offset,
-                                                      static_cast<std::size_t>(length - offset), 0));
-            if (count <= 0)
-                return false;
-            sentBytes.fetch_add(static_cast<std::size_t>(count), std::memory_order_relaxed);
-            offset += count;
+                                                      static_cast<std::size_t>(length - offset),
+                                                      MSG_DONTWAIT));
+            if (count > 0)
+            {
+                sentBytes.fetch_add(static_cast<std::size_t>(count), std::memory_order_relaxed);
+                offset += count;
+                continue;
+            }
+            if (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+            {
+                DelayThread(2000);
+                continue;
+            }
+            return false;
         }
         return true;
     }
@@ -132,17 +162,17 @@ public:
 
     void interruptRead() override
     {
-        const int socketFd = fd.load(std::memory_order_acquire);
-        if (socketFd >= 0)
-            ::shutdown(socketFd, SHUT_RD);
+        // read() polls cooperatively, so marking the socket as closing is enough
+        // to wake the reader without a synchronous lwIP shutdown() call.
+        closing.store(true, std::memory_order_release);
     }
 
     void close() override
     {
+        // The NetworkManager joins the read/write threads before destroying this
+        // socket. Avoid shutdown() here: on real PS2 hardware it can stall the
+        // EE/IOP networking path at the exact moment the user disconnects.
         closing.store(true, std::memory_order_release);
-        const int socketFd = fd.load(std::memory_order_acquire);
-        if (socketFd >= 0)
-            ::shutdown(socketFd, SHUT_RDWR);
     }
 
     std::string getRemoteSocketAddress() const override { return remoteAddress; }
@@ -155,10 +185,7 @@ private:
         closing.store(true, std::memory_order_release);
         const int socketFd = fd.exchange(-1, std::memory_order_acq_rel);
         if (socketFd >= 0)
-        {
-            ::shutdown(socketFd, SHUT_RDWR);
             ::close(socketFd);
-        }
     }
 
     std::atomic<int> fd{-1};
