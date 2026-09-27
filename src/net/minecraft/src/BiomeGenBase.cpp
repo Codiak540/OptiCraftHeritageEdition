@@ -239,8 +239,21 @@ void BiomeGenBase::releaseWorldGenForTrees(WorldGenerator *generator)
 
 bool BiomeGenBase::isReusableWorldGenForTrees(const WorldGenerator *generator) const
 {
-    return generator == worldGenTrees || generator == worldGenBigTree ||
-           generator == worldGenForest || generator == worldGenSwamp;
+    if (generator == nullptr)
+        return true;
+    if (generator == worldGenTrees || generator == worldGenBigTree ||
+        generator == worldGenForest || generator == worldGenSwamp)
+        return true;
+    for (int_t i = 0; i < BIOME_REGISTRY_SIZE; ++i)
+    {
+        BiomeGenBase *b = biomeList[i];
+        if (b != nullptr && (generator == b->worldGenTrees || generator == b->worldGenBigTree ||
+                             generator == b->worldGenForest || generator == b->worldGenSwamp))
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 WorldGenerator *BiomeGenBase::func_48410_b(Random &)

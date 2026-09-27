@@ -165,16 +165,7 @@ void GuiContainerCreative::handleMouseInput()
     if (wheel == 0)
         return;
 
-    ContainerCreative *container = static_cast<ContainerCreative *>(inventorySlots);
-    int_t rows = (int_t)container->itemList.size() / 8 - 8 + 1;
-    if (rows <= 0)
-        return;
-
-    wheel = wheel > 0 ? 1 : -1;
-    currentScroll -= (float_t)wheel / (float_t)rows;
-    if (currentScroll < 0.0f) currentScroll = 0.0f;
-    if (currentScroll > 1.0f) currentScroll = 1.0f;
-    container->scrollTo(currentScroll);
+    scrollRows(wheel > 0 ? -1 : 1);
 }
 
 Slot *GuiContainerCreative::getControllerNavigationTarget(Slot *selected, int_t dirX, int_t dirY)

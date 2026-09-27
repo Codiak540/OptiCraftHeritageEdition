@@ -16,6 +16,7 @@ public:
     void handleMouseInput() override;
     void drawScreen(int_t mouseX, int_t mouseY, float_t partialTick) override;
     Slot *getControllerNavigationTarget(Slot *selected, int_t dirX, int_t dirY) override;
+    bool scrollRows(int_t direction);
 
     static InventoryBasic *getInventory();
 
@@ -26,7 +27,6 @@ protected:
     void actionPerformed(GuiButton *button) override;
 
 private:
-    bool scrollRows(int_t direction);
 
     static InventoryBasic inventory;
     float_t currentScroll;
