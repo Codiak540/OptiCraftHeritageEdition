@@ -6,11 +6,14 @@
 #include "net/minecraft/src/EntityPlayerSP.h"
 #include "net/minecraft/src/World.h"
 #include "net/minecraft/src/WorldInfo.h"
+#include "net/minecraft/src/NBTTagCompound.h"
 #include "net/minecraft/src/WorldProvider.h"
 #include "net/minecraft/src/Session.h"
 #include "net/minecraft/src/MovementInputFromOptions.h"
+#include "net/minecraft/src/GameSettings.h"
 #include "net/minecraft/src/skin/SkinManager.h"
 #include "net/minecraft/src/GuiInventory.h"
+#include "net/minecraft/src/GuiContainerCreative.h"
 #include "net/minecraft/src/GuiIngame.h"
 #include "net/minecraft/src/InventoryPlayer.h"
 #include "net/minecraft/src/FoodStats.h"
@@ -70,20 +73,57 @@ void joinPlayer2(Minecraft *mc)
         p2->setEntityTexture(skinP2);
     }
 
-    p2->setLocationAndAngles(
-        mc->thePlayer->posX + 1.0,
-        mc->thePlayer->posY,
-        mc->thePlayer->posZ + 1.0,
-        mc->thePlayer->rotationYaw,
-        mc->thePlayer->rotationPitch
-    );
+    bool loadedSavedData = false;
+    if (mc->theWorld != nullptr && mc->theWorld->getWorldInfo() != nullptr)
+    {
+        NBTTagCompound *p2Tag = mc->theWorld->getWorldInfo()->getPlayer2NBTTagCompound();
+        if (p2Tag != nullptr)
+        {
+            p2->readFromNBT(p2Tag);
+            loadedSavedData = true;
+            if (!skinP2.empty())
+            {
+                p2->skinUrl = "";
+                p2->setEntityTexture(skinP2);
+            }
+        }
+    }
 
-    p2->capabilities = mc->thePlayer->capabilities;
+    if (!loadedSavedData)
+    {
+        p2->setLocationAndAngles(
+            mc->thePlayer->posX + 1.0,
+            mc->thePlayer->posY,
+            mc->thePlayer->posZ + 1.0,
+            mc->thePlayer->rotationYaw,
+            mc->thePlayer->rotationPitch
+        );
+        p2->capabilities = mc->thePlayer->capabilities;
+    }
+    else
+    {
+        double dx = p2->posX - mc->thePlayer->posX;
+        double dz = p2->posZ - mc->thePlayer->posZ;
+        double distSq = dx * dx + dz * dz;
+        if (p2->dimension != mc->thePlayer->dimension || distSq > (SPLITSCREEN_MAX_DIST * SPLITSCREEN_MAX_DIST))
+        {
+            p2->dimension = mc->thePlayer->dimension;
+            p2->setLocationAndAngles(
+                mc->thePlayer->posX + 1.0,
+                mc->thePlayer->posY,
+                mc->thePlayer->posZ + 1.0,
+                mc->thePlayer->rotationYaw,
+                mc->thePlayer->rotationPitch
+            );
+        }
+    }
 
     mc->theWorld->spawnEntityInWorld(p2);
 
     mc->thePlayer2 = p2;
     mc->setSplitScreenActive(true);
+    if (mc->gameSettings != nullptr)
+        mc->gameSettings->thirdPersonView = 0;
 
     if (mc->sndManager != nullptr)
         mc->sndManager->playSoundFX("random.levelup", 1.0f, 1.0f);
@@ -108,8 +148,18 @@ void leavePlayer2(Minecraft *mc)
     if (mc == nullptr)
         return;
 
+    // 1. Close Player 2 screen first while player instance is still valid
+    if (mc->getPlayerScreen(1) != nullptr)
+        mc->closePlayerScreen(1);
+
     if (mc->thePlayer2 != nullptr)
     {
+        if (mc->theWorld != nullptr && mc->theWorld->getWorldInfo() != nullptr)
+        {
+            NBTTagCompound *p2Tag = new NBTTagCompound();
+            mc->thePlayer2->writeToNBT(p2Tag);
+            mc->theWorld->getWorldInfo()->setPlayer2NBTTagCompound(p2Tag);
+        }
         if (mc->theWorld != nullptr)
             mc->theWorld->detachEntityForWorldChange(mc->thePlayer2);
         delete mc->thePlayer2;
@@ -155,6 +205,9 @@ void tick(Minecraft *mc)
     // Auto-respawn if Player 2 is dead
     if (p2->isDead || p2->getHealth() <= 0)
     {
+        if (mc->isPlayerScreenActive(1))
+            mc->closePlayerScreen(1);
+
         p2->isDead = false;
         p2->deathTime = 0;
         p2->setHealth(20);
@@ -183,6 +236,17 @@ void tick(Minecraft *mc)
         return;
     }
 
+    // Personal screen closing for Player 2
+    if (mc->isPlayerScreenActive(1))
+    {
+        if (tickPressed & (PS2_PAD_CIRCLE | PS2_PAD_START))
+        {
+            mc->closePlayerScreen(1);
+            return;
+        }
+        return;
+    }
+
     // START button (Pause menu)
     if ((tickPressed & PS2_PAD_START) && mc->currentScreen == nullptr)
     {
@@ -193,43 +257,32 @@ void tick(Minecraft *mc)
         return;
     }
 
-    // Hotbar selection
-    if (p2->inventory != nullptr)
+    // Square button: Open P2 Inventory independently
+    if (tickPressed & PS2_PAD_SQUARE)
+    {
+        if (mc->currentScreen == nullptr && !mc->isPlayerScreenActive(1))
+        {
+            if (mc->playerController != nullptr && mc->playerController->isInCreativeMode())
+                mc->displayPlayerScreen(1, new GuiContainerCreative(p2));
+            else
+                mc->displayPlayerScreen(1, new GuiInventory(p2));
+            return;
+        }
+    }
+
+    // Hotbar selection and item dropping (only when no menu is open for Player 2)
+    if (p2->inventory != nullptr && mc->currentScreen == nullptr && !mc->isPlayerScreenActive(1))
     {
         if (tickPressed & PS2_PAD_R1)
             p2->inventory->currentItem = (p2->inventory->currentItem + 1) % 9;
         if (tickPressed & PS2_PAD_L1)
             p2->inventory->currentItem = (p2->inventory->currentItem + 8) % 9;
-        if (mc->currentScreen == nullptr && (tickPressed & PS2_PAD_TRIANGLE))
+        if (tickPressed & PS2_PAD_TRIANGLE)
             p2->dropOneItem();
     }
 
-    // Square button: Open P2 Inventory
-    if (tickPressed & PS2_PAD_SQUARE)
-    {
-        if (mc->currentScreen == nullptr)
-        {
-            mc->setScreenOwnedByPlayer2(true);
-            mc->thePlayer = p2;
-            ps2SetMenuPad(1);
-            ps2SetMenuOwnerPad(1);
-            mc->displayGuiScreen(new GuiInventory(p2));
-            return;
-        }
-        else if (!mc->isScreenOwnedByPlayer2())
-        {
-            if (mc->ingameGUI != nullptr)
-            {
-                if (isSpanishLanguage())
-                    mc->ingameGUI->addChatMessage("\xc2\xa7" "c[P2] Turno ocupado por Jugador 1");
-                else
-                    mc->ingameGUI->addChatMessage("\xc2\xa7" "c[P2] Menu in use by Player 1");
-            }
-        }
-    }
-
     // Skip world interaction while a menu is open
-    if (mc->currentScreen != nullptr)
+    if (mc->currentScreen != nullptr || mc->isPlayerScreenActive(1))
         return;
 
     // Build / Attack / Use actions for Player 2

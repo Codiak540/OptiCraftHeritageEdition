@@ -186,6 +186,7 @@ jstring getKeyName(int_t key);
 
 // Event handling
 bool next();
+void clearEvents();
 void enableRepeatEvents(bool repeat);
 bool areRepeatEventsEnabled();
 

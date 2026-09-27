@@ -144,6 +144,7 @@ void GameSettings::setDefaults()
     controllerDeadzone = 0.20f;
     wiiDeflicker = true;
     widescreen = ConsoleAspectRatio::getDefaultWidescreen();
+    splitscreenVertical = false;
     field_22275_C = false;
     smoothCamera = false;
     field_22273_E = false;
@@ -551,6 +552,8 @@ void GameSettings::setOptionValue(const EnumOptions *enumoptions, int_t i)
     if (enumoptions == EnumOptions::ASPECT_RATIO)
         widescreen = !widescreen;
 #endif
+    if (enumoptions == EnumOptions::SPLITSCREEN_LAYOUT)
+        splitscreenVertical = !splitscreenVertical;
     if (enumoptions == EnumOptions::FOG_FANCY)
     {
         if (ofFogOff)
@@ -859,7 +862,9 @@ std::string GameSettings::getKeyBinding(const EnumOptions *enumoptions)
 {
     std::string s = enumoptions == EnumOptions::ASPECT_RATIO
         ? uiText("Aspect Ratio") + ": "
-        : uiText(translateKey(enumoptions->getEnumString())) + ": ";
+        : (enumoptions == EnumOptions::SPLITSCREEN_LAYOUT
+            ? uiText("Split Screen") + ": "
+            : uiText(translateKey(enumoptions->getEnumString())) + ": ");
     if (enumoptions->getEnumFloat())
     {
         float f = getOptionFloatValue(enumoptions);
@@ -928,6 +933,8 @@ std::string GameSettings::getKeyBinding(const EnumOptions *enumoptions)
     }
     if (enumoptions == EnumOptions::ASPECT_RATIO)
         return s + (widescreen ? "16:9" : "4:3");
+    if (enumoptions == EnumOptions::SPLITSCREEN_LAYOUT)
+        return s + (splitscreenVertical ? uiText("Vertical") : uiText("Horizontal"));
 
     if (enumoptions == EnumOptions::FOG_FANCY)
         return s + (ofFogOff ? uiText("OFF") : (ofFogFancy ? uiText("Fancy") : uiText("Fast")));

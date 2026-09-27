@@ -1,6 +1,7 @@
 #include "net/minecraft/src/WorldSettings.h"
 #include "net/minecraft/src/WorldType.h"
 #include "net/minecraft/src/WorldInfo.h"
+#include "net/minecraft/src/NBTTagCompound.h"
 #include "client/Minecraft.h"
 #include "platform/Log.h"
 #include "platform/ConsoleAspectRatio.h"
@@ -327,6 +328,16 @@ Minecraft::Minecraft(int_t width, int_t height, bool flag) :
     sndManager     = new SoundManager();
     textureWaterFX = new TextureWaterFX();
     textureLavaFX  = new TextureLavaFX();
+
+    playerScreens[0] = nullptr;
+    playerScreens[1] = nullptr;
+    playerCursorX[0] = 160.0f;
+    playerCursorY[0] = 120.0f;
+    playerCursorInitialized[0] = false;
+    playerCursorX[1] = 160.0f;
+    playerCursorY[1] = 120.0f;
+    playerCursorInitialized[1] = false;
+    ignorePauseMenuTicks = 0;
 
     StatList::initStats();
     PLATFORM_BOOT_LOG(PLATFORM_BOOT_PREFIX " ctor: done\n");
@@ -1334,6 +1345,18 @@ void Minecraft::displayGuiScreen(GuiScreen *guiscreen)
     }
 }
 
+void Minecraft::scheduleGuiScreenDeletion(GuiScreen *screen)
+{
+    if (screen == nullptr)
+        return;
+    for (GuiScreen *s : guiScreensToDelete)
+    {
+        if (s == screen)
+            return;
+    }
+    guiScreensToDelete.push_back(screen);
+}
+
 void Minecraft::purgeOwnedGuiScreens()
 {
     // DEFER the actual delete: this is reached from inside a screen's own input
@@ -1342,11 +1365,132 @@ void Minecraft::purgeOwnedGuiScreens()
     // (use-after-free, e.g. a GuiTextField touched after the screen dies). The
     // scrap list is flushed at the top of runTick where no screen code is running.
     for (GuiScreen *s : ownedGuiScreens)
-        if (s != currentScreen)
-            guiScreensToDelete.push_back(s);
+    {
+        if (s != currentScreen && s != playerScreens[0] && s != playerScreens[1])
+            scheduleGuiScreenDeletion(s);
+    }
     ownedGuiScreens.clear();
     if (currentScreen != nullptr)
         ownedGuiScreens.push_back(currentScreen);
+    if (playerScreens[0] != nullptr)
+        ownedGuiScreens.push_back(playerScreens[0]);
+    if (playerScreens[1] != nullptr)
+        ownedGuiScreens.push_back(playerScreens[1]);
+}
+
+void Minecraft::displayPlayerScreen(int playerIndex, GuiScreen *screen)
+{
+    if (playerIndex < 0 || playerIndex >= 2)
+        return;
+
+    if (!isSplitScreenActive())
+    {
+        if (playerIndex == 0)
+            displayGuiScreen(screen);
+        return;
+    }
+
+    if (playerScreens[playerIndex] != nullptr)
+    {
+        playerScreens[playerIndex]->onGuiClosed();
+        scheduleGuiScreenDeletion(playerScreens[playerIndex]);
+        playerScreens[playerIndex] = nullptr;
+    }
+
+    playerScreens[playerIndex] = screen;
+    if (screen != nullptr)
+    {
+        screen->setOwnerPlayerIndex(playerIndex);
+
+        for (size_t i = 0; i < guiScreensToDelete.size(); i++)
+        {
+            if (guiScreensToDelete[i] == screen)
+            {
+                guiScreensToDelete.erase(guiScreensToDelete.begin() + i);
+                break;
+            }
+        }
+        bool tracked = false;
+        for (GuiScreen *s : ownedGuiScreens)
+        {
+            if (s == screen) { tracked = true; break; }
+        }
+        if (!tracked)
+            ownedGuiScreens.push_back(screen);
+
+        const bool verticalSplit = gameSettings != nullptr && gameSettings->splitscreenVertical;
+        const int viewW = verticalSplit ? (displayWidth / 2) : displayWidth;
+        const int viewH = verticalSplit ? displayHeight : (displayHeight / 2);
+        ScaledResolution scaledresolution(gameSettings, viewW, viewH);
+        int w = scaledresolution.getScaledWidth();
+        int h = scaledresolution.getScaledHeight();
+        screen->setWorldAndResolution(this, w, h);
+        resetPlayerCursor(playerIndex, static_cast<float>(w) * 0.5f, static_cast<float>(h) * 0.5f);
+    }
+    else
+    {
+        purgeOwnedGuiScreens();
+    }
+}
+
+GuiScreen *Minecraft::getPlayerScreen(int playerIndex) const
+{
+    if (playerIndex >= 0 && playerIndex < 2)
+        return playerScreens[playerIndex];
+    return nullptr;
+}
+
+void Minecraft::closePlayerScreen(int playerIndex)
+{
+    displayPlayerScreen(playerIndex, nullptr);
+    if (playerIndex == 0)
+    {
+        ignorePauseMenuTicks = 3;
+#if PLATFORM_PS2 || PLATFORM_WII
+        lwjgl::Keyboard::clearEvents();
+#endif
+    }
+}
+
+bool Minecraft::isPlayerScreenActive(int playerIndex) const
+{
+    if (playerIndex >= 0 && playerIndex < 2)
+        return playerScreens[playerIndex] != nullptr;
+    return false;
+}
+
+float Minecraft::getPlayerCursorX(int playerIndex) const
+{
+    if (playerIndex >= 0 && playerIndex < 2)
+        return playerCursorX[playerIndex];
+    return 0.0f;
+}
+
+float Minecraft::getPlayerCursorY(int playerIndex) const
+{
+    if (playerIndex >= 0 && playerIndex < 2)
+        return playerCursorY[playerIndex];
+    return 0.0f;
+}
+
+void Minecraft::setPlayerCursor(int playerIndex, float x, float y)
+{
+    if (playerIndex >= 0 && playerIndex < 2)
+    {
+        playerCursorX[playerIndex] = x;
+        playerCursorY[playerIndex] = y;
+        playerCursorInitialized[playerIndex] = true;
+    }
+}
+
+void Minecraft::resetPlayerCursor(int playerIndex, float defaultX, float defaultY)
+{
+    if (playerIndex >= 0 && playerIndex < 2)
+    {
+        playerCursorX[playerIndex] = defaultX;
+        playerCursorY[playerIndex] = defaultY;
+        playerCursorInitialized[playerIndex] = true;
+    }
 }
 
 // ─── Mouse click helpers ──────────────────────────────────────────────────────
@@ -1578,17 +1722,20 @@ void Minecraft::runTick()
     if (!guiScreensToDelete.empty())
     {
         validateProcessHeap("before deferred GUI destruction");
-        for (GuiScreen *s : guiScreensToDelete)
+        std::vector<GuiScreen *> toDelete;
+        toDelete.swap(guiScreensToDelete);
+        std::unordered_set<GuiScreen *> seen;
+        for (GuiScreen *s : toDelete)
         {
-            if (s == nullptr)
+            if (s == nullptr || seen.count(s) > 0)
                 continue;
+            seen.insert(s);
             MC_LOG_DEBUG("heap", "Deleting deferred GUI ptr=%p type=%s\n",
                 static_cast<void *>(s), typeid(*s).name());
             delete s;
             if (!validateProcessHeap("after deferred GUI destruction"))
                 break;
         }
-        guiScreensToDelete.clear();
     }
 
     // Safe point to free worlds abandoned by changeWorld(): no World::tick() is on the
@@ -1616,14 +1763,19 @@ void Minecraft::runTick()
                           (unsigned)worldsToDelete.size());
             platformMemoryCheckpoint(tag);
         }
-        for (World *w : worldsToDelete)
+        std::vector<World *> worlds;
+        worlds.swap(worldsToDelete);
+        std::unordered_set<World *> seenWorlds;
+        for (World *w : worlds)
         {
+            if (w == nullptr || seenWorlds.count(w) > 0)
+                continue;
+            seenWorlds.insert(w);
             MC_LOG_DEBUG("heap", "Deleting deferred World ptr=%p\n", static_cast<void *>(w));
             delete w;
             if (!validateProcessHeap("after deferred World destruction"))
                 break;
         }
-        worldsToDelete.clear();
         platformMemoryCheckpoint("world delete post");
 
         // When returning to the main menu there is no active world left, so the
@@ -1699,7 +1851,11 @@ void Minecraft::runTick()
     if (currentScreen == nullptr && thePlayer != nullptr)
     {
         if (thePlayer->health <= 0)
+        {
+            if (isPlayerScreenActive(0))
+                closePlayerScreen(0);
             displayGuiScreen(nullptr);
+        }
         else if (thePlayer->isPlayerSleeping() && theWorld != nullptr && theWorld->multiplayerWorld)
             displayGuiScreen(new GuiSleepMP());
     }
@@ -1710,6 +1866,9 @@ void Minecraft::runTick()
         displayGuiScreen(nullptr);
     }
 
+    if (ignorePauseMenuTicks > 0)
+        --ignorePauseMenuTicks;
+
     if (currentScreen != nullptr)
     {
         leftClickCounter = 10000;
@@ -1718,13 +1877,58 @@ void Minecraft::runTick()
 
     if (currentScreen != nullptr)
     {
+#if PLATFORM_PS2
+        ps2SetMenuPad(isScreenOwnedByPlayer2() ? 1 : 0);
+#endif
+        GuiScreen *screenBefore = currentScreen;
         currentScreen->handleInput();
-        if (currentScreen != nullptr)
+        if (currentScreen != nullptr && currentScreen == screenBefore)
         {
             if (currentScreen->guiParticles != nullptr)
                 currentScreen->guiParticles->updateParticles();
             currentScreen->updateScreen();
         }
+#if PLATFORM_PS2
+        ps2SetMenuPad(0);
+#endif
+    }
+    else
+    {
+#if PLATFORM_PS2
+        const Ps2PadSnapshot &pad0 = ps2PadGetSnapshot(0);
+        static unsigned short s_prevPad0HeldInTick = 0;
+        const unsigned short pad0PressedInTick = static_cast<unsigned short>(pad0.held & ~s_prevPad0HeldInTick);
+        s_prevPad0HeldInTick = pad0.held;
+
+        if (isPlayerScreenActive(0))
+        {
+            if (pad0PressedInTick & (PS2_PAD_CIRCLE | PS2_PAD_START))
+            {
+                closePlayerScreen(0);
+            }
+        }
+#endif
+
+        for (int pIdx = 0; pIdx < 2; ++pIdx)
+        {
+            if (playerScreens[pIdx] != nullptr)
+            {
+#if PLATFORM_PS2
+                ps2SetMenuPad(pIdx);
+#endif
+                GuiScreen *screenBefore = playerScreens[pIdx];
+                playerScreens[pIdx]->handleInput();
+                if (playerScreens[pIdx] != nullptr && playerScreens[pIdx] == screenBefore)
+                {
+                    if (playerScreens[pIdx]->guiParticles != nullptr)
+                        playerScreens[pIdx]->guiParticles->updateParticles();
+                    playerScreens[pIdx]->updateScreen();
+                }
+            }
+        }
+#if PLATFORM_PS2
+        ps2SetMenuPad(0);
+#endif
     }
 
     if (currentScreen == nullptr || currentScreen->field_948_f)
@@ -1732,6 +1936,9 @@ void Minecraft::runTick()
         clientPhaseStartNs = System::nanoTime();
         while (lwjgl::Mouse::next())
         {
+            if (isPlayerScreenActive(0))
+                continue;
+
             const int_t eventButton = lwjgl::Mouse::getEventButton();
             const bool eventState = lwjgl::Mouse::getEventButtonState();
             if (eventButton >= 0)
@@ -1795,7 +2002,11 @@ void Minecraft::runTick()
             }
 
             if (eventKey == lwjgl::Keyboard::KEY_ESCAPE)
+            {
+                if (ignorePauseMenuTicks > 0)
+                    continue;
                 displayInGameMenu();
+            }
             if (eventKey == lwjgl::Keyboard::KEY_S && lwjgl::Keyboard::isKeyDown(lwjgl::Keyboard::KEY_F3))
                 forceReload();
             if (eventKey == lwjgl::Keyboard::KEY_A && lwjgl::Keyboard::isKeyDown(lwjgl::Keyboard::KEY_F3))
@@ -1819,9 +2030,12 @@ void Minecraft::runTick()
             }
             if (eventKey == lwjgl::Keyboard::KEY_F5)
             {
-                ++gameSettings->thirdPersonView;
-                if (gameSettings->thirdPersonView > 2)
-                    gameSettings->thirdPersonView = 0;
+                if (!isSplitScreenActive())
+                {
+                    ++gameSettings->thirdPersonView;
+                    if (gameSettings->thirdPersonView > 2)
+                        gameSettings->thirdPersonView = 0;
+                }
             }
             if (eventKey == lwjgl::Keyboard::KEY_F8)
                 gameSettings->smoothCamera = !gameSettings->smoothCamera;
@@ -1845,16 +2059,16 @@ void Minecraft::runTick()
 
         while (gameSettings->keyBindInventory->isPressed())
         {
-            if (currentScreen != nullptr && screenOwnedByPlayer2)
+            if (isSplitScreenActive())
             {
-                if (ingameGUI != nullptr)
+                if (isPlayerScreenActive(0))
+                    closePlayerScreen(0);
+                else
                 {
-                    StringTranslate *tr = StringTranslate::getInstance();
-                    const bool isEs = (tr != nullptr && tr->getCurrentLanguage().rfind("es_", 0) == 0);
-                    if (isEs)
-                        ingameGUI->addChatMessage("\xc2\xa7" "c[P1] Turno ocupado por Jugador 2");
+                    if (playerController->isInCreativeMode())
+                        displayPlayerScreen(0, new GuiContainerCreative(thePlayer));
                     else
-                        ingameGUI->addChatMessage("\xc2\xa7" "c[P1] Menu in use by Player 2");
+                        displayPlayerScreen(0, new GuiInventory(thePlayer));
                 }
                 continue;
             }
@@ -1865,7 +2079,10 @@ void Minecraft::runTick()
         }
 
         while (gameSettings->keyBindDrop->isPressed())
-            thePlayer->dropCurrentItem();
+        {
+            if (!isPlayerScreenActive(0))
+                thePlayer->dropCurrentItem();
+        }
 
         while (isMultiplayerWorld() && gameSettings->keyBindChat->isPressed())
             displayGuiScreen(new GuiChat());
@@ -1889,17 +2106,26 @@ void Minecraft::runTick()
         else
         {
             while (gameSettings->keyBindAttack->isPressed())
-                clickMouse(0);
+            {
+                if (!isPlayerScreenActive(0))
+                    clickMouse(0);
+            }
             while (gameSettings->keyBindUseItem->isPressed())
-                clickMouse(1);
+            {
+                if (!isPlayerScreenActive(0))
+                    clickMouse(1);
+            }
             while (gameSettings->keyBindPickBlock->isPressed())
-                clickMiddleMouseButton();
+            {
+                if (!isPlayerScreenActive(0))
+                    clickMiddleMouseButton();
+            }
         }
 
-        if (gameSettings->keyBindUseItem->pressed && rightClickDelayTimer == 0 && !thePlayer->isUsingItem())
+        if (gameSettings->keyBindUseItem->pressed && rightClickDelayTimer == 0 && !thePlayer->isUsingItem() && !isPlayerScreenActive(0))
             clickMouse(1);
 
-        clickMouse(0, currentScreen == nullptr && gameSettings->keyBindAttack->pressed && inGameHasFocus);
+        clickMouse(0, currentScreen == nullptr && !isPlayerScreenActive(0) && gameSettings->keyBindAttack->pressed && inGameHasFocus);
         ClientProfiler::tickPhase("input", System::nanoTime() - clientPhaseStartNs);
     }
 
@@ -2175,6 +2401,25 @@ void Minecraft::usePortal(int_t targetDimension)
     }
 
 #if PLATFORM_RELEASE_OLD_WORLD_BEFORE_PORTAL
+    for (int pIdx = 0; pIdx < 2; ++pIdx)
+    {
+        if (playerScreens[pIdx] != nullptr)
+        {
+            playerScreens[pIdx]->onGuiClosed();
+            scheduleGuiScreenDeletion(playerScreens[pIdx]);
+            playerScreens[pIdx] = nullptr;
+        }
+    }
+    if (thePlayer2 != nullptr)
+    {
+        if (oldWorld != nullptr && oldWorld->getWorldInfo() != nullptr)
+        {
+            NBTTagCompound *p2Tag = new NBTTagCompound();
+            thePlayer2->writeToNBT(p2Tag);
+            oldWorld->getWorldInfo()->setPlayer2NBTTagCompound(p2Tag);
+        }
+        oldWorld->detachEntityForWorldChange(thePlayer2);
+    }
     oldWorld->detachEntityForWorldChange(thePlayer);
     oldWorld->saveWorldIndirectly(loadingScreen);
     renderViewEntity = nullptr;
@@ -2216,10 +2461,35 @@ void Minecraft::changeWorld(World *world, const std::string &s, EntityPlayerSP *
     EntityPlayerSP *transferredPlayer = entityplayer;
     if (transferredPlayer == nullptr && world != nullptr && world->multiplayerWorld)
         transferredPlayer = thePlayer;
+
+    for (int pIdx = 0; pIdx < 2; ++pIdx)
+    {
+        if (playerScreens[pIdx] != nullptr)
+        {
+            playerScreens[pIdx]->onGuiClosed();
+            scheduleGuiScreenDeletion(playerScreens[pIdx]);
+            playerScreens[pIdx] = nullptr;
+        }
+    }
+
+    if (screenOwnedByPlayer2)
+        screenOwnedByPlayer2 = false;
+
+    if (thePlayerOne != nullptr)
+        thePlayer = thePlayerOne;
+
+    if (oldWorld != nullptr && thePlayer2 != nullptr)
+    {
+        if (oldWorld->getWorldInfo() != nullptr)
+        {
+            NBTTagCompound *p2Tag = new NBTTagCompound();
+            thePlayer2->writeToNBT(p2Tag);
+            oldWorld->getWorldInfo()->setPlayer2NBTTagCompound(p2Tag);
+        }
+        oldWorld->detachEntityForWorldChange(thePlayer2);
+    }
     if (oldWorld != nullptr && transferredPlayer != nullptr)
         oldWorld->detachEntityForWorldChange(transferredPlayer);
-    if (oldWorld != nullptr && thePlayer2 != nullptr)
-        oldWorld->detachEntityForWorldChange(thePlayer2);
 
     statFileWriter->prepareStatsForSync();
     statFileWriter->syncStats();
@@ -2311,8 +2581,6 @@ void Minecraft::changeWorld(World *world, const std::string &s, EntityPlayerSP *
         thePlayerOne = thePlayer;
         if (thePlayer2 != nullptr)
         {
-            if (oldWorld != nullptr)
-                oldWorld->detachEntityForWorldChange(thePlayer2);
             delete thePlayer2;
             thePlayer2 = nullptr;
         }
@@ -2331,8 +2599,6 @@ void Minecraft::changeWorld(World *world, const std::string &s, EntityPlayerSP *
         thePlayerOne = nullptr;
         if (thePlayer2 != nullptr)
         {
-            if (oldWorld != nullptr)
-                oldWorld->detachEntityForWorldChange(thePlayer2);
             delete thePlayer2;
             thePlayer2 = nullptr;
         }
@@ -2428,7 +2694,10 @@ void Minecraft::changeWorld(World *world, const std::string &s, EntityPlayerSP *
     // tick() sigue en la pila -> use-after-free al volver (this->pendingBlockChanges, etc.).
     // Mismo patron que guiScreensToDelete.
     if (oldWorld != nullptr && oldWorld != world)
-        worldsToDelete.push_back(oldWorld);
+    {
+        if (std::find(worldsToDelete.begin(), worldsToDelete.end(), oldWorld) == worldsToDelete.end())
+            worldsToDelete.push_back(oldWorld);
+    }
     if (world == nullptr)
     {
         AxisAlignedBB::clearBoundingBoxPool();
@@ -2519,6 +2788,8 @@ void Minecraft::respawn(bool flag, int_t i, bool copyPlayerState)
     thePlayer->handleItemUseFinish();
     playerController->initializePlayer(thePlayer);
     thePlayerOne = thePlayer;
+    if (isPlayerScreenActive(0))
+        closePlayerScreen(0);
     preloadWorld("Respawning");
 
     if (dynamic_cast<GuiGameOver *>(currentScreen) != nullptr)
