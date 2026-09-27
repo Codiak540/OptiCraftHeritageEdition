@@ -273,8 +273,21 @@ bool GuiTextField::textboxKeyTyped(char_t c, int_t key)
 void GuiTextField::mouseClicked(int_t x, int_t y, int_t button)
 {
     bool inside = x >= xPos && x < xPos + width && y >= yPos && y < yPos + height;
+#if defined(CTR_PLATFORM)
+    // The console keyboard leaves the field unfocused when it closes (that is
+    // what lets a confirm press submit chat afterwards), so tapping the field
+    // has to be able to focus it again -- even for a "cannot lose focus" field
+    // like chat's, which is exactly the one that ends up unfocused the most.
+    // An outside tap still honours canLoseFocus, so a chat field keeps its
+    // focus on a stray tap exactly as it does on PC.
+    if (inside)
+        setFocused(isEnabled);
+    else if (canLoseFocus)
+        setFocused(false);
+#else
     if (canLoseFocus)
         setFocused(isEnabled && inside);
+#endif
 
     if (isFocused && button == 0)
     {

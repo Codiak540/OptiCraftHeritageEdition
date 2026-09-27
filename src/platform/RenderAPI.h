@@ -366,6 +366,16 @@ bool renderOcclusionQueryResultAvailable(int query);
 unsigned int renderOcclusionQueryResult(int query);
 #endif
 
+#if PLATFORM_3DS
+// The on-screen keyboard fallback's own pass over the bottom LCD: Begin binds
+// and clears the bottom target (src/3ds/render/DsRender.cpp) and installs a
+// 320x240 GUI projection over the caller's matrices, End pops them and binds
+// the top screen back. Returns false when the panel cannot be allocated, and
+// then the caller draws on the top screen as usual.
+bool renderKeyboardBottomBegin();
+void renderKeyboardBottomEnd();
+#endif
+
 #if PLATFORM_FRAMEBUFFER_READBACK
 // Framebuffer readback used by screenshot backends.
 bool renderReadPixelsRgb(int x, int y, int width, int height, void* pixels);

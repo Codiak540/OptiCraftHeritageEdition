@@ -596,6 +596,50 @@ void renderGetViewport(int* values)
 	ds::getViewport(values);
 }
 
+// ---------------------------------------------------------------------------
+// Bottom-screen keyboard pass (see the bottom-panel section of DsRender.cpp)
+// ---------------------------------------------------------------------------
+
+namespace
+{
+// Pairs renderKeyboardBottomBegin()'s matrix push with End's pop, so End is a
+// no-op when Begin refused -- a caller may only run the two as a pair, but
+// there is nothing to unwind when nothing was pushed.
+bool s_bottomPass = false;
+}
+
+bool renderKeyboardBottomBegin()
+{
+	if (!ds::keyboardBottomBegin())
+		return false;
+	s_bottomPass = true;
+	// The same projection pair Minecraft.cpp lays down for the top screen's
+	// GUI, sized for this panel's own 320x240 canvas -- pushed rather than
+	// overwritten so the caller's matrices survive the pass untouched.
+	ds::matrix::setMode(RenderMatrixMode::Projection);
+	ds::matrix::push();
+	ds::matrix::loadIdentity();
+	ds::matrix::ortho(0.0, 320.0, 240.0, 0.0, 1000.0, 3000.0);
+	ds::matrix::setMode(RenderMatrixMode::ModelView);
+	ds::matrix::push();
+	ds::matrix::loadIdentity();
+	ds::matrix::translate(0.0f, 0.0f, -2000.0f);
+	return true;
+}
+
+void renderKeyboardBottomEnd()
+{
+	if (!s_bottomPass)
+		return;
+	s_bottomPass = false;
+	ds::matrix::setMode(RenderMatrixMode::ModelView);
+	ds::matrix::pop();
+	ds::matrix::setMode(RenderMatrixMode::Projection);
+	ds::matrix::pop();
+	ds::matrix::setMode(RenderMatrixMode::ModelView);
+	ds::keyboardBottomEnd();
+}
+
 void renderGetMatrix(RenderMatrixQuery query, float* values)
 {
 	// The stacks stay GL-native on purpose: ActiveRenderInfo un-projects

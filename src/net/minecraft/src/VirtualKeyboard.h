@@ -8,11 +8,18 @@
 class GuiTextField;
 class FontRenderer;
 
-// On-screen keyboard for PS2 and Wii. It behaves like SDL2 text input: it pops up while a
+// On-screen keyboard for PS2, Wii and 3DS. It behaves like SDL2 text input: it pops up while a
 // GuiTextField is focused (chat, world name/seed, rename, sign...), is navigated
 // with the D-pad and typed with Cross. Characters are injected into the
 // lwjgl::Keyboard event queue, so the focused field receives them through the
 // normal keyTyped() path -- no per-screen wiring needed.
+//
+// The 3DS prefers the SYSTEM keyboard (swkbd, src/3ds/DsSwkbd.h): it opens on
+// the tick after focus arrives, and on OK it fills the field and leaves it
+// unfocused, so a confirm press can then submit it (chat sends on KEY_RETURN,
+// which the menu channel pushes for A). When the applet cannot be used, the
+// panel below draws on the bottom LCD instead of over the top screen and the
+// pad plus touch type as on the other consoles.
 class VirtualKeyboard : public Gui
 {
 public:
@@ -31,6 +38,12 @@ public:
 private:
 	VirtualKeyboard() = default;
 	void resetSelection();
+	// Inject the character under the selection as a typed event.
+	void typeSelectedKey();
+#if defined(CTR_PLATFORM)
+	// Launch the system keyboard for the focused field (see tick()).
+	void openNativeKeyboard();
+#endif
 
 	GuiTextField*  focusedField = nullptr;
 	int_t          selX = 0;
@@ -44,6 +57,18 @@ private:
 	float_t        panelY = 0.0f;
 	int            lastMoveMs = 0;
 	bool           panelPositionInitialized = false;
+#if defined(CTR_PLATFORM)
+	// A focus event launched the system keyboard on the next tick (deferred
+	// so the screen finishes wiring the field first).
+	bool           pendingNativeOpen = false;
+	// swkbd failed once this session: keep the bottom-screen panel for every
+	// field instead of retrying the launch (see openNativeKeyboard).
+	bool           nativeKeyboardFailed = false;
+	// Draw on the bottom LCD rather than over the top screen.
+	bool           bottomMode = false;
+	// Previous tick's touch state, for the panel's tap-to-type edge.
+	bool           lastPointerValid = false;
+#endif
 };
 
-#endif // PS2_PLATFORM || WII_PLATFORM
+#endif // PS2_PLATFORM || WII_PLATFORM || CTR_PLATFORM

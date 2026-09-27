@@ -371,7 +371,7 @@ bool GuiScreen::isJavaUiKeyboardNavigationEnabled() const
 		return false;
 	if (platformPadRebindExclusive() || platformContainerNavigationActive())
 		return false;
-#if PLATFORM_PS2 || PLATFORM_WII
+#if PLATFORM_PS2 || PLATFORM_WII || PLATFORM_3DS
 	if (platformTextInputExclusive())
 		return false;
 #endif

@@ -13,23 +13,28 @@
 //   B       BACK      cancel                 use       -> mouse button 1
 //   X       SPACE     GUI/virtual-kbd space  attack    -> mouse button 0
 //   Y       CLOSE     exit/back-out          inventory -> DS_KEY_Y
-//   L       SPACE     left shoulder          hotbar    -> wheel +1 (left)
-//   R       SHIFT     right shoulder         hotbar    -> wheel -1 (right)
+//   L       SPACE     left shoulder          attack    -> mouse button 0
+//   R       SHIFT     right shoulder         use       -> mouse button 1
 //   SELECT  SPACE     (PS2 SELECT/Wii MINUS) sneak     -> DS_KEY_SELECT
-//   D-pad   UP/DOWN/LEFT/RIGHT               movement  -> DS_KEY_DPAD_*
-//   START   --                               pause     -> KEY_ESCAPE
+//   D-pad   UP/DOWN/LEFT/RIGHT               hotbar    -> wheel +1 (LEFT) / -1 (RIGHT),
+//                                                         UP/DOWN unmapped in-game
+//   START   ENTER     only while typing      pause     -> KEY_ESCAPE
 //   ZL/ZR   --                               unmapped (New-3DS only; phase 2)
 //
 //   circle pad -> stick axes (analog movement, PLATFORM_DIRECT_ANALOG_MOVEMENT)
 //   touch      -> absolute pointer + button 0, in BOTH contexts: the finger
-//                 is the pointer, so it keeps clicking screens (see below)
+//                 is the pointer, so it keeps clicking screens (see below) --
+//                 except while a text field has focus, where the on-screen
+//                 keyboard owns the panel and reads RAW 320x240 coordinates
 //
 // Attack and Use are mouse buttons rather than keys because that is what
-// GameSettings binds them to (-100 / -99) and what clickMouse() reads. That
-// is also why X is menu-suppressed: button 0 pushed while a screen is open
-// becomes a click under the cursor (GuiScreen::handleInput() drains the queue
-// unconditionally), whereas the touch tap must keep working there. The two
-// sources are ORed together in updateGameplay().
+// GameSettings binds them to (-100 / -99) and what clickMouse() reads -- and
+// L and R are the shoulders as left/right click: they funnel into the same
+// button 0 / button 1 X and B already own (updateGameplay ORs the sources, so
+// any hold order works), which is what the player asked for. That is also why
+// they are menu-suppressed: buttons pushed while a screen is open become a
+// click under the cursor (GuiScreen::handleInput() drains the queue
+// unconditionally), whereas the touch tap must keep working there.
 //
 // The gameplay channel is dropped while a screen is open, and a button still
 // physically held across the menu/gameplay boundary stays dropped until it is
@@ -41,7 +46,10 @@
 // Coordinates: the top screen (400x240) is the game surface, the bottom
 // panel (320x240) is touch. Touch X is scaled into top-screen pixels
 // (x * screenW / 320); Y is copied as-is because both screens are 240 tall,
-// so the GUI can compare pointer coordinates against 400x240 directly.
+// so the GUI can compare pointer coordinates against 400x240 directly. The
+// exception is text entry: while a field has focus the coordinates stay in
+// the panel's own 320x240 space (no scaling, no mouse-queue forwarding),
+// because the fallback keyboard lays itself out there -- see dsInputPoll().
 #ifdef CTR_PLATFORM
 
 #include "3ds/input/DsInput.h"
@@ -85,6 +93,10 @@ bool g_prevTouchDown = false;
 int g_prevTouchX = 0;
 int g_prevTouchY = 0;
 
+// Last poll's text-exclusive state (a field focused). dsInputPoll compares
+// against it to spot the transitions that change what touch and START mean.
+bool g_prevTextExclusive = false;
+
 // Gameplay channel state. Separate from PLATFORM_TEXT_*, which is the menu
 // channel and keeps working with a screen open.
 //
@@ -94,14 +106,12 @@ int g_prevTouchY = 0;
 constexpr std::uint32_t GP_JUMP        = 1u << 0;
 constexpr std::uint32_t GP_INVENTORY   = 1u << 1;
 constexpr std::uint32_t GP_SNEAK       = 1u << 2;
-constexpr std::uint32_t GP_USE         = 1u << 3; // mouse button 1
-constexpr std::uint32_t GP_ATTACK      = 1u << 4; // mouse button 0, from X only
-constexpr std::uint32_t GP_HOTBAR_PREV = 1u << 5; // L -> wheel +1
-constexpr std::uint32_t GP_HOTBAR_NEXT = 1u << 6; // R -> wheel -1
-constexpr std::uint32_t GP_DPAD_UP     = 1u << 7;
-constexpr std::uint32_t GP_DPAD_DOWN   = 1u << 8;
-constexpr std::uint32_t GP_DPAD_LEFT   = 1u << 9;
-constexpr std::uint32_t GP_DPAD_RIGHT  = 1u << 10;
+constexpr std::uint32_t GP_USE         = 1u << 3; // mouse button 1 (B or R)
+constexpr std::uint32_t GP_ATTACK      = 1u << 4; // mouse button 0 (X or L)
+constexpr std::uint32_t GP_DPAD_UP     = 1u << 5;
+constexpr std::uint32_t GP_DPAD_DOWN   = 1u << 6;
+constexpr std::uint32_t GP_DPAD_LEFT   = 1u << 7; // wheel +1 (previous slot)
+constexpr std::uint32_t GP_DPAD_RIGHT  = 1u << 8; // wheel -1 (next slot)
 
 // Latched by dsInputPoll() from the screen-open state Display hands it; the
 // input layer cannot discover that for itself (see DsInput.h).
@@ -149,12 +159,16 @@ std::uint32_t mapTextButtons(u32 keys)
 	if (keys & KEY_L)      value |= PLATFORM_TEXT_SPACE;
 	if (keys & KEY_R)      value |= PLATFORM_TEXT_SHIFT;
 	if (keys & KEY_SELECT) value |= PLATFORM_TEXT_SPACE;
-	// Deliberately absent: START, which becomes KEY_ESCAPE instead (a fixed
-	// system role, both in and out of menus), and ZL/ZR, which wait for
-	// phase 2. Pure D-pad bits only -- the circle pad is analog movement and
-	// reaches the game through the stick axes, not through this mask; the
-	// D-pad's *movement* role is a separate gameplay channel, see
-	// updateGameplay().
+	// START is context-split rather than absent: while a field has focus it
+	// is ENTER -- the submit key VirtualKeyboard::tick pushes as KEY_RETURN
+	// (so A can send chat after the system keyboard filled the field) --
+	// and otherwise forwardStartToEscape() keeps its fixed KEY_ESCAPE role.
+	if ((keys & KEY_START) && platformTextInputExclusive())
+		value |= PLATFORM_TEXT_ENTER;
+	// ZL/ZR wait for phase 2. Pure D-pad bits otherwise: the circle pad is
+	// analog movement and reaches the game through the stick axes, not
+	// through this mask; the D-pad's gameplay role is the hotbar wheel (see
+	// updateGameplay()), and UP/DOWN have no gameplay action at all.
 	return value;
 }
 
@@ -167,8 +181,10 @@ std::uint32_t readGameplayButtons(u32 keys)
 	if (keys & KEY_B)      value |= GP_USE;
 	if (keys & KEY_X)      value |= GP_ATTACK;
 	if (keys & KEY_Y)      value |= GP_INVENTORY;
-	if (keys & KEY_L)      value |= GP_HOTBAR_PREV;
-	if (keys & KEY_R)      value |= GP_HOTBAR_NEXT;
+	// The shoulders are the left/right click the player asked for: L joins X
+	// on button 0, R joins B on button 1 (see the header table).
+	if (keys & KEY_L)      value |= GP_ATTACK;
+	if (keys & KEY_R)      value |= GP_USE;
 	if (keys & KEY_SELECT) value |= GP_SNEAK;
 	if (keys & KEY_DUP)    value |= GP_DPAD_UP;
 	if (keys & KEY_DDOWN)  value |= GP_DPAD_DOWN;
@@ -215,14 +231,13 @@ void updateGameplay(u32 keys, bool touchDown)
 	const std::uint32_t pressed = active & ~g_prevGameplay;
 
 	// Keys are pushed on every edge, both down and up, so isKeyDown() and
-	// KeyBinding::pressed stay truthful and nothing is left stuck down.
+	// KeyBinding::pressed stay truthful and nothing is left stuck down. The
+	// D-pad is deliberately absent: it stopped carrying movement (the circle
+	// pad owns that) and now feeds the hotbar wheel below in gameplay and
+	// menu navigation when a screen is up.
 	if (changed & GP_JUMP)      lwjgl::Keyboard::detail::pushKey(DS_KEY_A, (active & GP_JUMP) != 0);
 	if (changed & GP_INVENTORY) lwjgl::Keyboard::detail::pushKey(DS_KEY_Y, (active & GP_INVENTORY) != 0);
 	if (changed & GP_SNEAK)     lwjgl::Keyboard::detail::pushKey(DS_KEY_SELECT, (active & GP_SNEAK) != 0);
-	if (changed & GP_DPAD_UP)    lwjgl::Keyboard::detail::pushKey(DS_KEY_DPAD_UP, (active & GP_DPAD_UP) != 0);
-	if (changed & GP_DPAD_DOWN)  lwjgl::Keyboard::detail::pushKey(DS_KEY_DPAD_DOWN, (active & GP_DPAD_DOWN) != 0);
-	if (changed & GP_DPAD_LEFT)  lwjgl::Keyboard::detail::pushKey(DS_KEY_DPAD_LEFT, (active & GP_DPAD_LEFT) != 0);
-	if (changed & GP_DPAD_RIGHT) lwjgl::Keyboard::detail::pushKey(DS_KEY_DPAD_RIGHT, (active & GP_DPAD_RIGHT) != 0);
 
 	// Menu navigation (the console's menu schema). The legacy screens'
 	// keyTyped handlers listen for the keyboard arrow/return/escape codes,
@@ -231,20 +246,32 @@ void updateGameplay(u32 keys, bool touchDown)
 	// and the menu sat there deaf to the D-pad. In menu context those buttons
 	// deliver the navigation codes directly, both edges like every push
 	// above; in gameplay the same buttons keep their action meanings through
-	// the key bindings and these codes are not pushed at all. START's
-	// KEY_ESCAPE (forwardStartToEscape) already covers back/exit as a fixed
-	// system role; B here is the screens' own back button.
+	// the key bindings and these codes are not pushed at all.
+	//
+	// Nothing goes out while a field has focus: the text channel
+	// (VirtualKeyboard::tick) is the only reader meant to act on those
+	// buttons, and the screen underneath would otherwise act too -- chat
+	// submitted on the very first A press that way. g_prevMenuNav keeps
+	// tracking the buttons anyway, so one held across focus arriving does
+	// not fire a stale step when focus goes away; it navigates on its next
+	// fresh press instead (same rule as g_suppressed at the menu boundary).
+	// START's KEY_ESCAPE is decided in dsInputPoll(), and B here is the
+	// screens' own back button.
+	const bool typing = platformTextInputExclusive();
 	const std::uint32_t navActive = g_inMenu
 	    ? (held & (GP_DPAD_UP | GP_DPAD_DOWN | GP_DPAD_LEFT | GP_DPAD_RIGHT |
 	               GP_JUMP | GP_USE))
 	    : 0u;
 	const std::uint32_t navChanged = navActive ^ g_prevMenuNav;
-	if (navChanged & GP_DPAD_UP)    lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_UP, (navActive & GP_DPAD_UP) != 0);
-	if (navChanged & GP_DPAD_DOWN)  lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_DOWN, (navActive & GP_DPAD_DOWN) != 0);
-	if (navChanged & GP_DPAD_LEFT)  lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_LEFT, (navActive & GP_DPAD_LEFT) != 0);
-	if (navChanged & GP_DPAD_RIGHT) lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_RIGHT, (navActive & GP_DPAD_RIGHT) != 0);
-	if (navChanged & GP_JUMP)       lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_RETURN, (navActive & GP_JUMP) != 0);
-	if (navChanged & GP_USE)        lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_ESCAPE, (navActive & GP_USE) != 0);
+	if (!typing)
+	{
+		if (navChanged & GP_DPAD_UP)    lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_UP, (navActive & GP_DPAD_UP) != 0);
+		if (navChanged & GP_DPAD_DOWN)  lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_DOWN, (navActive & GP_DPAD_DOWN) != 0);
+		if (navChanged & GP_DPAD_LEFT)  lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_LEFT, (navActive & GP_DPAD_LEFT) != 0);
+		if (navChanged & GP_DPAD_RIGHT) lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_RIGHT, (navActive & GP_DPAD_RIGHT) != 0);
+		if (navChanged & GP_JUMP)       lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_RETURN, (navActive & GP_JUMP) != 0);
+		if (navChanged & GP_USE)        lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_ESCAPE, (navActive & GP_USE) != 0);
+	}
 	g_prevMenuNav = navActive;
 
 	const int x = g_state.pointerX;
@@ -252,10 +279,12 @@ void updateGameplay(u32 keys, bool touchDown)
 
 	// The wheel is an impulse rather than a state, so it fires on the press
 	// only. Signs match Ps2InputMapper (R1 -> -1, L1 -> +1) and
-	// InventoryPlayer::changeCurrentItem() subtracts its argument, so L steps
-	// the hotbar left and R steps it right.
-	if (pressed & GP_HOTBAR_PREV) lwjgl::Mouse::detail::pushWheel(1, x, y);
-	if (pressed & GP_HOTBAR_NEXT) lwjgl::Mouse::detail::pushWheel(-1, x, y);
+	// InventoryPlayer::changeCurrentItem() subtracts its argument, so LEFT
+	// steps the hotbar back and RIGHT steps it forward. The D-pad owns the
+	// wheel in gameplay precisely because L/R clicked away to mouse buttons
+	// (header table).
+	if (pressed & GP_DPAD_LEFT)  lwjgl::Mouse::detail::pushWheel(1, x, y);
+	if (pressed & GP_DPAD_RIGHT) lwjgl::Mouse::detail::pushWheel(-1, x, y);
 
 	// Mouse buttons are a level. The touch tap ORs into button 0 so a finger
 	// and X can be held in any order without one releasing the other.
@@ -278,7 +307,9 @@ void updateGameplay(u32 keys, bool touchDown)
 // START edges -> KEY_ESCAPE on the keyboard queue, both down and up so
 // isKeyDown(KEY_ESCAPE) stays truthful. This split (escape on the key queue,
 // nothing in the held mask) is the fixed pause/back role: the PS2's START
-// carries ENTER as well, but that is part of its fuller mapping.
+// carries ENTER as well as part of its fuller mapping, and this console's
+// gains ENTER only while a field has focus (mapTextButtons), so the escape
+// forwarding below never runs at the same time as the enter bit.
 //
 // The parameters are NOT called keysDown/keysUp: libctru's hid.h defines
 // those as compatibility macros expanding to hidKeysDown/hidKeysUp, which
@@ -308,6 +339,7 @@ void dsInputInit(int screenW, int screenH)
 	g_prevTouchDown = false;
 	g_prevTouchX = 0;
 	g_prevTouchY = 0;
+	g_prevTextExclusive = false;
 	g_inMenu = false;
 	g_prevInMenu = false;
 	g_suppressed = 0;
@@ -333,6 +365,11 @@ void dsInputPoll(bool inMenu)
 	// updateGameplay() below rather than threaded through every helper.
 	g_inMenu = inMenu;
 
+	// A text field owns the session's input while it has focus (set by
+	// VirtualKeyboard::notifyFocus): it decides what the touch panel and
+	// START mean this frame.
+	const bool typing = platformTextInputExclusive();
+
 	// Buttons -> PLATFORM_TEXT_* mask; rising edges accumulate until
 	// dsInputConsumePressed() takes them.
 	const std::uint32_t held = mapTextButtons(keys);
@@ -345,6 +382,12 @@ void dsInputPoll(bool inMenu)
 	// MOTION lives here: the button 0 edge it implies is emitted by
 	// updateGameplay(), which knows whether X is allowed to add a second
 	// source to it.
+	//
+	// While typing none of that happens: the coordinates stay in the panel's
+	// own 320x240 space for the on-screen keyboard's hit-testing (which
+	// converts them against InputBackend_3DS's pointerWidth), and nothing
+	// enters the mouse queue -- a click at panel coordinates would land
+	// under the top screen's cursor instead of under the finger.
 	const bool touchDown = (keys & KEY_TOUCH) != 0;
 	if (touchDown)
 	{
@@ -354,8 +397,12 @@ void dsInputPoll(bool inMenu)
 		// tall, so it needs no scaling; clamp against the stored height
 		// anyway so the pointer can never land outside the GUI regardless
 		// of what geometry dsInputInit was handed.
-		const int x = static_cast<int>(touch.px) * g_screenW / kTouchPanelW;
-		const int y = std::min(static_cast<int>(touch.py), g_screenH - 1);
+		const int x = typing
+		    ? static_cast<int>(touch.px)
+		    : static_cast<int>(touch.px) * g_screenW / kTouchPanelW;
+		const int y = typing
+		    ? static_cast<int>(touch.py)
+		    : std::min(static_cast<int>(touch.py), g_screenH - 1);
 
 		g_state.pointerActive = true;
 		g_state.pointerX = x;
@@ -363,10 +410,16 @@ void dsInputPoll(bool inMenu)
 
 		// Publish the position before any click derived from it, and on new
 		// contact publish it first so the click lands where the finger is.
-		if (!g_prevTouchDown)
-			lwjgl::Mouse::detail::pushMotion(x, y, 0, 0);
-		else if (x != g_prevTouchX || y != g_prevTouchY)
-			lwjgl::Mouse::detail::pushMotion(x, y, x - g_prevTouchX, y - g_prevTouchY);
+		// A finger surviving the end of a typing session counts as a new
+		// contact too: the previous sample was in the other coordinate
+		// space, and differencing across that would fling the cursor once.
+		if (!typing)
+		{
+			if (!g_prevTouchDown || g_prevTextExclusive)
+				lwjgl::Mouse::detail::pushMotion(x, y, 0, 0);
+			else if (x != g_prevTouchX || y != g_prevTouchY)
+				lwjgl::Mouse::detail::pushMotion(x, y, x - g_prevTouchX, y - g_prevTouchY);
+		}
 	}
 	else
 	{
@@ -386,14 +439,25 @@ void dsInputPoll(bool inMenu)
 	g_state.stickX = std::clamp(static_cast<float>(circle.dx) / kCirclePadMax, -1.0f, 1.0f);
 	g_state.stickY = std::clamp(static_cast<float>(-circle.dy) / kCirclePadMax, -1.0f, 1.0f);
 
-	// After the touch block, so clicks carry this frame's coordinates.
-	updateGameplay(keys, touchDown);
+	// After the touch block, so clicks carry this frame's coordinates. The
+	// finger stops being a click source while typing (see above): the tap
+	// that focused the field already landed, and from there the panel
+	// belongs to the keyboard.
+	updateGameplay(keys, touchDown && !typing);
 
-	// START is fixed in both contexts: KEY_ESCAPE is the pause key in-world
-	// and the "go back" key in a screen, so it needs no gating. Edge-driven
-	// off keysPressed rather than the held mask, so a START held across the
-	// boundary does not re-fire either.
-	forwardStartToEscape(keysPressed, keysReleased);
+	// START keeps its fixed KEY_ESCAPE role only while nothing has focus:
+	// pause in-world, "go back" in a screen, edge-driven off keysPressed
+	// rather than the held mask so one held across the boundary does not
+	// re-fire. With a field focused, mapTextButtons turned START into
+	// ENTER instead (what submits chat), and forwarding its edges as ESC
+	// here would close the very screen being typed in. An escape key whose
+	// press went out before focus arrived is released on the transition,
+	// otherwise it would stay stuck down for the rest of the session.
+	if (typing && !g_prevTextExclusive)
+		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_ESCAPE, false);
+	g_prevTextExclusive = typing;
+	if (!typing)
+		forwardStartToEscape(keysPressed, keysReleased);
 }
 
 const DsInputState& dsInputState()

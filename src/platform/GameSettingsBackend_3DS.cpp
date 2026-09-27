@@ -21,14 +21,17 @@ void migrateKey(KeyBinding* binding, int_t fallback)
 }
 
 // The decided 3DS layout (see the table in src/3ds/input/DsInput.cpp). The
-// circle pad carries analog movement, so the four digital movement binds take
-// the D-pad -- the same choice PS2 makes, and what keeps the Controls screen's
-// labels true here.
+// circle pad carries ALL movement: DsInput no longer emits DS_KEY_DPAD_* at
+// all (in gameplay the D-pad steps the hotbar and L/R click instead), so the
+// four digital movement binds below are dead -- they stay assigned only so an
+// options.txt from an older build and the Controls screen keep finding a sane
+// value to show, until the mapping UI learns to report "no button".
 //
 // Attack and Use are deliberately NOT touched: they stay on the mouse
 // pseudo-keys (-100 / -99), because DsInput emits them as mouse button 0/1
-// from X/B and from the touch tap, which is the plumbing clickMouse() and the
-// right-click path already read. Only keyboard-shaped actions are rebound.
+// from X/L and B/R and from the touch tap, which is the plumbing clickMouse()
+// and the right-click path already read. Only keyboard-shaped actions are
+// rebound.
 void applyDefaultBindings(GameSettings& settings)
 {
 	settings.keyBindForward->keyCode = DS_KEY_DPAD_UP;

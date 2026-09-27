@@ -8,6 +8,11 @@
 #include "FontRenderer.h"
 #include "lwjgl/Keyboard.h"
 #include "platform/Input.h"
+#if defined(CTR_PLATFORM)
+#include "3ds/DsSwkbd.h"
+#include "ChatAllowedCharacters.h"
+#include "platform/RenderAPI.h"
+#endif
 
 
 namespace
@@ -47,6 +52,14 @@ void VirtualKeyboard::resetSelection()
 	lastMoveMs = nowMs();
 }
 
+void VirtualKeyboard::typeSelectedKey()
+{
+	char c = KB_ROWS[selY][selX];
+	if (shift && c >= 'a' && c <= 'z')
+		c = (char)(c - 'a' + 'A');
+	lwjgl::Keyboard::detail::pushChar((int)(unsigned char)c);
+}
+
 void VirtualKeyboard::notifyFocus(GuiTextField* field, bool focused)
 {
 	if (focused)
@@ -58,10 +71,20 @@ void VirtualKeyboard::notifyFocus(GuiTextField* field, bool focused)
 		}
 		lastHeld = platformTextInputSnapshot(platformMenuPad()).held;
 		nextRepeatMs = nowMs() + 250;
+#if defined(CTR_PLATFORM)
+		// The system keyboard is opened on the next tick rather than from
+		// here: GuiChat (and friends) write the field's initial text right
+		// after focusing it, and an applet launched inside setFocused()
+		// would return before that write and be overwritten by it.
+		pendingNativeOpen = true;
+#endif
 	}
 	else if (focusedField == field)
 	{
 		focusedField = nullptr;
+#if defined(CTR_PLATFORM)
+		pendingNativeOpen = false;
+#endif
 	}
 	platformSetTextInputExclusive(focusedField != nullptr);
 }
@@ -70,6 +93,16 @@ void VirtualKeyboard::tick()
 {
 	if (!isActive())
 		return;
+
+#if defined(CTR_PLATFORM)
+	if (pendingNativeOpen)
+	{
+		pendingNativeOpen = false;
+		openNativeKeyboard();
+		if (!isActive())
+			return; // OK or Cancel closed the field along with the keyboard
+	}
+#endif
 
 	unsigned int held = 0;
 	unsigned int pressed = 0;
@@ -138,8 +171,22 @@ void VirtualKeyboard::tick()
 		{
 			selX = col;
 			selY = row;
+#if defined(CTR_PLATFORM)
+			// Tap-to-type on the bottom-screen panel: the finger IS the
+			// panel the keys are drawn on, so landing on a key types it
+			// outright (A still types the highlighted key for the pad-only
+			// player). Only a fresh contact types -- holding the finger
+			// still must not machine-gun the character.
+			if (bottomMode && !lastPointerValid)
+				typeSelectedKey();
+#endif
 		}
 	}
+#if defined(CTR_PLATFORM)
+	// Edge bookkeeping runs every tick, even while the finger is up: the
+	// next contact must still look like the first one of a new tap.
+	lastPointerValid = pad.pointerValid;
+#endif
 
 	int moveX = 0, moveY = 0;
 	const unsigned int keyLeft = PLATFORM_TEXT_LEFT, keyRight = PLATFORM_TEXT_RIGHT;
@@ -176,12 +223,7 @@ void VirtualKeyboard::tick()
 
 	// Cross: type the selected key.
 	if (pressed & keyType)
-	{
-		char c = KB_ROWS[selY][selX];
-		if (shift && c >= 'a' && c <= 'z')
-			c = (char)(c - 'a' + 'A');
-		lwjgl::Keyboard::detail::pushChar((int)(unsigned char)c);
-	}
+		typeSelectedKey();
 	// Square: backspace.
 	if (pressed & keyBack)
 	{
@@ -208,11 +250,73 @@ void VirtualKeyboard::tick()
 	}
 }
 
+#if defined(CTR_PLATFORM)
+void VirtualKeyboard::openNativeKeyboard()
+{
+	if (focusedField == nullptr)
+		return;
+	if (nativeKeyboardFailed)
+	{
+		// The applet failed once this session (see dsSwkbdOpen): keep every
+		// field on the bottom-screen panel rather than retrying the launch.
+		bottomMode = true;
+		return;
+	}
+
+	const DsSwkbdResult result =
+		dsSwkbdOpen(focusedField->getText(), focusedField->getMaxStringLength());
+	switch (result.outcome)
+	{
+	case DsSwkbdOutcome::Confirmed:
+		// Same filter + clamp GuiTextField::writeText applies to typed
+		// characters, then leave the field: with it unfocused a confirm
+		// press reaches the screen as KEY_RETURN, which is what submits
+		// chat ("Aceptar deja texto, A envia").
+		focusedField->setText(
+			ChatAllowedCharacters::filterAllowedCharacters(result.text));
+		focusedField->setFocused(false);
+		break;
+	case DsSwkbdOutcome::Cancelled:
+		// Keep whatever was in the field and close the same way OK does, so
+		// the player always lands in the same state once the applet leaves.
+		focusedField->setFocused(false);
+		break;
+	case DsSwkbdOutcome::Unavailable:
+		nativeKeyboardFailed = true;
+		bottomMode = true;
+		break;
+	}
+}
+#endif // CTR_PLATFORM
+
 void VirtualKeyboard::render(FontRenderer* font, int_t screenWidth, int_t screenHeight)
 {
 	if (!isActive() || font == nullptr)
 		return;
 
+#if defined(CTR_PLATFORM)
+	// The system keyboard opens on the next tick (notifyFocus defers it):
+	// do not flash this panel for the one frame in between -- the applet
+	// covers the screens as soon as it launches anyway.
+	if (pendingNativeOpen)
+		return;
+
+	// The fallback panel draws on the bottom LCD in the panel's own pixels,
+	// which is also the space DsInput feeds the hit-test with while a field
+	// has focus (raw 320x240, see InputBackend_3DS) -- lastScreenWidth/
+	// Height below are exactly what tick() converts touch coordinates
+	// against, so both modes come out aligned. If the panel cannot be made,
+	// the pass never starts and the panel falls back over the top screen at
+	// GUI scale, where the same conversion lands the finger correctly too.
+	bool bottomPass = false;
+	if (bottomMode)
+		bottomPass = renderKeyboardBottomBegin();
+	if (bottomPass)
+	{
+		screenWidth = 320;
+		screenHeight = 240;
+	}
+#endif
 	lastScreenWidth = screenWidth;
 	lastScreenHeight = screenHeight;
 	const int keyW = 22, keyH = 18, gap = 3;
@@ -286,6 +390,11 @@ void VirtualKeyboard::render(FontRenderer* font, int_t screenWidth, int_t screen
 		if (hints.lines[line] != nullptr)
 			drawString(font, hints.lines[line], px + 2, py + panelH - (hints.lineCount - line) * 10, 0xcccccc);
 	}
+
+#if defined(CTR_PLATFORM)
+	if (bottomPass)
+		renderKeyboardBottomEnd(); // back to the top screen for the rest of the frame
+#endif
 }
 
-#endif // PS2_PLATFORM || WII_PLATFORM
+#endif // PS2_PLATFORM || WII_PLATFORM || CTR_PLATFORM

@@ -61,8 +61,13 @@ PlatformTextInputSnapshot platformTextInputSnapshot(int port)
     // DsInput already maps touch into top-screen pixels, and this panel is
     // fixed 400x240 hardware -- so the pointerX * screenW / pointerWidth
     // rescale VirtualKeyboard applies degenerates to an identity, which is
-    // exactly what we want.
-    out.pointerWidth = 400;
+    // exactly what we want. While a field has focus the coordinates stay in
+    // the panel's own 320x240 space instead (DsInput.cpp), so reporting that
+    // width keeps the rescale an identity there too -- where it also lines up
+    // with the bottom-screen keyboard's 320x240 canvas, and, should that
+    // panel ever fall back over the top screen, maps the finger onto the GUI
+    // exactly as the scaling above would have.
+    out.pointerWidth = platformTextInputExclusive() ? 320 : 400;
     out.pointerHeight = 240;
     return out;
 }
@@ -106,7 +111,12 @@ bool platformMenuPointerActive()
 {
     // Finger down = the touch pointer owns the GUI this frame; finger up
     // hands control back to D-pad/stick navigation (same shape as the Wii's
-    // dynamic pointer ownership).
+    // dynamic pointer ownership). While a field has focus the finger belongs
+    // to the keyboard instead: its coordinates are in the panel's space, and
+    // claiming the menu with them would fling every "pointer owns it" caller
+    // to a position the GUI never drew (see DsInput.cpp).
+    if (platformTextInputExclusive())
+        return false;
     return dsInputState().pointerActive;
 }
 
@@ -133,7 +143,7 @@ const PlatformKeyboardHints& platformKeyboardHints()
         {
             "A:type B:back D-pad:move",
             "X/L:sp Y:close R:shift",
-            "Sel:sp St:esc"
+            "Sel:sp St:enter"
         }, 3
     };
     return hints;

@@ -28,6 +28,27 @@
 //     C3D_FrameBegin(C3D_FRAME_SYNCDRAW), and stacking a second wait on top
 //     would halve the frame rate during normal play.
 //
+// == Bottom panel (keyboard fallback) =========================================
+//
+// Text fields open the system keyboard (swkbd, src/3ds/DsSwkbd.cpp); when the
+// applet cannot be used, VirtualKeyboard falls back to drawing its panel on
+// the BOTTOM LCD, which needs a second render target in this frame's
+// lifecycle. keyboardBottomBegin() creates it lazily (VRAM: colour + depth
+// for a 240x320 rotated storage -- the same quarter turn and RGBA8 -> RGB8
+// transfer flags as the top target, just sized for a 320x240 panel), binds it
+// and clears it; keyboardBottomEnd() binds the top target back so the rest of
+// the frame lands where it did.
+//
+// Transfers follow citro3d's used-bit rule: a target is transferred to its
+// LCD at C3D_FrameEnd only when C3D_FrameDrawOn marked it used during that
+// frame, and the panel is single-buffered (main_3ds.cpp, like the console it
+// replaces), so a frame that stops drawing on it would leave the last
+// keyboard image on the LCD indefinitely. endFrame() therefore pushes one
+// black frame on the first frame after drawing stops -- FrameDrawOn marks the
+// target used for that one clear -- and afterwards the panel simply is not
+// transferred anymore, which also leaves the console's framebuffer free for
+// the next printf.
+//
 // == Orientation and depth ====================================================
 //
 // The top panel is 400x240, but its framebuffer is stored 240x400: the LCD is
@@ -113,6 +134,13 @@ constexpr int kTargetHeight = 400;
 constexpr int kPanelWidth = 400;
 constexpr int kPanelHeight = 240;
 
+// The bottom LCD, as the keyboard panel sees it: the storage is rotated 90
+// degrees exactly like the top screen's (240 wide x 320 tall for a 320x240
+// panel), so the same kPicaTilt quarter turn and the same RGBA8 -> RGB8
+// transfer flags as the top target apply unchanged.
+constexpr int kBottomTargetWidth = 240;
+constexpr int kBottomTargetHeight = 320;
+
 // The fixed 32-byte Minecraft vertex, loaded as five attributes in order.
 // The colour attribute is u8x4 in R,G,B,A byte order: the Tessellator packs
 // (A<<24)|(B<<16)|(G<<8)|R on this little-endian target (Tessellator.cpp,
@@ -175,6 +203,15 @@ constexpr float kPicaTilt[16] = {
 
 bool s_c3dActive = false;
 C3D_RenderTarget* s_target = nullptr;
+// The bottom panel, for the keyboard fallback (keyboardBottomBegin below).
+// Created lazily -- most sessions never open a text field, and the target
+// costs ~600 KB of VRAM (colour + depth) for as long as it exists.
+C3D_RenderTarget* s_bottomTarget = nullptr;
+// Set while a frame draws the panel, read at endFrame() to decide whether the
+// panel needs a transfer this frame -- see the bottom-panel section below.
+bool s_bottomDrawnThisFrame = false;
+// The LCD still shows the panel: it needs one black frame once drawing stops.
+bool s_bottomPanelShown = false;
 DVLB_s* s_dvlb = nullptr;
 shaderProgram_s s_program;
 bool s_programReady = false;
@@ -309,6 +346,22 @@ void endFrame()
 {
 	if (!s_inFrame)
 		return;
+	// The bottom panel only reaches its LCD while something draws on it in
+	// the frame: C3D_FrameDrawOn marks the target used and C3D_FrameEnd
+	// queues a display transfer for every used target, so a frame that
+	// ignores the panel leaves the LCD holding the last keyboard image
+	// forever (the panel is single-buffered, main_3ds.cpp). On the first
+	// frame after the keyboard stops drawing, clear the target to black --
+	// the FrameDrawOn below marks it used, so the black lands exactly once
+	// and after that the panel simply stops being transferred.
+	if (s_bottomPanelShown && !s_bottomDrawnThisFrame && s_bottomTarget != nullptr &&
+	    C3D_FrameDrawOn(s_bottomTarget))
+	{
+		C3D_RenderTargetClear(s_bottomTarget, C3D_CLEAR_ALL, 0, 0);
+		C3D_FrameDrawOn(s_target); // the frame's own target, for completeness
+		s_bottomPanelShown = false;
+	}
+	s_bottomDrawnThisFrame = false;
 	C3D_FrameEnd(0);
 	s_inFrame = false;
 	++s_framesSubmitted;
@@ -609,6 +662,13 @@ void fini()
 		}
 	}
 	texture::resetAll();
+	if (s_bottomTarget != nullptr)
+	{
+		C3D_RenderTargetDelete(s_bottomTarget);
+		s_bottomTarget = nullptr;
+	}
+	s_bottomDrawnThisFrame = false;
+	s_bottomPanelShown = false;
 	if (s_target != nullptr)
 	{
 		C3D_RenderTargetDelete(s_target);
@@ -687,6 +747,55 @@ void clear(unsigned mask)
 		static_cast<u32>((1.0f - depth) * 16777215.0f + 0.5f);
 	C3D_RenderTargetClear(s_target, static_cast<C3D_ClearBits>(bits), color,
 	                      storedDepth);
+}
+
+// The keyboard panel's own frame pass; see the bottom-panel section in the
+// header of this file. Returns false when there is nothing to draw on, in
+// which case the caller keeps drawing on the top screen.
+bool keyboardBottomBegin()
+{
+	if (s_target == nullptr)
+		return false;
+	if (s_bottomTarget == nullptr)
+	{
+		s_bottomTarget = C3D_RenderTargetCreate(kBottomTargetWidth, kBottomTargetHeight,
+		                                        GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
+		if (s_bottomTarget == nullptr)
+		{
+			MC_LOG_WARN("render",
+				"3ds: bottom-screen target allocation failed; keyboard panel stays on the top screen\n");
+			return false;
+		}
+		C3D_RenderTargetSetOutput(s_bottomTarget, GFX_BOTTOM, GFX_LEFT, kDisplayTransferFlags);
+		// The boot console owned this panel (main_3ds.cpp) and its line
+		// buffer still holds the boot log: start it over, so that a printf
+		// after the keyboard closes writes a fresh line from the top instead
+		// of redrawing stale text over the black frame.
+		consoleClear();
+	}
+	frameBegin();
+	if (!s_inFrame)
+		return false;
+	if (!C3D_FrameDrawOn(s_bottomTarget))
+		return false;
+	// Colour starts black behind the panel's own rectangles (clear colour 0
+	// is the same value clear() uses for the top screen); depth goes to far,
+	// the same stored 0, so no draw ever reads the previous frame's.
+	u32 bits = C3D_CLEAR_COLOR | C3D_CLEAR_DEPTH;
+	C3D_RenderTargetClear(s_bottomTarget, static_cast<C3D_ClearBits>(bits), 0, 0);
+	s_bottomDrawnThisFrame = true;
+	s_bottomPanelShown = true;
+	return true;
+}
+
+void keyboardBottomEnd()
+{
+	if (s_target == nullptr || !s_inFrame)
+		return;
+	// Hand the frame back to the top screen: C3D_FrameDrawOn re-installs the
+	// top target's framebuffer and its full-target viewport, so everything
+	// drawn after the panel lands where it did before.
+	C3D_FrameDrawOn(s_target);
 }
 
 void setViewport(int x, int y, int width, int height)
