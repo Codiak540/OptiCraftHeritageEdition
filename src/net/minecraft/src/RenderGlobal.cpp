@@ -3293,9 +3293,9 @@ void RenderGlobal::playAuxSFX(EntityPlayer *entityplayer, int_t i, int_t j, int_
 			Block *block = Block::blocksList[blockId];
 			mc->sndManager->playSound(block->stepSound->getBreakSound(), (float)j + 0.5f, (float)k + 0.5f, (float)l + 0.5f,
 			                          (block->stepSound->getVolume() + 1.0f) / 2.0f, block->stepSound->getPitch() * 0.8f);
+			if (mc->effectRenderer != nullptr)
+				mc->effectRenderer->addBlockDestroyEffects(j, k, l, blockId, (i1 >> 12) & 255);
 		}
-		if (mc->effectRenderer != nullptr)
-			mc->effectRenderer->addBlockDestroyEffects(j, k, l, blockId, (i1 >> 12) & 255);
 		break;
 	}
 

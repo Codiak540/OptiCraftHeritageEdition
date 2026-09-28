@@ -406,7 +406,8 @@ void EntityPlayerSP::onEnchantmentCritical(Entity *entity)
 void EntityPlayerSP::onItemPickup(Entity *entity, int_t i)
 {
 	(void)i;
-	mc->effectRenderer->addEffect(new EntityPickupFX(mc->theWorld, entity, this, -0.5f));
+	if (mc != nullptr && mc->effectRenderer != nullptr && mc->theWorld != nullptr && entity != nullptr)
+		mc->effectRenderer->addEffect(new EntityPickupFX(mc->theWorld, entity, this, -0.5f));
 }
 
 int_t EntityPlayerSP::getPlayerArmorValue()
