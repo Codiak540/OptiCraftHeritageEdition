@@ -4,6 +4,9 @@
 #include "MathHelper.h"
 #include "platform/PlatformConfig.h"
 #include "platform/RenderAPI.h"
+#if PLATFORM_PS2
+#include "ps2/diagnostics/Ps2OptimizationValidation.h"
+#endif
 
 ModelSkeleton::ModelSkeleton()
 {
@@ -42,6 +45,9 @@ void ModelSkeleton::render(Entity* entity, float f, float f1, float f2, float f3
 {
 	(void)entity;
 #if PLATFORM_PS2
+#ifdef PS2_OPTIMIZATION_VALIDATION
+	Ps2OptimizationValidation::skeletonCullDraw();
+#endif
 	// Skeleton parts are closed boxes with consistent winding (mirrored parts
 	// explicitly flip their faces in ModelBox). RenderLiving disables culling
 	// for legacy model compatibility, but that makes the PS2 transform/emit the

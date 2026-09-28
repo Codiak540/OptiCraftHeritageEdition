@@ -3,6 +3,9 @@
 #include "platform/WorldLoadTrace.h"
 #include "platform/Diagnostics.h"
 #include "platform/PlatformTuning.h"
+#if PLATFORM_PS2
+#include "ps2/diagnostics/Ps2OptimizationValidation.h"
+#endif
 #if PLATFORM_PC_LEGACY
 #include "pc/world/PcLegacyTickScheduler.h"
 #endif
@@ -4256,6 +4259,16 @@ bool World::updatingLighting()
         if (interactiveBurst && count < PLATFORM_LIGHTING_INTERACTIVE_BURST)
             count = PLATFORM_LIGHTING_INTERACTIVE_BURST;
 
+#ifdef PS2_OPTIMIZATION_VALIDATION
+        const int ps2ValidationLightingQueueStart = (int)lightingToUpdate.size();
+        int ps2ValidationLightingJobs = 0;
+        const auto ps2ValidationReportLighting = [&](bool countExit, bool budgetExit)
+        {
+            Ps2OptimizationValidation::lightingDrain(ps2ValidationLightingJobs, interactiveBurst,
+                countExit, budgetExit, ps2ValidationLightingQueueStart);
+        };
+#endif
+
         // Wall-clock ceiling on top of that count. One job here is a flood fill
         // over a box, so the count alone does not bound a frame. Interactive
         // drains get a little more time than streaming lighting, but are still
@@ -4292,6 +4305,9 @@ bool World::updatingLighting()
         {
             if (--count <= 0)
             {
+#ifdef PS2_OPTIMIZATION_VALIDATION
+                ps2ValidationReportLighting(true, false);
+#endif
                 lightingUpdatesCounter--;
                 return true;
             }
@@ -4307,6 +4323,9 @@ bool World::updatingLighting()
                     metadataChunkBlock.minY, metadataChunkBlock.minZ));
             }
             metadataChunkBlock.updateLight(this);
+#ifdef PS2_OPTIMIZATION_VALIDATION
+            ++ps2ValidationLightingJobs;
+#endif
 
             // Returning true is what the callers already understand as "there is
             // still lighting queued", so yielding on the clock needs no new
@@ -4319,12 +4338,18 @@ bool World::updatingLighting()
                 if (nowUs > budgetStartUs &&
                     nowUs - budgetStartUs >= budgetUs)
                 {
+#ifdef PS2_OPTIMIZATION_VALIDATION
+                    ps2ValidationReportLighting(false, true);
+#endif
                     lightingUpdatesCounter--;
                     return true;
                 }
             }
         }
 
+#ifdef PS2_OPTIMIZATION_VALIDATION
+        ps2ValidationReportLighting(false, false);
+#endif
         lightingUpdatesCounter--;
         return false;
     }

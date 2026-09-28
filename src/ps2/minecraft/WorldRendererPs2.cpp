@@ -40,6 +40,7 @@
 #endif
 #include "ps2/render/Ps2MeshStagingPool.h"
 #include "ps2/render/Ps2SectionVisibility.h"
+#include "ps2/diagnostics/Ps2OptimizationValidation.h"
 
 namespace
 {
@@ -510,6 +511,9 @@ bool WorldRenderer::ps2BeginBuildState()
 
 	Chunk::isLit = false;
 	ps2BuildActive = true;
+#ifdef PS2_OPTIMIZATION_VALIDATION
+	Ps2OptimizationValidation::meshBuildStarted();
+#endif
 	ps2BuildPass = 0;
 	ps2BuildCursor = 0;
 	// Rebuilds are mostly relights/edits of the same section, so the new mesh
@@ -958,6 +962,9 @@ bool WorldRenderer::ps2BuildRendererStep(int_t blockBudget)
 			if (ps2BuildPass == 1 && ps2IsWaterBlockId(id) &&
 				ps2IsFullyEnclosedWaterCell(ps2BuildSectionCache, local, lx, ly, lz))
 			{
+#ifdef PS2_OPTIMIZATION_VALIDATION
+				Ps2OptimizationValidation::enclosedWaterSkip();
+#endif
 				continue;
 			}
 
@@ -982,7 +989,12 @@ bool WorldRenderer::ps2BuildRendererStep(int_t blockBudget)
 			if (ps2BuildPass == 1 && block == Block::waterStill &&
 				ps2RenderFlatStillWaterTop(ps2BuildSectionCache, chunkcache, ps2Tessellator,
 					block, local, x, y, z))
+			{
+#ifdef PS2_OPTIMIZATION_VALIDATION
+				Ps2OptimizationValidation::flatWaterFastPath();
+#endif
 				stepDrew = true;
+			}
 			else
 #endif
 				stepDrew |= ps2Renderblocks.renderBlockByRenderType(block, x, y, z);
@@ -1035,6 +1047,10 @@ bool WorldRenderer::ps2BuildRendererStep(int_t blockBudget)
                                 Block::waterStill->blockID &&
                                 chunkcache.getBlockMetadata(posX+lx, posY+ly, posZ+lz) == 0;
                         });
+#ifdef PS2_OPTIMIZATION_VALIDATION
+                    Ps2OptimizationValidation::waterMerge((int)water.input, (int)water.eligible,
+                        (int)water.removed);
+#endif
                     // Per-step merge statistics are intentionally trace-only. Level-2
                     // profiling runs while terrain streams, and each PS2 log line flushes
                     // stdout; keeping this at DEBUG made the diagnostic itself consume
@@ -1337,6 +1353,9 @@ bool WorldRenderer::ps2BuildRendererStep(int_t blockBudget)
 	ps2StepDidWork = true;
 
 	const bool dirtyDuringBuild = ps2BuildDirtyDuringBuild;
+#ifdef PS2_OPTIMIZATION_VALIDATION
+	Ps2OptimizationValidation::meshBuildPublished(dirtyDuringBuild);
+#endif
 	isChunkLit = Chunk::isLit;
 	ps2MissingNeighbourMask = ::ps2MissingNeighbourMask(worldObj, posX, posZ);
 #if PLATFORM_CPU_SECTION_OCCLUSION

@@ -10,6 +10,7 @@
 #include "ps2/render/Ps2TerrainMeshView.h"
 #include "ps2/render/Ps2TerrainRuntime.h"
 #include "ps2/render/Ps2Vu1Terrain.h"
+#include "ps2/diagnostics/Ps2OptimizationValidation.h"
 
 #ifdef PS2_RENDER_STATS
 #define PS2_TERRAIN_COMMAND_STAT(expr) do { expr; } while (0)
@@ -64,6 +65,9 @@ void submitVu0List(const std::vector<Ps2TerrainVu0Command>& commandList,
         PS2_TERRAIN_COMMAND_STAT(++runtime.clusterStats.vu0GatherBatches);
         PS2_TERRAIN_COMMAND_STAT(
             runtime.clusterStats.vu0GatherVertices += command.totalVertices);
+#ifdef PS2_OPTIMIZATION_VALIDATION
+        Ps2OptimizationValidation::terrainVu0Submit(command.totalVertices);
+#endif
     }
 }
 }
@@ -115,9 +119,15 @@ void ps2_terrain_submit_vu1_commands()
         {
             PS2_TERRAIN_COMMAND_STAT(++runtime.clusterStats.vu1Ranges);
             PS2_TERRAIN_COMMAND_STAT(runtime.clusterStats.vu1Vertices += result.vertices);
+#ifdef PS2_OPTIMIZATION_VALIDATION
+            Ps2OptimizationValidation::terrainVu1Submit(result.vertices);
+#endif
             continue;
         }
 
+#ifdef PS2_OPTIMIZATION_VALIDATION
+        Ps2OptimizationValidation::terrainVu1Retry(result.status == PS2_VU1_TERRAIN_FATAL);
+#endif
         // RETRY and FATAL both request whole-section VU0 replay.
         // A fatal status can mean VU1 accepted a prefix before failing; opaque
         // depth testing makes replaying the complete section safe and matches

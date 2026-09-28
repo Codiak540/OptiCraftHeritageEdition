@@ -34,6 +34,9 @@
 #include "Material.h"
 #include "MovingObjectPosition.h"
 #include "platform/PlatformTuning.h"
+#if PLATFORM_PS2
+#include "ps2/diagnostics/Ps2OptimizationValidation.h"
+#endif
 #include "NBTTagCompound.h"
 #include "StepSound.h"
 #include "Vec3D.h"
@@ -602,6 +605,10 @@ void EntityLiving::onEntityUpdate()
 	const bool ps2RemoteLiving = isRemoteMultiplayerLiving(this);
 	const bool ps2FullRemotePhysics = !ps2RemoteLiving ||
 		isRemoteLivingPhysicsTick(this, JavaArithmetic::intAdd(ticksExisted, 1));
+#ifdef PS2_OPTIMIZATION_VALIDATION
+	if (ps2RemoteLiving)
+		Ps2OptimizationValidation::remoteLivingPhysics(ps2FullRemotePhysics);
+#endif
 	if (ps2RemoteLiving && !ps2FullRemotePhysics)
 	{
 		Entity::onRemoteMultiplayerEntityUpdateLite();
@@ -1496,8 +1503,13 @@ void EntityLiving::onLivingUpdate()
 		// penetration on every intermediate step is expensive for crowds and the
 		// server will correct the final position anyway. Keep the query on the
 		// periodic full-physics tick and always on the final interpolation step.
-		const bool ps2ResolveInterpolationCollision = !isRemoteMultiplayerLiving(this) ||
+		const bool ps2RemoteInterpolation = isRemoteMultiplayerLiving(this);
+		const bool ps2ResolveInterpolationCollision = !ps2RemoteInterpolation ||
 			isRemoteLivingPhysicsTick(this, ticksExisted) || newPosRotationIncrements == 0;
+#ifdef PS2_OPTIMIZATION_VALIDATION
+		if (ps2RemoteInterpolation)
+			Ps2OptimizationValidation::remoteInterpolationQuery(ps2ResolveInterpolationCollision);
+#endif
 		if (ps2ResolveInterpolationCollision)
 #endif
 		{

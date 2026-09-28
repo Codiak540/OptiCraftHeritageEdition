@@ -12,6 +12,7 @@
 #include "ps2/render/Ps2TerrainMesh.h"
 #include "ps2/render/Ps2TerrainMeshView.h"
 #include "ps2/render/Ps2TerrainRuntime.h"
+#include "ps2/diagnostics/Ps2OptimizationValidation.h"
 #include "ps2/render/Ps2Vu1Terrain.h"
 
 #ifdef PS2_RENDER_STATS
@@ -589,13 +590,27 @@ bool ps2_terrain_build_section_commands(int sectionIndex)
         ps2_vu1_terrain_pass_ready();
     bool clusterClipSafe[PS2_MESH_CLUSTER_COUNT];
     Ps2TerrainClusterTarget clusterTarget[PS2_MESH_CLUSTER_COUNT];
+#ifdef PS2_OPTIMIZATION_VALIDATION
+    int validationRejected = 0;
+    int validationClipSafe = 0;
+    int validationGuardRisk = 0;
+#endif
     for (int cluster = 0; cluster < PS2_MESH_CLUSTER_COUNT; ++cluster)
     {
         clusterClipSafe[cluster] = ps2_terrain_cluster_can_skip_clip(
             clusterClass[cluster], clusterGuardRisk[cluster]);
         clusterTarget[cluster] = ps2_terrain_cluster_target(
             clusterClass[cluster], clusterGuardRisk[cluster], directVu1Usable);
+#ifdef PS2_OPTIMIZATION_VALIDATION
+        if (clusterClass[cluster] == 0) ++validationRejected;
+        if (clusterClipSafe[cluster]) ++validationClipSafe;
+        if (clusterGuardRisk[cluster] != 0) ++validationGuardRisk;
+#endif
     }
+#ifdef PS2_OPTIMIZATION_VALIDATION
+    Ps2OptimizationValidation::terrainClusters(PS2_MESH_CLUSTER_COUNT,
+        validationRejected, validationClipSafe, validationGuardRisk);
+#endif
     updateClassificationStats(runtime.clusterStats, section,
                               clusterClass, clusterGuardRisk, clusterTarget,
                               directVu1Usable);

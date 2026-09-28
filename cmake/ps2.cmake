@@ -55,9 +55,14 @@ option(PS2_ENABLE_PERSPECTIVE_TEXTURES "Use PS2 STQ perspective-correct texture 
 option(PS2_ENABLE_PSMT8 "Store game textures as 8-bit palettized PSMT8 + CT16 CLUT (halves texture VRAM/RAM)" ON)
 option(PS2_MERGE_WATER_TOPS "Experimental bounded still-water surface merging" OFF)
 option(PS2_RENDER_STATS "Enable verbose PS2 render statistics counters" OFF)
+option(PS2_OPTIMIZATION_VALIDATION "Enable low-overhead counters for validating PS2 optimization paths" OFF)
 option(PS2_REMOTE_DEBUG "Enable hardware remote debugging through ps2link/ps2client" OFF)
 option(PS2_ENABLE_SOUND "Enable PS2 audsrv ADPCM sound backend" ON)
 option(PS2_ENABLE_NETWORK "Enable PS2 TCP multiplayer through PS2SDK ps2ip/SMAP" ON)
+
+if(PS2_OPTIMIZATION_VALIDATION AND MC_LOG_LEVEL LESS 1)
+    message(WARNING "PS2_OPTIMIZATION_VALIDATION needs MC_LOG_LEVEL=1 or higher to emit summaries")
+endif()
 
 if(PS2_REMOTE_DEBUG AND CMAKE_BUILD_TYPE STREQUAL "Release")
     message(FATAL_ERROR "PS2_REMOTE_DEBUG requires a symbol-preserving build type; use the ps2-remote-debug preset")
@@ -330,6 +335,7 @@ target_compile_definitions(OptiCraft PRIVATE
     $<$<BOOL:${PS2_ENABLE_PERSPECTIVE_TEXTURES}>:PS2_ENABLE_PERSPECTIVE_TEXTURES>
     $<$<BOOL:${PS2_ENABLE_PSMT8}>:PS2_ENABLE_PSMT8>
     $<$<BOOL:${PS2_RENDER_STATS}>:PS2_RENDER_STATS>
+    $<$<BOOL:${PS2_OPTIMIZATION_VALIDATION}>:PS2_OPTIMIZATION_VALIDATION>
     $<$<BOOL:${PS2_MERGE_WATER_TOPS}>:PS2_MERGE_WATER_TOPS>
     $<$<BOOL:${PS2_REMOTE_DEBUG}>:PS2_REMOTE_DEBUG>
     MC_LOG_LEVEL=${MC_LOG_LEVEL}

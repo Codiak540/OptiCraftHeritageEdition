@@ -12,6 +12,9 @@
 #include "Tessellator.h"
 #include "World.h"
 #include "platform/PlatformTuning.h"
+#if PLATFORM_PS2
+#include "ps2/diagnostics/Ps2OptimizationValidation.h"
+#endif
 #include "java/Arithmetic.h"
 
 double EntityFX::interpPosX = 0.0;
@@ -188,6 +191,9 @@ void EntityFX::moveEntity(double d, double d1, double d2)
 		Entity::moveEntity(d, d1, d2);
 		return;
 	}
+#ifdef PS2_OPTIMIZATION_VALIDATION
+	Ps2OptimizationValidation::particleFastMove();
+#endif
 
 	// Same outputs Entity::moveEntity leaves for a particle -- position,
 	// onGround, isCollided*, motion zeroed on the blocked axis -- without the

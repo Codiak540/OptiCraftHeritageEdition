@@ -18,6 +18,7 @@
 #include <cstdio>
 #include "ps2/render/Ps2Vu0MeshFinalize.h"
 #include "ps2/render/Ps2GsQueue.h"
+#include "ps2/diagnostics/Ps2OptimizationValidation.h"
 #endif
 
 #include "platform/RenderAPI.h"
@@ -1536,6 +1537,9 @@ int_t RenderGlobal::renderSortedRenderers(int_t i, int_t j, int_t k, double d)
 			ps2SectionBeyondFog(sortedRenderer, ps2FogEyeX, ps2FogEyeY, ps2FogEyeZ,
 				ps2TerrainCullDistance))
 		{
+#ifdef PS2_OPTIMIZATION_VALIDATION
+			Ps2OptimizationValidation::terrainFogCull(k);
+#endif
 			continue;
 		}
 #endif
@@ -1598,6 +1602,15 @@ int_t RenderGlobal::renderSortedRenderers(int_t i, int_t j, int_t k, double d)
 		worldrenderer->renderPassImmediate(k);
 		renderedNow++;
 	}
+
+#ifdef PS2_OPTIMIZATION_VALIDATION
+	static unsigned int s_ps2OptimizationValidationFrames = 0;
+	if (k == 1 && ++s_ps2OptimizationValidationFrames >= 120)
+	{
+		s_ps2OptimizationValidationFrames = 0;
+		Ps2OptimizationValidation::reportAndReset();
+	}
+#endif
 
 #if MC_LOG_LEVEL >= 2
 	// Pass 1 (water/ice/glass) was never instrumented: every counter above is
@@ -2605,6 +2618,9 @@ bool RenderGlobal::updateRenderers(EntityLiving *entityliving, bool flag)
 					(int)worldRenderersToUpdate.size());
 			}
 #endif
+#ifdef PS2_OPTIMIZATION_VALIDATION
+			Ps2OptimizationValidation::meshUrgentFinished(!candidate->urgentRebuild);
+#endif
 			if (!candidate->needsUpdate)
 			{
 				candidate->urgentRebuild = false;
@@ -3034,6 +3050,9 @@ void RenderGlobal::markRenderersInRange(int_t i, int_t j, int_t k, int_t l, int_
 						worldrenderer->urgentMarkUs = PlatformCompat::getMonotonicMicros();
 #endif
 						worldrenderer->urgentRebuild = true;
+#ifdef PS2_OPTIMIZATION_VALIDATION
+						Ps2OptimizationValidation::meshUrgentMarked();
+#endif
 					}
 				}
 #elif PLATFORM_PC_LEGACY

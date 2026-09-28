@@ -1,6 +1,7 @@
 #include "EntityRenderer.h"
 #if PLATFORM_PS2
 #include "ps2/minecraft/Ps2WeatherMath.h"
+#include "ps2/diagnostics/Ps2OptimizationValidation.h"
 #if MC_LOG_LEVEL >= 2
 #include "platform/Log.h"
 #endif
@@ -2245,11 +2246,32 @@ void EntityRenderer::renderRainSnow(float partialTicks)
             (int)mc->gameSettings->particleSetting, mc->theWorld->multiplayerWorld ? 1 : 0);
     }
 #endif
+#ifdef PS2_OPTIMIZATION_VALIDATION
+    int validationWeatherCandidates = 0;
+    int validationRainColumns = 0;
+    int validationSnowColumns = 0;
+    int validationWeatherTextureSwitches = 0;
+    const auto validationReportWeather = [&]()
+    {
+        Ps2OptimizationValidation::weatherFrame(rainStrength, validationWeatherCandidates,
+            validationRainColumns, validationSnowColumns, validationWeatherTextureSwitches);
+    };
+#endif
     if (rainStrength <= 0.0f)
+    {
+#ifdef PS2_OPTIMIZATION_VALIDATION
+        validationReportWeather();
+#endif
         return;
+    }
 
     if (Config::isRainOff())
+    {
+#ifdef PS2_OPTIMIZATION_VALIDATION
+        validationReportWeather();
+#endif
         return;
+    }
 
     enableLightmap(static_cast<double>(partialTicks));
 
@@ -2332,6 +2354,9 @@ void EntityRenderer::renderRainSnow(float partialTicks)
             BiomeGenBase* biome = world->getBiomeGenForCoords(x, z);
             if (biome == nullptr || (!biome->canSpawnLightningBolt() && !biome->getEnableSnow()))
                 continue;
+#ifdef PS2_OPTIMIZATION_VALIDATION
+            ++validationWeatherCandidates;
+#endif
 
             const int_t precipitationY = world->getPrecipitationHeight(x, z);
             int_t minY = centerY - range;
@@ -2375,6 +2400,9 @@ void EntityRenderer::renderRainSnow(float partialTicks)
                 {
                     if (activeWeatherTexture >= 0)
                         tessellator->draw();
+#ifdef PS2_OPTIMIZATION_VALIDATION
+                    ++validationWeatherTextureSwitches;
+#endif
                     activeWeatherTexture = 0;
                     renderBindTexture(mc->renderEngine->getTexture("/environment/rain.png"));
                     tessellator->startDrawingQuads();
@@ -2423,6 +2451,9 @@ void EntityRenderer::renderRainSnow(float partialTicks)
                 tessellator->addVertexWithUV(maxX, maxY, maxZ, 1.0f, maxV);
                 tessellator->addVertexWithUV(minX, maxY, minZ, 0.0f, maxV);
                 tessellator->setTranslationD(0.0, 0.0, 0.0);
+#ifdef PS2_OPTIMIZATION_VALIDATION
+                ++validationRainColumns;
+#endif
             }
             else
             {
@@ -2430,6 +2461,9 @@ void EntityRenderer::renderRainSnow(float partialTicks)
                 {
                     if (activeWeatherTexture >= 0)
                         tessellator->draw();
+#ifdef PS2_OPTIMIZATION_VALIDATION
+                    ++validationWeatherTextureSwitches;
+#endif
                     activeWeatherTexture = 1;
                     renderBindTexture(mc->renderEngine->getTexture("/environment/snow.png"));
                     tessellator->startDrawingQuads();
@@ -2485,10 +2519,16 @@ void EntityRenderer::renderRainSnow(float partialTicks)
                 tessellator->addVertexWithUV(maxX, maxY, maxZ, 1.0f + textureU, maxV);
                 tessellator->addVertexWithUV(minX, maxY, minZ, textureU, maxV);
                 tessellator->setTranslationD(0.0, 0.0, 0.0);
+#ifdef PS2_OPTIMIZATION_VALIDATION
+                ++validationSnowColumns;
+#endif
             }
         }
     }
 
+#ifdef PS2_OPTIMIZATION_VALIDATION
+    validationReportWeather();
+#endif
     if (activeWeatherTexture >= 0)
         tessellator->draw();
 #if PLATFORM_PS2 && MC_LOG_LEVEL >= 2

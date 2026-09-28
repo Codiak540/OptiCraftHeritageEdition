@@ -10,6 +10,7 @@
 #include "ps2/render/Ps2RenderStats.h"
 #include "ps2/render/Ps2TextureGs.h"
 #include "ps2/render/Ps2Vu0DrawSupport.h"
+#include "ps2/diagnostics/Ps2OptimizationValidation.h"
 
 #include <gsInline.h>
 #include <gsPrimitive.h>
@@ -819,6 +820,10 @@ bool ps2_draw_3d(const Ps2Draw3DState& state) {
         if ((uoc[0] & uoc[1] & uoc[2] & uoc[3]) != 0) {
             PS2_FAST_DRAW_STAT(if (terrainTranslucent)
                 ++ps2_render_stats().translucent.rejectedQuads);
+#ifdef PS2_OPTIMIZATION_VALIDATION
+            if (terrainTranslucent)
+                Ps2OptimizationValidation::translucentQuadRejected();
+#endif
             PS2_FAST_DRAW_STAT(if (state.debugClipped) (*state.debugClipped) += 2);
             return;
         }
