@@ -13,9 +13,6 @@
 #include "platform/PlatformTuning.h"
 #include "Vec3D.h"
 #include "World.h"
-#if PLATFORM_PS2
-#include "ps2/diagnostics/Ps2OptimizationValidation.h"
-#endif
 
 
 
@@ -37,22 +34,6 @@ bool EntityCreature::isMovementCeased()
 
 void EntityCreature::updatePlayerActionState()
 {
-#if PLATFORM_MULTIPLAYER_REMOTE_LIVING_PHYSICS_TICK_DIVISOR > 1
-	// Legacy-AI creatures are also server-authoritative in multiplayer. Avoid
-	// local path/target/wander work while keeping special non-creature living
-	// entities (slimes, squids, ghasts) on their own animation/action paths.
-	if (worldObj != nullptr && worldObj->multiplayerWorld && isMultiplayerEntity)
-	{
-		moveStrafing = 0.0f;
-		moveForward = 0.0f;
-		randomYawVelocity = 0.0f;
-		isJumping = false;
-#ifdef PS2_OPTIMIZATION_VALIDATION
-		Ps2OptimizationValidation::remoteCreatureAiSkipped();
-#endif
-		return;
-	}
-#endif
 #if PLATFORM_THROTTLE_ENTITY_AI
 	if (!shouldRunEntityDecisionAI())
 		return;

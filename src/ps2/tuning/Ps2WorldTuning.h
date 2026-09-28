@@ -153,7 +153,7 @@
 // TPS, but refresh the expensive local living-physics path periodically. The
 // phase is staggered by entity ID so a crowd does not refresh on one tick.
 // Must stay a power of two; 1 restores the vanilla per-tick path.
-#define PS2_MULTIPLAYER_REMOTE_LIVING_PHYSICS_TICK_DIVISOR 4
+#define PS2_MULTIPLAYER_REMOTE_LIVING_PHYSICS_TICK_DIVISOR 8
 
 // Living entities beyond the visible terrain window are not worth submitting
 // through the expensive animated-model path. Frustum-exempt entities keep their
