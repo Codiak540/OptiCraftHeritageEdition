@@ -2041,6 +2041,18 @@ void Minecraft::runTick()
             if (eventKey == lwjgl::Keyboard::KEY_F8)
                 gameSettings->smoothCamera = !gameSettings->smoothCamera;
 
+            if (eventKey == lwjgl::Keyboard::KEY_C)
+            {
+                if (gameSettings->legacyCrafting && thePlayer != nullptr && !thePlayer->isDead)
+                {
+                    if (isSplitScreenActive())
+                        displayPlayerScreen(0, new LegacyCraftingScreen(thePlayer->inventory, theWorld, 0, 0, 0, true, thePlayer));
+                    else
+                        displayGuiScreen(new LegacyCraftingScreen(thePlayer->inventory, theWorld, 0, 0, 0, true, thePlayer));
+                    continue;
+                }
+            }
+
             for (int_t slot = 0; slot < 9; ++slot)
             {
                 if (eventKey == lwjgl::Keyboard::KEY_1 + slot)
@@ -2199,6 +2211,11 @@ void Minecraft::runTick()
             effectRenderer->updateEffects();
             ClientProfiler::tickPhase("effects", System::nanoTime() - clientPhaseStartNs);
         }
+    }
+    else
+    {
+        if (sndManager != nullptr)
+            sndManager->playRandomMusicIfReady();
     }
 
     systemTime = System::currentTimeMillis();
@@ -2711,6 +2728,11 @@ void Minecraft::changeWorld(World *world, const std::string &s, EntityPlayerSP *
     else if (renderEngine != nullptr)
     {
         renderEngine->setBackgroundTextureLoadingEnabled(true);
+    }
+
+    if (world != nullptr && sndManager != nullptr)
+    {
+        sndManager->triggerMusicNow();
     }
 
 
