@@ -1603,15 +1603,6 @@ int_t RenderGlobal::renderSortedRenderers(int_t i, int_t j, int_t k, double d)
 		renderedNow++;
 	}
 
-#ifdef PS2_OPTIMIZATION_VALIDATION
-	static unsigned int s_ps2OptimizationValidationFrames = 0;
-	if (k == 1 && ++s_ps2OptimizationValidationFrames >= 120)
-	{
-		s_ps2OptimizationValidationFrames = 0;
-		Ps2OptimizationValidation::reportAndReset();
-	}
-#endif
-
 #if MC_LOG_LEVEL >= 2
 	// Pass 1 (water/ice/glass) was never instrumented: every counter above is
 	// gated on k == 0. Without it there is no way to tell "the section was never

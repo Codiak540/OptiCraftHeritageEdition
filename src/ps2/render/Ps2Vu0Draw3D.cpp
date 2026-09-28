@@ -119,6 +119,12 @@ bool ps2_draw_3d(const Ps2Draw3DState& state) {
 	if (packedTerrain && (!state.quads || !textured || !colored))
 		return false;
 
+#ifdef PS2_OPTIMIZATION_VALIDATION
+    const bool validationWeatherDraw = Ps2OptimizationValidation::weatherDrawActive();
+    if (validationWeatherDraw)
+        Ps2OptimizationValidation::weatherFast3dBegin(state.count, state.quads);
+#endif
+
     const float hw = state.viewW * 0.5f;
     const float hh = state.viewH * 0.5f;
     const float fw = hw * 2.0f;
@@ -237,6 +243,10 @@ bool ps2_draw_3d(const Ps2Draw3DState& state) {
             // than dereference the result. The staged quads are lost, which is
             // one frame of missing terrain -- writing through null is a
             // TLB-miss storm the console does not come back from.
+#ifdef PS2_OPTIMIZATION_VALIDATION
+            if (validationWeatherDraw)
+                Ps2OptimizationValidation::weatherGsAllocationFailure(quadCount * 2);
+#endif
             nstrip = 0;
             PS2_VU0_CYC_END(cycFlush, ps2_render_stats().cycleEmit);
             PS2_FAST_DRAW_STAT(ps2_render_stats().cycleBatchSubmit +=
@@ -289,6 +299,10 @@ bool ps2_draw_3d(const Ps2Draw3DState& state) {
             clampInitialized = true;
         }
 
+#ifdef PS2_OPTIMIZATION_VALIDATION
+        if (validationWeatherDraw)
+            Ps2OptimizationValidation::weatherGsSubmit(quadCount * 2);
+#endif
         nstrip = 0;
         PS2_VU0_CYC_END(cycFlush, ps2_render_stats().cycleEmit);
         PS2_FAST_DRAW_STAT(ps2_render_stats().cycleBatchSubmit +=
@@ -310,6 +324,10 @@ bool ps2_draw_3d(const Ps2Draw3DState& state) {
             gsKit_prim_list_triangle_goraud_texture_stq_3d(
                 state.gsGlobal, state.texture, nbatch * 3, batch);
             state.gsGlobal->PrimFogEnable = oldFogEnable;
+#ifdef PS2_OPTIMIZATION_VALIDATION
+            if (validationWeatherDraw)
+                Ps2OptimizationValidation::weatherGsSubmit(nbatch);
+#endif
             nbatch = 0;
             PS2_VU0_CYC_END(cycFlush, ps2_render_stats().cycleEmit);
             PS2_FAST_DRAW_STAT(ps2_render_stats().cycleBatchSubmit +=
@@ -465,11 +483,17 @@ bool ps2_draw_3d(const Ps2Draw3DState& state) {
         if (ps2_tri_offscreen(pv[0].x, pv[0].y, pv[1].x, pv[1].y,
                               pv[2].x, pv[2].y, fw, fh)) {
             PS2_FAST_DRAW_STAT(if (state.debugOffscreen) (*state.debugOffscreen)++);
+#ifdef PS2_OPTIMIZATION_VALIDATION
+            if (validationWeatherDraw) Ps2OptimizationValidation::weatherOffscreen(1);
+#endif
             return;
         }
         if (ps2_vu0_cull(state.render.cullFace, state.render.frontFaceCCW, state.render.cullBackFace,
                          pv[0].x, pv[0].y, pv[1].x, pv[1].y, pv[2].x, pv[2].y)) {
             PS2_FAST_DRAW_STAT(if (state.debugBackface) (*state.debugBackface)++);
+#ifdef PS2_OPTIMIZATION_VALIDATION
+            if (validationWeatherDraw) Ps2OptimizationValidation::weatherBackface(1);
+#endif
             return;
         }
         PS2_FAST_DRAW_STAT(if (state.debugPrims) (*state.debugPrims)++);
@@ -548,6 +572,9 @@ bool ps2_draw_3d(const Ps2Draw3DState& state) {
                 pv[2].x, pv[2].y, pv[2].z,
                 c0, c1, c2);
         }
+#ifdef PS2_OPTIMIZATION_VALIDATION
+        if (validationWeatherDraw) Ps2OptimizationValidation::weatherGsSubmit(1);
+#endif
     };
 
     // Clip one straddling triangle (given as 3 ClipVerts with attributes) in
@@ -558,6 +585,10 @@ bool ps2_draw_3d(const Ps2Draw3DState& state) {
         const unsigned int clipStart = terrainTranslucent ? ps2_vu0_ee_cycles() : 0;
 #endif
         int n = ps2_clip_poly_guard(poly, 3, mask, gx, gy);
+#ifdef PS2_OPTIMIZATION_VALIDATION
+        if (validationWeatherDraw)
+            Ps2OptimizationValidation::weatherClip(1, n >= 3 ? n - 2 : 0);
+#endif
 #ifdef PS2_RENDER_STATS
         if (terrainTranslucent)
         {
@@ -627,6 +658,9 @@ bool ps2_draw_3d(const Ps2Draw3DState& state) {
 #endif
         if (uoc[a] & uoc[b] & uoc[c]) {
             PS2_FAST_DRAW_STAT(if (state.debugClipped) (*state.debugClipped)++);
+#ifdef PS2_OPTIMIZATION_VALIDATION
+            if (validationWeatherDraw) Ps2OptimizationValidation::weatherTrivialReject(1);
+#endif
             return;
         }
         int mask = uoc[a] | uoc[b] | uoc[c];
@@ -690,12 +724,18 @@ bool ps2_draw_3d(const Ps2Draw3DState& state) {
             (upr[0].x > fw   && upr[1].x > fw   && upr[2].x > fw   && upr[3].x > fw) ||
             (upr[0].y > fh   && upr[1].y > fh   && upr[2].y > fh   && upr[3].y > fh)) {
             PS2_FAST_DRAW_STAT(if (state.debugClipped) (*state.debugClipped) += 2);
+#ifdef PS2_OPTIMIZATION_VALIDATION
+            if (validationWeatherDraw) Ps2OptimizationValidation::weatherOffscreen(2);
+#endif
             return true;
         }
         // Planar quad: one backface test decides both triangles.
         if (ps2_vu0_cull(state.render.cullFace, state.render.frontFaceCCW, state.render.cullBackFace,
                         upr[0].x, upr[0].y, upr[1].x, upr[1].y, upr[2].x, upr[2].y)) {
             PS2_FAST_DRAW_STAT(if (state.debugBackface) (*state.debugBackface) += 2);
+#ifdef PS2_OPTIMIZATION_VALIDATION
+            if (validationWeatherDraw) Ps2OptimizationValidation::weatherBackface(2);
+#endif
             return true;
         }
 
@@ -823,6 +863,8 @@ bool ps2_draw_3d(const Ps2Draw3DState& state) {
 #ifdef PS2_OPTIMIZATION_VALIDATION
             if (terrainTranslucent)
                 Ps2OptimizationValidation::translucentQuadRejected();
+            if (validationWeatherDraw)
+                Ps2OptimizationValidation::weatherTrivialReject(2);
 #endif
             PS2_FAST_DRAW_STAT(if (state.debugClipped) (*state.debugClipped) += 2);
             return;
@@ -1023,6 +1065,9 @@ bool ps2_draw_3d(const Ps2Draw3DState& state) {
         }
         if (oc0 & oc1 & oc2) {
             PS2_FAST_DRAW_STAT(if (state.debugClipped) (*state.debugClipped)++);
+#ifdef PS2_OPTIMIZATION_VALIDATION
+            if (validationWeatherDraw) Ps2OptimizationValidation::weatherTrivialReject(1);
+#endif
             tri++;
             continue;
         }

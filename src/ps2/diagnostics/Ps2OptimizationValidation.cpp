@@ -56,6 +56,42 @@ struct Counters
     std::uint32_t weatherRainColumns = 0;
     std::uint32_t weatherSnowColumns = 0;
     std::uint32_t weatherTextureSwitches = 0;
+    std::uint32_t weatherDrawCalls = 0;
+    std::uint32_t weatherRainBatches = 0;
+    std::uint32_t weatherSnowBatches = 0;
+    std::uint32_t weatherTessBytes = 0;
+    std::uint32_t weatherBackendVertices = 0;
+    std::uint32_t weatherBackendAccepted = 0;
+    std::uint32_t weatherBackendRejected = 0;
+    std::uint32_t weatherQueueGrowBytes = 0;
+    std::uint32_t weatherQueueResets = 0;
+    std::uint32_t weatherStateSamples = 0;
+    std::uint32_t weatherStateTextured = 0;
+    std::uint32_t weatherStateColored = 0;
+    std::uint32_t weatherStateBrightness = 0;
+    std::uint32_t weatherStateBlend = 0;
+    std::uint32_t weatherStateAlphaTest = 0;
+    std::uint32_t weatherStateDepthTest = 0;
+    std::uint32_t weatherStateDepthWrite = 0;
+    std::uint32_t weatherStateCullFace = 0;
+    int weatherLastAlphaRef = -1;
+    std::uint32_t weatherFast3dCalls = 0;
+    std::uint32_t weatherFast3dVertices = 0;
+    std::uint32_t weatherInputTriangles = 0;
+    std::uint32_t weatherTrivialRejectTriangles = 0;
+    std::uint32_t weatherClipInputTriangles = 0;
+    std::uint32_t weatherClipOutputTriangles = 0;
+    std::uint32_t weatherOffscreenTriangles = 0;
+    std::uint32_t weatherBackfaceTriangles = 0;
+    std::uint32_t weatherGsTriangles = 0;
+    std::uint32_t weatherGsAllocationFailures = 0;
+
+    std::uint32_t frameSamples = 0;
+    std::uint64_t frameTotalNs = 0;
+    std::uint64_t frameMinNs = 0;
+    std::uint64_t frameMaxNs = 0;
+    std::uint32_t frameOver33ms = 0;
+    std::uint32_t frameOver50ms = 0;
 
     std::uint32_t meshBuildStarted = 0;
     std::uint32_t meshBuildPublished = 0;
@@ -69,6 +105,8 @@ struct Counters
 
 Counters g_counters;
 bool g_configReported = false;
+bool g_weatherDrawActive = false;
+unsigned int g_reportFrames = 0;
 
 constexpr int enabledFlag(bool enabled)
 {
@@ -182,6 +220,48 @@ void reportAndReset()
         g_counters.weatherSnowColumns, g_counters.weatherTextureSwitches);
 
     MC_LOG_INFO("ps2.validate",
+        "weatherDraw calls=%u rainBatch=%u snowBatch=%u verts=%u bytes=%u backendOk=%u backendFail=%u"
+        " queueGrow=%u queueReset=%u\n",
+        g_counters.weatherDrawCalls, g_counters.weatherRainBatches, g_counters.weatherSnowBatches,
+        g_counters.weatherBackendVertices, g_counters.weatherTessBytes,
+        g_counters.weatherBackendAccepted, g_counters.weatherBackendRejected,
+        g_counters.weatherQueueGrowBytes, g_counters.weatherQueueResets);
+
+    MC_LOG_INFO("ps2.validate",
+        "weather3d fastCalls=%u fastVerts=%u trisIn=%u trivialReject=%u clipIn=%u clipOut=%u"
+        " offscreen=%u backface=%u gsTris=%u gsAllocFail=%u\n",
+        g_counters.weatherFast3dCalls, g_counters.weatherFast3dVertices,
+        g_counters.weatherInputTriangles, g_counters.weatherTrivialRejectTriangles,
+        g_counters.weatherClipInputTriangles, g_counters.weatherClipOutputTriangles,
+        g_counters.weatherOffscreenTriangles, g_counters.weatherBackfaceTriangles,
+        g_counters.weatherGsTriangles, g_counters.weatherGsAllocationFailures);
+
+    MC_LOG_INFO("ps2.validate",
+        "weatherState samples=%u textured=%u colored=%u brightness=%u blend=%u alphaTest=%u alphaRef=%d"
+        " depthTest=%u depthWrite=%u cull=%u\n",
+        g_counters.weatherStateSamples, g_counters.weatherStateTextured,
+        g_counters.weatherStateColored, g_counters.weatherStateBrightness,
+        g_counters.weatherStateBlend, g_counters.weatherStateAlphaTest, g_counters.weatherLastAlphaRef,
+        g_counters.weatherStateDepthTest, g_counters.weatherStateDepthWrite,
+        g_counters.weatherStateCullFace);
+
+    if (g_counters.frameSamples > 0)
+    {
+        const double avgMs = static_cast<double>(g_counters.frameTotalNs) /
+            static_cast<double>(g_counters.frameSamples) / 1000000.0;
+        const double minMs = static_cast<double>(g_counters.frameMinNs) / 1000000.0;
+        const double maxMs = static_cast<double>(g_counters.frameMaxNs) / 1000000.0;
+        const double fps = g_counters.frameTotalNs > 0
+            ? static_cast<double>(g_counters.frameSamples) * 1000000000.0 /
+              static_cast<double>(g_counters.frameTotalNs)
+            : 0.0;
+        MC_LOG_INFO("ps2.validate",
+            "perf frames=%u avg=%.2fms min=%.2fms max=%.2fms fps=%.2f over33=%u over50=%u\n",
+            g_counters.frameSamples, avgMs, minMs, maxMs, fps,
+            g_counters.frameOver33ms, g_counters.frameOver50ms);
+    }
+
+    MC_LOG_INFO("ps2.validate",
         "mesh start=%u publish=%u followup=%u coalesce=%u restart=%u urgentMark=%u urgentPublish=%u urgentYield=%u\n",
         g_counters.meshBuildStarted, g_counters.meshBuildPublished,
         g_counters.meshFollowupPublished, g_counters.meshDirtyCoalesced,
@@ -189,6 +269,28 @@ void reportAndReset()
         g_counters.meshUrgentPublished, g_counters.meshUrgentYielded);
 
     g_counters = Counters{};
+}
+
+void frameEnd(long long frameNs)
+{
+    if (frameNs >= 0)
+    {
+        const std::uint64_t ns = static_cast<std::uint64_t>(frameNs);
+        ++g_counters.frameSamples;
+        g_counters.frameTotalNs += ns;
+        if (g_counters.frameMinNs == 0 || ns < g_counters.frameMinNs)
+            g_counters.frameMinNs = ns;
+        if (ns > g_counters.frameMaxNs)
+            g_counters.frameMaxNs = ns;
+        if (ns > 33333333ULL) ++g_counters.frameOver33ms;
+        if (ns > 50000000ULL) ++g_counters.frameOver50ms;
+    }
+
+    if (++g_reportFrames >= 120)
+    {
+        g_reportFrames = 0;
+        reportAndReset();
+    }
 }
 
 void remoteLivingPhysics(bool fullPhysics)
@@ -300,6 +402,95 @@ void weatherFrame(float rainStrength, int candidates, int rainColumns, int snowC
     if (rainColumns > 0) g_counters.weatherRainColumns += (std::uint32_t)rainColumns;
     if (snowColumns > 0) g_counters.weatherSnowColumns += (std::uint32_t)snowColumns;
     if (textureSwitches > 0) g_counters.weatherTextureSwitches += (std::uint32_t)textureSwitches;
+}
+
+void weatherDrawBegin(int kind)
+{
+    g_weatherDrawActive = true;
+    ++g_counters.weatherDrawCalls;
+    if (kind == 0) ++g_counters.weatherRainBatches;
+    else if (kind == 1) ++g_counters.weatherSnowBatches;
+}
+
+void weatherDrawEnd(int bytesDrawn)
+{
+    if (bytesDrawn > 0)
+        g_counters.weatherTessBytes += static_cast<std::uint32_t>(bytesDrawn);
+    g_weatherDrawActive = false;
+}
+
+bool weatherDrawActive()
+{
+    return g_weatherDrawActive;
+}
+
+void weatherBackendBatch(int vertices, bool quads, bool accepted, long queueBefore, long queueAfter,
+                         bool textured, bool colored, bool brightness, bool blend, bool alphaTest,
+                         int alphaRef, bool depthTest, bool depthWrite, bool cullFace)
+{
+    (void)quads;
+    if (vertices > 0) g_counters.weatherBackendVertices += static_cast<std::uint32_t>(vertices);
+    accepted ? ++g_counters.weatherBackendAccepted : ++g_counters.weatherBackendRejected;
+    if (queueBefore >= 0 && queueAfter >= 0)
+    {
+        if (queueAfter >= queueBefore)
+            g_counters.weatherQueueGrowBytes += static_cast<std::uint32_t>(queueAfter - queueBefore);
+        else
+        {
+            ++g_counters.weatherQueueResets;
+            g_counters.weatherQueueGrowBytes += static_cast<std::uint32_t>(queueAfter);
+        }
+    }
+
+    ++g_counters.weatherStateSamples;
+    if (textured) ++g_counters.weatherStateTextured;
+    if (colored) ++g_counters.weatherStateColored;
+    if (brightness) ++g_counters.weatherStateBrightness;
+    if (blend) ++g_counters.weatherStateBlend;
+    if (alphaTest) ++g_counters.weatherStateAlphaTest;
+    if (depthTest) ++g_counters.weatherStateDepthTest;
+    if (depthWrite) ++g_counters.weatherStateDepthWrite;
+    if (cullFace) ++g_counters.weatherStateCullFace;
+    g_counters.weatherLastAlphaRef = alphaRef;
+}
+
+void weatherFast3dBegin(int vertices, bool quads)
+{
+    ++g_counters.weatherFast3dCalls;
+    if (vertices > 0) g_counters.weatherFast3dVertices += static_cast<std::uint32_t>(vertices);
+    if (vertices > 0)
+        g_counters.weatherInputTriangles += static_cast<std::uint32_t>(quads ? (vertices / 4) * 2 : vertices / 3);
+}
+
+void weatherTrivialReject(int triangles)
+{
+    if (triangles > 0) g_counters.weatherTrivialRejectTriangles += static_cast<std::uint32_t>(triangles);
+}
+
+void weatherClip(int inputTriangles, int outputTriangles)
+{
+    if (inputTriangles > 0) g_counters.weatherClipInputTriangles += static_cast<std::uint32_t>(inputTriangles);
+    if (outputTriangles > 0) g_counters.weatherClipOutputTriangles += static_cast<std::uint32_t>(outputTriangles);
+}
+
+void weatherOffscreen(int triangles)
+{
+    if (triangles > 0) g_counters.weatherOffscreenTriangles += static_cast<std::uint32_t>(triangles);
+}
+
+void weatherBackface(int triangles)
+{
+    if (triangles > 0) g_counters.weatherBackfaceTriangles += static_cast<std::uint32_t>(triangles);
+}
+
+void weatherGsSubmit(int triangles)
+{
+    if (triangles > 0) g_counters.weatherGsTriangles += static_cast<std::uint32_t>(triangles);
+}
+
+void weatherGsAllocationFailure(int triangles)
+{
+    if (triangles > 0) g_counters.weatherGsAllocationFailures += static_cast<std::uint32_t>(triangles);
 }
 
 void meshBuildStarted()
