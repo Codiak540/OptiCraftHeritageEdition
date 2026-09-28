@@ -205,7 +205,7 @@ void GuiInventory::actionPerformed(GuiButton *button)
 
 void GuiInventory::keyTyped(char_t c, int_t key)
 {
-	if (mc != nullptr && mc->gameSettings != nullptr && mc->gameSettings->legacyUI)
+	if (mc != nullptr && mc->gameSettings != nullptr && mc->gameSettings->legacyUI && mc->gameSettings->legacyCrafting)
 	{
 		if (key == mc->gameSettings->keyBindInventory->keyCode || key == lwjgl::Keyboard::KEY_C)
 		{

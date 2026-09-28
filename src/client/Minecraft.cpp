@@ -2068,7 +2068,7 @@ void Minecraft::runTick()
                 {
                     if (playerController->isInCreativeMode())
                         displayPlayerScreen(0, new GuiContainerCreative(thePlayer));
-                    else if (gameSettings->legacyUI)
+                    else if (gameSettings->legacyUI && gameSettings->legacyCrafting)
                         displayPlayerScreen(0, new LegacyCraftingScreen(thePlayer->inventory, theWorld, 0, 0, 0, true, thePlayer));
                     else
                         displayPlayerScreen(0, new GuiInventory(thePlayer));
@@ -2077,7 +2077,7 @@ void Minecraft::runTick()
             }
             if (playerController->isInCreativeMode())
                 displayGuiScreen(new GuiContainerCreative(thePlayer));
-            else if (gameSettings->legacyUI)
+            else if (gameSettings->legacyUI && gameSettings->legacyCrafting)
                 displayGuiScreen(new LegacyCraftingScreen(thePlayer->inventory, theWorld, 0, 0, 0, true, thePlayer));
             else
                 displayGuiScreen(new GuiInventory(thePlayer));

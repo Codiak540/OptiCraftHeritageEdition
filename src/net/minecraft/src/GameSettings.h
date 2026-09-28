@@ -113,6 +113,8 @@ public:
 	std::string selectedSkinP2;
 	bool legacyUI;
 	bool legacyLook;
+	bool legacyCrafting;
+	bool legacyCreative;
 	int_t renderBackend;
 	bool alternativeControllerLayout;
 	// Platform-neutral controller settings consumed through PlatformUserSettings.

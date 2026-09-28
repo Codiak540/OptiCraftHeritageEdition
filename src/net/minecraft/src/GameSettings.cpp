@@ -140,6 +140,8 @@ void GameSettings::setDefaults()
     selectedSkinP2 = "TennisSteve";
     legacyUI = legacyUiDefaultEnabled();
     legacyLook = legacyLookDefaultEnabled();
+    legacyCrafting = true;
+    legacyCreative = true;
     alternativeControllerLayout = false;
     controllerDeadzone = 0.20f;
     wiiDeflicker = true;

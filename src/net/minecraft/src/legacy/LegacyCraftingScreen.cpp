@@ -2166,6 +2166,8 @@ void LegacyCraftingScreen::updateScreen()
     const PlatformTextInputSnapshot pad = platformTextInputSnapshot(platformMenuPad());
     if (pad.connected)
     {
+        if (pad.pressed & PLATFORM_TEXT_PREV_PAGE) changeCategory(-1);
+        if (pad.pressed & PLATFORM_TEXT_NEXT_PAGE) changeCategory(1);
         if (pad.pressed & PLATFORM_TEXT_LEFT)  handleNavigation(-1, 0);
         if (pad.pressed & PLATFORM_TEXT_RIGHT) handleNavigation(1, 0);
         if (pad.pressed & PLATFORM_TEXT_UP)    handleNavigation(0, 1);
