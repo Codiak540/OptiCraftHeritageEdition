@@ -176,19 +176,21 @@ void decoderPcmThread(std::string path)
 
         remainingBytes -= readCount * sizeof(std::int16_t);
 
-        // Convert 22050 mono to 44100 stereo
-        for (std::size_t i = 0; i < readCount; ++i)
+        const std::size_t inputFrames = readCount / 2;
+        // Convert 22050 stereo to 44100 stereo
+        for (std::size_t f = 0; f < inputFrames; ++f)
         {
-            const float s = rawSamples[i] / 32768.0f;
-            const std::size_t outBase = i * 4;
-            stereo[outBase + 0] = s;
-            stereo[outBase + 1] = s;
-            stereo[outBase + 2] = s;
-            stereo[outBase + 3] = s;
+            const float left = rawSamples[f * 2 + 0] / 32768.0f;
+            const float right = rawSamples[f * 2 + 1] / 32768.0f;
+            const std::size_t outBase = f * 4;
+            stereo[outBase + 0] = left;
+            stereo[outBase + 1] = right;
+            stereo[outBase + 2] = left;
+            stereo[outBase + 3] = right;
         }
 
         std::size_t source = 0;
-        const std::size_t sampleCount = readCount * 4;
+        const std::size_t sampleCount = inputFrames * 4;
         while (source < sampleCount)
         {
             std::unique_lock<std::mutex> lock(s_mutex);
@@ -251,6 +253,10 @@ bool start(const std::string &path)
         s_running = true;
     }
     s_thread = isPcm ? std::thread(decoderPcmThread, path) : std::thread(decoderThread, path);
+    {
+        std::unique_lock<std::mutex> lock(s_mutex);
+        s_condition.wait_for(lock, std::chrono::milliseconds(50), [] { return s_count >= 4096 || s_eof || s_stop; });
+    }
     return true;
 }
 
