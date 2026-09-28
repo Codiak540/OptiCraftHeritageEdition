@@ -163,6 +163,14 @@
 #undef  PLATFORM_PLAYER_UPDATE_CHUNK_RANGE_BLOCKS
 #define PLATFORM_PLAYER_UPDATE_CHUNK_RANGE_BLOCKS  16
 
+// Touch-look scale, +10% over vanilla's mouse curve (owner call, 2026-09-28):
+// the bottom panel is this console's only camera control, so a slightly
+// hotter cube beats dragging long arcs across the 240-px panel height. The
+// alias slot is PlatformInputTuning.h (8.0f vanilla), next to the PS2's
+// direct-camera scale.
+#undef  PLATFORM_MOUSE_CAMERA_SCALE
+#define PLATFORM_MOUSE_CAMERA_SCALE              8.8f
+
 // Lighting, the Wii values: the desktop queue is effectively unbounded
 // (1,000,000 jobs, 5-entry merge scan) and the flood fill is what makes a
 // streamed chunk publish expensive. 3 ms of a ~33 ms frame with a 256-job
@@ -276,6 +284,16 @@
 #define PLATFORM_3DS_ASYNC_ISOLATED_BIOME_SOURCE           1
 #define PLATFORM_3DS_ASYNC_CHUNK_DECODE                    1
 #define PLATFORM_3DS_ASYNC_NEAREST_FIRST                   1
+
+// Network thread placement: the read/write workers pin to the same second
+// core the generator uses. The two never overlap -- the generator only
+// exists in singleplayer, the socket pair only in multiplayer -- so in a
+// network session this is a whole ARM11 for the recv churn and the Packet51
+// zlib inflates that the game's core was otherwise sharing (2026-09-28:
+// the starved writer sent digs late enough for the server to revert them,
+// which read as "breaking blocks does nothing").
+#undef  PLATFORM_NETWORK_THREAD_AFFINITY_MASK
+#define PLATFORM_NETWORK_THREAD_AFFINITY_MASK      (1u << 1)
 
 // Streaming schedule: when the GAME THREAD itself does worldgen work. The
 // values are the PS2's (Ps2WorldTuning.h) because the 3DS shares that

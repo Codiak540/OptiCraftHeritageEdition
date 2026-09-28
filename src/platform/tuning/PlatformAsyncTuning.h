@@ -80,3 +80,12 @@
 #  define PLATFORM_ASYNC_CHUNK_DECODE                  0
 #  define PLATFORM_ASYNC_NEAREST_FIRST                 0
 #endif
+
+// -----------------------------------------------------------------------------
+// Network worker placement
+// -----------------------------------------------------------------------------
+// The 3DS pins its NetworkManager read/write threads to the secondary core
+// (see DsWorldTuning.h); 0 -- the OS default scheduler -- everywhere else.
+#ifndef PLATFORM_NETWORK_THREAD_AFFINITY_MASK
+#  define PLATFORM_NETWORK_THREAD_AFFINITY_MASK      0
+#endif

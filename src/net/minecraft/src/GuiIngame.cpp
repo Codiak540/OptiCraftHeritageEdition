@@ -10,7 +10,7 @@
 #include "EntityPlayerSP.h"
 #include "GuiPlayerInfo.h"
 #include "NetClientHandler.h"
-#if defined(WII_PLATFORM) || defined(PS2_PLATFORM)
+#if defined(WII_PLATFORM) || defined(PS2_PLATFORM) || defined(CTR_PLATFORM)
 #include "NetworkManager.h"
 #endif
 #include "EntityClientPlayerMP.h"
@@ -355,8 +355,13 @@ void GuiIngame::renderDebugOverlay(FontRenderer *fontRenderer, int_t screenWidth
 	drawString(fontRenderer, "y: " + std::to_string(mc->thePlayer->posY), safeLeft, safeTop + 70, 0xe0e0e0);
 	drawString(fontRenderer, "z: " + std::to_string(mc->thePlayer->posZ), safeLeft, safeTop + 78, 0xe0e0e0);
 	drawString(fontRenderer, "f: " + std::to_string(MathHelper::floor_float((mc->thePlayer->rotationYaw * 4.0f) / 360.0f + 0.5f) & 3), safeLeft, safeTop + 86, 0xe0e0e0);
-#if defined(WII_PLATFORM) || defined(PS2_PLATFORM)
+#if defined(WII_PLATFORM) || defined(PS2_PLATFORM) || defined(CTR_PLATFORM)
 	drawString(fontRenderer, platformInputDebugLine(), safeLeft, safeTop + 94, 0xe0e0e0);
+	// The NET/TCP readout is the 3DS multiplayer's first diagnostic: rd/wr
+	// must both stay 1 (a 0 is a dead network thread -- see NetworkManager's
+	// entry points), and q growing while tx stalls means the writer is being
+	// starved. The 3DS was left out of this block while its net stack was
+	// bring-up; the 2026-09-28 starvation bug is why it must not be.
 	WorldClient *multiplayerWorld = dynamic_cast<WorldClient *>(mc->theWorld);
 	if (multiplayerWorld != nullptr)
 	{

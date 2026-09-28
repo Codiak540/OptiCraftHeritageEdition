@@ -62,21 +62,21 @@ The `.cia` installs with FBI (or any CIA installer) and launches from the HOME m
 
 #### 3DS controls
 
-| Input | Menus / text entry | In game |
-|---|---|---|
-| Circle Pad | cursor and list navigation | movement |
-| A | confirm; types the highlighted key on the on-screen keyboard | jump |
-| B | back / cancel | place / use |
-| X | space | attack / destroy |
-| Y | close the keyboard | inventory |
-| L | space | place / use |
-| R | shift | attack / destroy |
-| D-Pad | menu navigation; keyboard cursor | left/right: hotbar slot, up: chat (multiplayer) |
-| START | back; Enter while a text field is focused | pause |
-| SELECT | space | sneak |
-| Touch | pointer (the on-screen keyboard reads taps directly) | pointer |
+| Input | Menus / text entry | In game | Containers |
+|---|---|---|---|
+| Circle Pad | cursor and list navigation | movement | free cursor |
+| A | confirm; types the highlighted key on the on-screen keyboard | jump | pick up / place stack |
+| B | back / cancel | place / use | split stack / place one |
+| X | space | attack / destroy | space |
+| Y | close the keyboard | inventory | close the keyboard |
+| L | space | place / use | space |
+| R | shift | attack / destroy | quick-move (shift-click) |
+| D-Pad | menu navigation; keyboard cursor | left/right: hotbar slot, up: chat (multiplayer) | move the selected slot |
+| START | back; Enter while a text field is focused | pause | close the container |
+| SELECT | space | sneak | space |
+| Touch | pointer (the on-screen keyboard reads taps directly) | camera (drag to look) | pointer |
 
-The shoulder buttons are deliberately swapped from the PC mouse convention: L places and R attacks. Text fields open the console's software keyboard first; if it is unavailable, the game draws an on-screen keyboard on the bottom screen. Confirming a keyboard session leaves the text in the field — for chat, pressing A then sends the message.
+The shoulder buttons are deliberately swapped from the PC mouse convention: L places and R attacks. Text fields open the console's software keyboard first; if it is unavailable, the game draws an on-screen keyboard on the bottom screen. Confirming a keyboard session leaves the text in the field — for chat, pressing A then sends the message. In gameplay the touch panel moves the camera only; the triggers own both clicks, and the inventory is navigable end to end from the pad (D-pad to move the slot selection, A/B/R as above) the same way the other consoles do it.
 
 ## Source layout
 

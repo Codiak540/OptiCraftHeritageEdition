@@ -23,10 +23,10 @@
 //   ZL/ZR   --                               unmapped (New-3DS only; phase 2)
 //
 //   circle pad -> stick axes (analog movement, PLATFORM_DIRECT_ANALOG_MOVEMENT)
-//   touch      -> absolute pointer + button 0, in BOTH contexts: the finger
-//                 is the pointer, so it keeps clicking screens (see below) --
-//                 except while a text field has focus, where the on-screen
-//                 keyboard owns the panel and reads RAW 320x240 coordinates
+//   touch      -> menus: absolute pointer + click. Gameplay: LOOK ONLY (panel
+//                 drags move the camera; the triggers own the buttons). While
+//                 a text field has focus the on-screen keyboard owns the
+//                 panel and reads RAW 320x240 coordinates instead.
 //
 // Attack and Use are mouse buttons rather than keys because that is what
 // GameSettings binds them to (-100 / -99) and what clickMouse() reads -- and
@@ -97,6 +97,10 @@ int g_prevTouchY = 0;
 // Last poll's text-exclusive state (a field focused). dsInputPoll compares
 // against it to spot the transitions that change what touch and START mean.
 bool g_prevTextExclusive = false;
+
+// Last poll's container-navigation state: the same transition detection for
+// the B button's split-half role and the START escape below.
+bool g_prevContainerNav = false;
 
 // Gameplay channel state. Separate from PLATFORM_TEXT_*, which is the menu
 // channel and keeps working with a screen open.
@@ -272,7 +276,13 @@ void updateGameplay(u32 keys, bool touchDown)
 		if (navChanged & GP_DPAD_LEFT)  lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_LEFT, (navActive & GP_DPAD_LEFT) != 0);
 		if (navChanged & GP_DPAD_RIGHT) lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_RIGHT, (navActive & GP_DPAD_RIGHT) != 0);
 		if (navChanged & GP_JUMP)       lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_RETURN, (navActive & GP_JUMP) != 0);
-		if (navChanged & GP_USE)        lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_ESCAPE, (navActive & GP_USE) != 0);
+		// B is the screens' back button -- except while the container
+		// navigator owns this screen, where B is the split-half / place-one
+		// slot click (PLATFORM_TEXT_BACK) and closing on it would fight the
+		// selection. dsInputPoll releases an escape pressed before the
+		// handoff.
+		if ((navChanged & GP_USE) != 0 && !platformContainerNavigationActive())
+			lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_ESCAPE, (navActive & GP_USE) != 0);
 	}
 	g_prevMenuNav = navActive;
 
@@ -300,8 +310,10 @@ void updateGameplay(u32 keys, bool touchDown)
 		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_T, false);
 	}
 
-	// Mouse buttons are a level. The touch tap ORs into button 0 so a finger
-	// and X can be held in any order without one releasing the other.
+	// Mouse buttons are a level. `touchDown` here is the MENU pointer click
+	// (see dsInputPoll): gameplay never passes it, so button 0 in game is
+	// the trigger channel alone and any hold order between L and a finger
+	// on the panel cannot release one with the other.
 	const bool want0 = touchDown || (active & GP_ATTACK) != 0;
 	const bool want1 = (active & GP_USE) != 0;
 	if (want0 != g_prevBtn0)
@@ -354,6 +366,7 @@ void dsInputInit(int screenW, int screenH)
 	g_prevTouchX = 0;
 	g_prevTouchY = 0;
 	g_prevTextExclusive = false;
+	g_prevContainerNav = false;
 	g_inMenu = false;
 	g_prevInMenu = false;
 	g_suppressed = 0;
@@ -454,10 +467,22 @@ void dsInputPoll(bool inMenu)
 	g_state.stickY = std::clamp(static_cast<float>(-circle.dy) / kCirclePadMax, -1.0f, 1.0f);
 
 	// After the touch block, so clicks carry this frame's coordinates. The
-	// finger stops being a click source while typing (see above): the tap
-	// that focused the field already landed, and from there the panel
-	// belongs to the keyboard.
-	updateGameplay(keys, touchDown && !typing);
+	// finger is a click only where there is something to click: in menus it
+	// IS the pointer, but in gameplay the triggers own both buttons and
+	// touch is the camera alone -- dragging the panel must not swing the
+	// pickaxe. Text entry keeps its own exclusion either way.
+	updateGameplay(keys, g_inMenu && touchDown && !typing);
+
+	// Container navigation is the other context that changes what B means:
+	// while the slot navigator owns a screen, B is the split-half/place-one
+	// click (PLATFORM_TEXT_BACK) and must not close the container out from
+	// under the selection. The gate inside updateGameplay takes care of the
+	// presses; the transition release here takes care of an escape key that
+	// was already down when a container opened, so it cannot stay stuck.
+	const bool containerNav = platformContainerNavigationActive();
+	if (containerNav && !g_prevContainerNav)
+		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_ESCAPE, false);
+	g_prevContainerNav = containerNav;
 
 	// START keeps its fixed KEY_ESCAPE role only while nothing has focus:
 	// pause in-world, "go back" in a screen, edge-driven off keysPressed
@@ -470,7 +495,7 @@ void dsInputPoll(bool inMenu)
 	if (typing && !g_prevTextExclusive)
 		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_ESCAPE, false);
 	g_prevTextExclusive = typing;
-	if (!typing)
+	if (!typing && !containerNav)
 		forwardStartToEscape(keysPressed, keysReleased);
 }
 

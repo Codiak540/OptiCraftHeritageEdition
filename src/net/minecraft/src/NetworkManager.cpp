@@ -19,6 +19,7 @@
 #include "java/JavaNetwork.h"
 #include "java/Arithmetic.h"
 #include "java/System.h"
+#include "platform/PlatformTuning.h"
 
 int_t NetworkManager::field_28145_d[256];
 int_t NetworkManager::field_28144_e[256];
@@ -55,12 +56,26 @@ NetworkManager::NetworkManager(const std::string &host, int_t port, const std::s
 #else
 	constexpr int kNetworkThreadPriority = 64;
 #endif
-	if (!platformReadThread.start(&NetworkManager::platformReadThreadEntry, this, 32 * 1024, kNetworkThreadPriority))
+#if defined(CTR_PLATFORM)
+	// The 3DS pins its read/write workers to the second core when the OS
+	// granted it (main_3ds.cpp asks at boot): in multiplayer nothing else
+	// wants that ARM11 -- the async chunk generator is singleplayer-only --
+	// so the socket pair, the 512-byte recv churn and every Packet51 zlib
+	// inflate move off the game's core. That is what un-starves the writer:
+	// digs and swings had been leaving the console late enough for the
+	// server to reject them, which read as "blocks come back and mobs
+	// ignore me". Loaders that refuse the CPU-time request fall back to the
+	// default core (Thread.cpp keeps that path correct).
+	constexpr std::uintptr_t kNetworkThreadAffinity = PLATFORM_NETWORK_THREAD_AFFINITY_MASK;
+#else
+	constexpr std::uintptr_t kNetworkThreadAffinity = 0;
+#endif
+	if (!platformReadThread.start(&NetworkManager::platformReadThreadEntry, this, 32 * 1024, kNetworkThreadPriority, kNetworkThreadAffinity))
 	{
 		networkSocket->close();
 		throw std::runtime_error("Could not create network read thread");
 	}
-	if (!platformWriteThread.start(&NetworkManager::platformWriteThreadEntry, this, 32 * 1024, kNetworkThreadPriority))
+	if (!platformWriteThread.start(&NetworkManager::platformWriteThreadEntry, this, 32 * 1024, kNetworkThreadPriority, kNetworkThreadAffinity))
 	{
 		running = false;
 		networkSocket->close();
@@ -293,6 +308,16 @@ void NetworkManager::processReadPackets()
 	#ifdef PS2_PLATFORM
 	constexpr int_t MAX_SEND_QUEUE_BYTES = 512 * 1024;
 	constexpr int_t MAX_PACKETS_PER_TICK = 128;
+	#elif defined(CTR_PLATFORM)
+	// The PS2's budget, for the same reason it exists there: a server burst
+	// (the chunk fan-in right after the spawn teleport) stays queued for the
+	// next ticks instead of monopolizing this 268 MHz core into a visible
+	// multi-second stall. The reader thread -- now on the second core --
+	// keeps decoding ahead regardless, and the smaller send-queue ceiling
+	// turns a wedged writer into a prompt disconnect.overflow instead of a
+	// many-minute zombie where the player's blocks silently come back.
+	constexpr int_t MAX_SEND_QUEUE_BYTES = 512 * 1024;
+	constexpr int_t MAX_PACKETS_PER_TICK = 128;
 	#else
 	constexpr int_t MAX_SEND_QUEUE_BYTES = 0x100000;
 	constexpr int_t MAX_PACKETS_PER_TICK = 1000;
@@ -447,15 +472,47 @@ void NetworkManager::closeConnection()
 #if defined(WII_PLATFORM) || defined(PS2_PLATFORM) || defined(CTR_PLATFORM)
 void *NetworkManager::platformReadThreadEntry(void *argument)
 {
-	try { static_cast<NetworkManager *>(argument)->readThreadRun(); }
-	catch (...) { /* Never unwind a C++ exception through the LWP C entry point. */ }
+	NetworkManager *manager = static_cast<NetworkManager *>(argument);
+	try { manager->readThreadRun(); }
+	catch (std::exception &exception)
+	{
+		// Never unwind a C++ exception through the LWP C entry point -- and
+		// never let a dead reader look like a laggy one either: surface it
+		// as a real disconnect so the player is not left in a zombie world.
+		MC_LOG_ERROR("game", "network read thread died: %s\n", exception.what());
+		if (!manager->terminating && !manager->serverTerminating)
+			manager->onNetworkError(exception);
+	}
+	catch (...)
+	{
+		std::runtime_error exception("network read thread crashed");
+		MC_LOG_ERROR("game", "%s\n", exception.what());
+		if (!manager->terminating && !manager->serverTerminating)
+			manager->onNetworkError(exception);
+	}
 	return nullptr;
 }
 
 void *NetworkManager::platformWriteThreadEntry(void *argument)
 {
-	try { static_cast<NetworkManager *>(argument)->writeThreadRun(); }
-	catch (...) { /* Never unwind a C++ exception through the LWP C entry point. */ }
+	NetworkManager *manager = static_cast<NetworkManager *>(argument);
+	try { manager->writeThreadRun(); }
+	catch (std::exception &exception)
+	{
+		// A dead writer is worse than a dead reader: nothing this client
+		// sends ever leaves the console, movement included, while incoming
+		// chunks keep the world looking alive. Disconnect visibly instead.
+		MC_LOG_ERROR("game", "network write thread died: %s\n", exception.what());
+		if (!manager->terminating && !manager->serverTerminating)
+			manager->onNetworkError(exception);
+	}
+	catch (...)
+	{
+		std::runtime_error exception("network write thread crashed");
+		MC_LOG_ERROR("game", "%s\n", exception.what());
+		if (!manager->terminating && !manager->serverTerminating)
+			manager->onNetworkError(exception);
+	}
 	return nullptr;
 }
 #endif

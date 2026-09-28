@@ -1308,7 +1308,7 @@ void EntityRenderer::updateCameraAndRender(float partialTicks)
 #else
         mc->mouseHelper->mouseXYChange();
         float sensitivity = mc->gameSettings->mouseSensitivity * 0.6f + 0.2f;
-        float sensitivityCubed = sensitivity * sensitivity * sensitivity * 8.0f;
+        float sensitivityCubed = sensitivity * sensitivity * sensitivity * PLATFORM_MOUSE_CAMERA_SCALE;
         float deltaX = (float)mc->mouseHelper->deltaX * sensitivityCubed;
         float deltaY = (float)mc->mouseHelper->deltaY * sensitivityCubed;
         int invertMultiplier = mc->gameSettings->invertMouse ? -1 : 1;
@@ -1318,7 +1318,7 @@ void EntityRenderer::updateCameraAndRender(float partialTicks)
         mc->mouseHelper->mouseXYChange();
         
         float sensitivity = mc->gameSettings->mouseSensitivity * 0.6f + 0.2f;
-        float sensitivityCubed = sensitivity * sensitivity * sensitivity * 8.0f;
+        float sensitivityCubed = sensitivity * sensitivity * sensitivity * PLATFORM_MOUSE_CAMERA_SCALE;
         
         float deltaX = (float)mc->mouseHelper->deltaX * sensitivityCubed;
         float deltaY = (float)mc->mouseHelper->deltaY * sensitivityCubed;

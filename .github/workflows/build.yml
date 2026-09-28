@@ -148,9 +148,14 @@ jobs:
           -DWII_BRINGUP=OFF
           -DWII_ENABLE_SOUND=ON
           -DWII_ENABLE_NETWORK=ON
-          -DCMAKE_CXX_FLAGS="-DHW_RVL -mrvl -mcpu=750 -meabi -mhard-float -I$GITHUB_WORKSPACE/src/net/minecraft/src"
           -DCMAKE_C_COMPILER_LAUNCHER=ccache
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+      # No CXX_FLAGS injection: wii_toolchain.cmake's CMAKE_CXX_FLAGS_INIT
+      # already carries the full MACHDEP set (-DHW_RVL -mrvl -mcpu=750 -meabi
+      # -mhard-float), and cmake/wii.cmake now adds -I src/net/minecraft/src
+      # itself, the way 3ds.cmake and ps2.cmake always have. The old inline
+      # copy of both duplicated every token on every compile line, and hid
+      # that a fresh local `build wii.bat game` did not work without it.
 
       - name: Build
         run: cmake --build build/wii-release --parallel
@@ -213,8 +218,8 @@ jobs:
       # landed, so the configure-time FATAL_ERROR guard now protects the real
       # link instead of only the toolchain smoke test. 3DS_BRINGUP would bypass
       # backend selection entirely and compile only src/3ds/tools/DsBringup.
-      # cmake/3ds.cmake adds -I src/net/minecraft/src itself (ps2.cmake does
-      # the same), so unlike the Wii job this one needs no CXX_FLAGS injection,
+      # cmake/3ds.cmake adds -I src/net/minecraft/src itself (ps2.cmake and
+      # wii.cmake do the same), so this job needs no CXX_FLAGS injection,
       # and it builds the vendored zlib itself rather than needing a portlib.
       - name: Configure
         run: >
