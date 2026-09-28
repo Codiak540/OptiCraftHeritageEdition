@@ -556,6 +556,11 @@ void GameSettings::setOptionValue(const EnumOptions *enumoptions, int_t i)
     if (enumoptions == EnumOptions::AMBIENT_OCCLUSION)
     {
         ambientOcclusion = !ambientOcclusion;
+#if PLATFORM_PS2
+        ofAoLevel = ambientOcclusion ? 0.25f : 0.0f;
+#else
+        ofAoLevel = ambientOcclusion ? 1.0f : 0.0f;
+#endif
         invalidateChunkMeshes();
     }
 #if PLATFORM_HAS_ASPECT_RATIO_OPTION
