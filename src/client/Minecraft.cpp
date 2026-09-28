@@ -84,6 +84,7 @@
 #include "net/minecraft/src/GuiIngame.h"
 #include "net/minecraft/src/GuiIngameMenu.h"
 #include "net/minecraft/src/GuiInventory.h"
+#include "net/minecraft/src/legacy/LegacyCraftingScreen.h"
 #include "net/minecraft/src/StringTranslate.h"
 #include "net/minecraft/src/GuiContainerCreative.h"
 #include "net/minecraft/src/GuiMainMenu.h"
@@ -2067,6 +2068,8 @@ void Minecraft::runTick()
                 {
                     if (playerController->isInCreativeMode())
                         displayPlayerScreen(0, new GuiContainerCreative(thePlayer));
+                    else if (gameSettings->legacyUI)
+                        displayPlayerScreen(0, new LegacyCraftingScreen(thePlayer->inventory, theWorld, 0, 0, 0, true, thePlayer));
                     else
                         displayPlayerScreen(0, new GuiInventory(thePlayer));
                 }
@@ -2074,6 +2077,8 @@ void Minecraft::runTick()
             }
             if (playerController->isInCreativeMode())
                 displayGuiScreen(new GuiContainerCreative(thePlayer));
+            else if (gameSettings->legacyUI)
+                displayGuiScreen(new LegacyCraftingScreen(thePlayer->inventory, theWorld, 0, 0, 0, true, thePlayer));
             else
                 displayGuiScreen(new GuiInventory(thePlayer));
         }
@@ -2725,11 +2730,18 @@ void Minecraft::respawn(bool flag, int_t i, bool copyPlayerState)
     bool ownsBedSpawn = false;
     bool flag1 = true;
 
+    IChunkProvider *ichunkprovider = theWorld->getIChunkProvider();
+
     if (thePlayer != nullptr && !flag)
     {
         chunkcoordinates = thePlayer->getPlayerSpawnCoordinate();
         if (chunkcoordinates != nullptr)
         {
+            // Configure chunk cache over bed location prior to bed validity check.
+            // In bounded worlds / memory-constrained platforms, chunks outside the current
+            // player position return blankChunk (air), which erroneously triggers "tile.bed.notValid".
+            configureChunkProviderCache(ichunkprovider, chunkcoordinates->x >> 4, chunkcoordinates->z >> 4, gameSettings->renderDistance);
+
             chunkcoordinates1 = EntityPlayer::getNearestBedSpawnLocation(theWorld, chunkcoordinates);
             ownsBedSpawn = chunkcoordinates1 != nullptr;
             if (chunkcoordinates1 == nullptr)
@@ -2744,7 +2756,6 @@ void Minecraft::respawn(bool flag, int_t i, bool copyPlayerState)
         flag1 = false;
     }
 
-    IChunkProvider *ichunkprovider = theWorld->getIChunkProvider();
     configureChunkProviderCache(ichunkprovider, chunkcoordinates1->x >> 4, chunkcoordinates1->z >> 4, gameSettings->renderDistance);
 
     theWorld->setSpawnLocation();

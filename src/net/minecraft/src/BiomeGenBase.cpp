@@ -222,7 +222,12 @@ int_t BiomeGenBase::getSkyColorByTemp(float value)
 {
     value /= 3.0f;
     value = std::max(-1.0f, std::min(1.0f, value));
+#if PLATFORM_PS2
+    // Console sky tone: richer, slightly deeper blue hue for retro console look
+    return hsbToRgb(222.0f / 360.0f - value * 0.05f, 0.58f + value * 0.1f, 1.0f);
+#else
     return hsbToRgb(224.0f / 360.0f - value * 0.05f, 0.5f + value * 0.1f, 1.0f);
+#endif
 }
 
 WorldGenerator *BiomeGenBase::getRandomWorldGenForTrees(Random &random)

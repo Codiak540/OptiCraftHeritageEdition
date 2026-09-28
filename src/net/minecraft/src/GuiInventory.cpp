@@ -15,6 +15,10 @@
 #include "PlayerController.h"
 #include "GuiContainerCreative.h"
 #include "Minecraft.h"
+#include "GameSettings.h"
+#include "KeyBinding.h"
+#include "net/minecraft/src/legacy/LegacyCraftingScreen.h"
+#include "pc/lwjgl/Keyboard.h"
 #include "platform/RenderAPI.h"
 #include <cmath>
 
@@ -197,4 +201,24 @@ void GuiInventory::actionPerformed(GuiButton *button)
 	{
 		mc->displayGuiScreen(new GuiStats(this, mc->statFileWriter));
 	}
+}
+
+void GuiInventory::keyTyped(char_t c, int_t key)
+{
+	if (mc != nullptr && mc->gameSettings != nullptr && mc->gameSettings->legacyUI)
+	{
+		if (key == mc->gameSettings->keyBindInventory->keyCode || key == lwjgl::Keyboard::KEY_C)
+		{
+			EntityPlayer *p = inventoryPlayer ? inventoryPlayer : mc->thePlayer;
+			if (p != nullptr)
+			{
+				if (mc->isSplitScreenActive())
+					mc->displayPlayerScreen(getOwnerPlayerIndex(), new LegacyCraftingScreen(p->inventory, p->worldObj, 0, 0, 0, true, p));
+				else
+					mc->displayGuiScreen(new LegacyCraftingScreen(p->inventory, p->worldObj, 0, 0, 0, true, p));
+				return;
+			}
+		}
+	}
+	GuiContainer::keyTyped(c, key);
 }
