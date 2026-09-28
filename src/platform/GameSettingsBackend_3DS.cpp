@@ -29,7 +29,7 @@ void migrateKey(KeyBinding* binding, int_t fallback)
 //
 // Attack and Use are deliberately NOT touched: they stay on the mouse
 // pseudo-keys (-100 / -99), because DsInput emits them as mouse button 0/1
-// from X/L and B/R and from the touch tap, which is the plumbing clickMouse()
+// from X/R and B/L and from the touch tap, which is the plumbing clickMouse()
 // and the right-click path already read. Only keyboard-shaped actions are
 // rebound.
 void applyDefaultBindings(GameSettings& settings)

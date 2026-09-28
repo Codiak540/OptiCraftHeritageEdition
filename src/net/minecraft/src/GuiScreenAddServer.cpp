@@ -23,6 +23,11 @@ void GuiScreenAddServer::updateScreen()
 {
     if (serverName != nullptr) serverName->updateCursorCounter();
     if (serverAddress != nullptr) serverAddress->updateCursorCounter();
+    // The console software keyboard fills the focused field without key
+    // events, so keyTyped()'s per-character call is not guaranteed to run
+    // for the text it leaves behind: re-derive the Add button every frame
+    // instead, or it stays disabled after a complete address was entered.
+    updateAddButtonState();
 }
 
 void GuiScreenAddServer::initGui()

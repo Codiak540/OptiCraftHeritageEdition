@@ -169,7 +169,13 @@
 #endif
 
 #ifndef PLATFORM_PROFILE_STREAMING
-#  define PLATFORM_PROFILE_STREAMING (PLATFORM_PS2 || PLATFORM_WII)
+// The 3DS joins here too: ClientProfilerBackend_3DS accumulates the same
+// chunkLoad/generate/populate/mesh/unloadSave buckets and prints them in the
+// [3ds.perf] report under MC_LOG_LEVEL >= 1, which is the only way to tell a
+// save-bound hitch from a publish-bound one on hardware. The spans cost two
+// monotonic clock reads per drained item and the report itself stays compiled
+// out at level 0.
+#  define PLATFORM_PROFILE_STREAMING (PLATFORM_PS2 || PLATFORM_WII || PLATFORM_3DS)
 #endif
 
 // PS2 region files keep a whole-region write buffer, so a modified chunk can be

@@ -42,9 +42,10 @@ void dsInputInit(int screenW, int screenH);
 // hidScanInput() + refresh the snapshot; called once per frame from
 // lwjgl::Display::processMessages(). Also forwards touch -> mouse, START ->
 // KEY_ESCAPE (or ENTER while a field has focus), and the gameplay channel
-// (jump/inventory/sneak keys, attack/use mouse buttons from X/B and the L/R
-// shoulders, hotbar wheel from D-pad LEFT/RIGHT). While a field has focus the
-// menu navigation and the mouse forwarding stand down -- see DsInput.cpp.
+// (jump/inventory/sneak keys; attack from X or R and use from B or L as
+// mouse buttons; hotbar wheel from D-pad LEFT/RIGHT; chat from D-pad UP).
+// While a field has focus the menu navigation and the mouse forwarding stand
+// down -- see DsInput.cpp.
 //
 // inMenu is "a GuiScreen is currently open", which the input layer cannot
 // work out for itself -- the same reason WiiPadState::wiiPadPoll() and

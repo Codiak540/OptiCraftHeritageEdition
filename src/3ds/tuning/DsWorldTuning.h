@@ -128,6 +128,35 @@
 #undef  PLATFORM_MIN_UNUSED_TICKS_BEFORE_UNLOAD
 #define PLATFORM_MIN_UNUSED_TICKS_BEFORE_UNLOAD    60
 
+// Save policy, the PS2's. In a NEW world every streamed column is dirty the
+// moment it is born (heightmap fill, structures and populate all mark it), so
+// the desktop policy taxes a walk twice over: every runtime autosave (40
+// ticks = 2 s) rewrites level.dat and serializes up to 24 dirty chunks in one
+// game-thread burst, and every eviction then serializes its chunk again on
+// the way out. A saved tutorial never pays any of it because its chunks
+// arrive decoded and clean -- exactly the new-world-vs-tutorial asymmetry
+// behind the "0-fps tirones while moving" report. The 3DS takes the PS2's
+// answers instead:
+//   * runtime autosave is off entirely: generated terrain is deterministic
+//     from the seed, and everything goes out with the "Saving chunks" pass
+//     (or the pause menu's explicit save) rather than mid-walk;
+//   * unload writes only chunks the player actually edited
+//     (PLATFORM_SAVE_RUNTIME_CHUNK_EDITS_ON_UNLOAD, whose Chunk/World
+//     marking code is flag-gated, so enabling it here is the whole change),
+//     so walking out of a generated column frees it instead of serializing
+//     it to SD on the game thread;
+//   * should a runtime save ever be re-enabled, it skips level.dat and
+//     drips at most 2 chunks per pass -- the desktop 24-chunk,
+//     level.dat-every-time burst is what the autosave was.
+#undef  PLATFORM_DISABLE_RUNTIME_AUTOSAVE
+#define PLATFORM_DISABLE_RUNTIME_AUTOSAVE             1
+#undef  PLATFORM_RUNTIME_AUTOSAVE_LEVEL_DATA
+#define PLATFORM_RUNTIME_AUTOSAVE_LEVEL_DATA          0
+#undef  PLATFORM_INCREMENTAL_CHUNK_SAVE_LIMIT
+#define PLATFORM_INCREMENTAL_CHUNK_SAVE_LIMIT        2
+#undef  PLATFORM_SAVE_RUNTIME_CHUNK_EDITS_ON_UNLOAD
+#define PLATFORM_SAVE_RUNTIME_CHUNK_EDITS_ON_UNLOAD   1
+
 // Entity simulation normally requires every chunk in a 32-block radius (5x5
 // columns); the resident cache above is 5x5 (radius 2), so the halved range
 // keeps one chunk of margin inside it.

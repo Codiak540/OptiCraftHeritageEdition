@@ -13,11 +13,12 @@
 //   B       BACK      cancel                 use       -> mouse button 1
 //   X       SPACE     GUI/virtual-kbd space  attack    -> mouse button 0
 //   Y       CLOSE     exit/back-out          inventory -> DS_KEY_Y
-//   L       SPACE     left shoulder          attack    -> mouse button 0
-//   R       SHIFT     right shoulder         use       -> mouse button 1
+//   L       SPACE     left shoulder          use       -> mouse button 1 (place)
+//   R       SHIFT     right shoulder         attack    -> mouse button 0 (destroy)
 //   SELECT  SPACE     (PS2 SELECT/Wii MINUS) sneak     -> DS_KEY_SELECT
-//   D-pad   UP/DOWN/LEFT/RIGHT               hotbar    -> wheel +1 (LEFT) / -1 (RIGHT),
-//                                                         UP/DOWN unmapped in-game
+//   D-pad   UP/DOWN/LEFT/RIGHT               UP       -> open chat (multiplayer)
+//                                                         LEFT/RIGHT -> hotbar wheel
+//                                                         +1/-1; DOWN unmapped
 //   START   ENTER     only while typing      pause     -> KEY_ESCAPE
 //   ZL/ZR   --                               unmapped (New-3DS only; phase 2)
 //
@@ -29,12 +30,12 @@
 //
 // Attack and Use are mouse buttons rather than keys because that is what
 // GameSettings binds them to (-100 / -99) and what clickMouse() reads -- and
-// L and R are the shoulders as left/right click: they funnel into the same
-// button 0 / button 1 X and B already own (updateGameplay ORs the sources, so
-// any hold order works), which is what the player asked for. That is also why
-// they are menu-suppressed: buttons pushed while a screen is open become a
-// click under the cursor (GuiScreen::handleInput() drains the queue
-// unconditionally), whereas the touch tap must keep working there.
+// L and R are the shoulders as clicks, deliberately swapped from the PC's
+// left/right mouse (the player's ask): L funnels into button 1 with B, R into
+// button 0 with X (updateGameplay ORs the sources, so any hold order works).
+// That is also why they are menu-suppressed: buttons pushed while a screen is
+// open become a click under the cursor (GuiScreen::handleInput() drains the
+// queue unconditionally), whereas the touch tap must keep working there.
 //
 // The gameplay channel is dropped while a screen is open, and a button still
 // physically held across the menu/gameplay boundary stays dropped until it is
@@ -106,8 +107,8 @@ bool g_prevTextExclusive = false;
 constexpr std::uint32_t GP_JUMP        = 1u << 0;
 constexpr std::uint32_t GP_INVENTORY   = 1u << 1;
 constexpr std::uint32_t GP_SNEAK       = 1u << 2;
-constexpr std::uint32_t GP_USE         = 1u << 3; // mouse button 1 (B or R)
-constexpr std::uint32_t GP_ATTACK      = 1u << 4; // mouse button 0 (X or L)
+constexpr std::uint32_t GP_USE         = 1u << 3; // mouse button 1 (B or L)
+constexpr std::uint32_t GP_ATTACK      = 1u << 4; // mouse button 0 (X or R)
 constexpr std::uint32_t GP_DPAD_UP     = 1u << 5;
 constexpr std::uint32_t GP_DPAD_DOWN   = 1u << 6;
 constexpr std::uint32_t GP_DPAD_LEFT   = 1u << 7; // wheel +1 (previous slot)
@@ -167,8 +168,8 @@ std::uint32_t mapTextButtons(u32 keys)
 		value |= PLATFORM_TEXT_ENTER;
 	// ZL/ZR wait for phase 2. Pure D-pad bits otherwise: the circle pad is
 	// analog movement and reaches the game through the stick axes, not
-	// through this mask; the D-pad's gameplay role is the hotbar wheel (see
-	// updateGameplay()), and UP/DOWN have no gameplay action at all.
+	// through this mask; the D-pad's gameplay roles are the hotbar wheel and
+	// chat (see updateGameplay()), and DOWN has no gameplay action at all.
 	return value;
 }
 
@@ -181,10 +182,11 @@ std::uint32_t readGameplayButtons(u32 keys)
 	if (keys & KEY_B)      value |= GP_USE;
 	if (keys & KEY_X)      value |= GP_ATTACK;
 	if (keys & KEY_Y)      value |= GP_INVENTORY;
-	// The shoulders are the left/right click the player asked for: L joins X
-	// on button 0, R joins B on button 1 (see the header table).
-	if (keys & KEY_L)      value |= GP_ATTACK;
-	if (keys & KEY_R)      value |= GP_USE;
+	// The shoulders are clicks, deliberately swapped from the PC's mouse
+	// (the player's ask): L places (joins B on button 1), R attacks (joins X
+	// on button 0) -- see the header table.
+	if (keys & KEY_L)      value |= GP_USE;
+	if (keys & KEY_R)      value |= GP_ATTACK;
 	if (keys & KEY_SELECT) value |= GP_SNEAK;
 	if (keys & KEY_DUP)    value |= GP_DPAD_UP;
 	if (keys & KEY_DDOWN)  value |= GP_DPAD_DOWN;
@@ -285,6 +287,18 @@ void updateGameplay(u32 keys, bool touchDown)
 	// (header table).
 	if (pressed & GP_DPAD_LEFT)  lwjgl::Mouse::detail::pushWheel(1, x, y);
 	if (pressed & GP_DPAD_RIGHT) lwjgl::Mouse::detail::pushWheel(-1, x, y);
+
+	// Chat: KEY_T is what keyBindChat is bound to (GameSettings' fixed
+	// default), and pushing it from a pad button is how the Wii already does
+	// this (WiiRemote.cpp's Plus+Minus chord). D-pad UP carries no gameplay
+	// action since the wheel took LEFT/RIGHT, so it opens the chat where the
+	// game has one (Minecraft::runTick opens it in multiplayer). Edge-driven,
+	// and unreachable with a screen open: this whole channel is off in menus.
+	if (pressed & GP_DPAD_UP)
+	{
+		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_T, true);
+		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_T, false);
+	}
 
 	// Mouse buttons are a level. The touch tap ORs into button 0 so a finger
 	// and X can be held in any order without one releasing the other.

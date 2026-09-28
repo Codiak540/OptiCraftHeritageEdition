@@ -121,6 +121,14 @@ struct DisplayListEntry
 std::unordered_map<int, std::vector<DisplayListEntry>> s_displayLists;
 int s_recordingList = -1;
 RenderMatrixMode s_recordingListMode = RenderMatrixMode::ModelView;
+// Next entry slot the open capture fills. Reusing the slot (instead of
+// clearing the list and pushing fresh entries) keeps each mesh vector's
+// capacity across section rebuilds: streaming rebuilds up to
+// PLATFORM_MAX_RENDERER_UPDATES_PER_FRAME sections per frame, and the old
+// clear()+resize() paid a free+malloc pair per rebuilt mesh -- the same
+// fragmentation churn the PS2 backend documents in WorldRenderer.cpp. With
+// the slots retained, a steady-state rebuild touches no allocator at all.
+int s_recordingIndex = 0;
 
 // Copy `mesh` into the open display list, baking the recording transform
 // into every position. Returns false for the shapes the captured layout
@@ -132,7 +140,11 @@ bool captureDisplayListMesh(const RenderInterleavedMesh& mesh)
 	if (mesh.positionShort || mesh.stride != 32)
 		return false;
 
-	DisplayListEntry entry;
+	std::vector<DisplayListEntry>& entries = s_displayLists[s_recordingList];
+	DisplayListEntry& entry = s_recordingIndex < static_cast<int>(entries.size())
+	    ? entries[s_recordingIndex] // retained slot, capacity kept
+	    : entries.emplace_back();
+	++s_recordingIndex;
 	entry.state = s_state;
 	entry.mesh.stride = 32;
 	entry.mesh.primitive = mesh.primitive;
@@ -167,8 +179,8 @@ bool captureDisplayListMesh(const RenderInterleavedMesh& mesh)
 		position[2] = transform[2] * x + transform[6] * y + transform[10] * z +
 		              transform[14];
 	}
-
-	s_displayLists[s_recordingList].push_back(std::move(entry));
+	// The entry was written in place: no push_back, and no allocation unless
+	// this pass needs more slots than the previous one filled.
 	return true;
 }
 
@@ -732,8 +744,14 @@ void renderBeginDisplayList(int displayList)
 {
 	if (s_recordingList >= 0)
 		return; // GL would nest; nothing on this game's paths asks for it.
-	// A Begin always redefines the list, matching GL's semantics.
-	s_displayLists[displayList].clear();
+	// A Begin always redefines the list, matching GL's semantics -- but the
+	// entry slots and their mesh capacity stay: the capture below overwrites
+	// the slots in place, so a re-recorded section does not churn the heap
+	// (see captureDisplayListMesh). Slots this pass does not fill are marked
+	// empty here and replay skips them.
+	for (DisplayListEntry& entry : s_displayLists[displayList])
+		entry.mesh.clear();
+	s_recordingIndex = 0;
 	s_recordingList = displayList;
 	s_recordingListMode = ds::matrix::currentMode();
 	// The identity is the base the list's own matrix ops build on; the bake
