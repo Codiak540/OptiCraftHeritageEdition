@@ -161,15 +161,31 @@ REM --- .cia packaging ---------------------------------------------------------
 REM Straight from the ELF through the checked-in manifest, with no helper script
 REM between them:
 REM
-REM     makerom -f cia -target t -ignoresign
-REM             -rsf resources\3ds_cia.rsf
-REM             -elf  bin\3ds\OptiCraft.elf
-REM             -icon bin\3ds\OptiCraft.smdh
+REM     makerom -f cia -target t -exefslogo
+REM             -rsf    resources\3ds_cia.rsf
+REM             -elf    bin\3ds\OptiCraft.elf
+REM             -icon   bin\3ds\OptiCraft.smdh
+REM             -banner resources\3ds_banner.bnr
+REM             -major 1 -minor 0 -micro 0
 REM
 REM makerom writes the exheader from the .rsf and lays out the code section from
 REM the .elf itself, so there is no CXI conversion step and no cxitool. The
 REM .smdh (built by cmake\3ds.cmake) re-supplies the HOME-menu title/publisher/
 REM cover, so the identity the player reads stays in one place.
+REM
+REM The flags are the launch-tested posture (verified on a real Old 2DS,
+REM 2026-09-28, with BOTH makerom v0.18.3 and v0.19.0): fully test-signed --
+REM no -ignoresign, the flag was hiding whatever it was letting through -- a
+REM real title version in the TMD, the ExeFS boot logo, and a HOME-menu
+REM banner. The previously failing build differed in ALL of those at once;
+REM which single one was lethal was never bisected apart, the posture ships
+REM as a unit. makerom itself tracks the latest release -- v0.19.0 as of
+REM 2026-09-28, and BOTH v0.19.0 and v0.18.3 were verified on hardware under
+REM this posture, so the tool version is not the variable that mattered. The
+REM green text banner in resources\3ds_banner.bnr was made from resources\3ds_banner.png (256x128)
+REM with bannertool; replacing the .png and re-running
+REM   bannertool makebanner -i 3ds_banner.png -a <audio.wav> -o 3ds_banner.bnr
+REM is the whole restyle.
 REM
 REM Runs at top level rather than inside an `if (...)` block: cmd cannot jump
 REM *into* a parenthesized block -- the trailing `)` becomes a syntax error --
@@ -178,6 +194,12 @@ echo.
 echo Packaging bin\3ds\OptiCraft.cia ...
 if not exist "resources\3ds_cia.rsf" (
     echo ERROR: resources\3ds_cia.rsf not found.
+    goto :fail
+)
+if not exist "resources\3ds_banner.bnr" (
+    echo ERROR: resources\3ds_banner.bnr not found.
+    echo        The HOME-menu banner is part of the launch-tested packaging
+    echo        posture; see the note above for how to regenerate it.
     goto :fail
 )
 if not exist "bin\3ds\OptiCraft.elf" (
@@ -195,10 +217,12 @@ if not defined MAKEROM call :fetchmakerom
 if not defined MAKEROM goto :nomakerom
 
 echo Using makerom: !MAKEROM!
-"!MAKEROM!" -v -f cia -o "bin\3ds\OptiCraft.cia" -target t -ignoresign ^
+"!MAKEROM!" -v -f cia -o "bin\3ds\OptiCraft.cia" -target t -exefslogo ^
     -rsf "resources\3ds_cia.rsf" ^
     -elf "bin\3ds\OptiCraft.elf" ^
-    -icon "bin\3ds\OptiCraft.smdh"
+    -icon "bin\3ds\OptiCraft.smdh" ^
+    -banner "resources\3ds_banner.bnr" ^
+    -major 1 -minor 0 -micro 0
 if errorlevel 1 goto :fail
 if not exist "bin\3ds\OptiCraft.cia" goto :fail
 

@@ -58,6 +58,26 @@ Runtime assets are read from the SD card instead of RomFS, so data can change wi
 sd:/opticraft/
 ```
 
+The `.cia` installs with FBI (or any CIA installer) and launches from the HOME menu on retail consoles, including Old 3DS/2DS models; the `.3dsx` runs from the Homebrew Launcher or in emulators such as Azahar.
+
+#### 3DS controls
+
+| Input | Menus / text entry | In game |
+|---|---|---|
+| Circle Pad | cursor and list navigation | movement |
+| A | confirm; types the highlighted key on the on-screen keyboard | jump |
+| B | back / cancel | place / use |
+| X | space | attack / destroy |
+| Y | close the keyboard | inventory |
+| L | space | place / use |
+| R | shift | attack / destroy |
+| D-Pad | menu navigation; keyboard cursor | left/right: hotbar slot, up: chat (multiplayer) |
+| START | back; Enter while a text field is focused | pause |
+| SELECT | space | sneak |
+| Touch | pointer (the on-screen keyboard reads taps directly) | pointer |
+
+The shoulder buttons are deliberately swapped from the PC mouse convention: L places and R attacks. Text fields open the console's software keyboard first; if it is unavailable, the game draws an on-screen keyboard on the bottom screen. Confirming a keyboard session leaves the text in the field — for chat, pressing A then sends the message.
+
 ## Source layout
 
 ```text

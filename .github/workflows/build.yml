@@ -243,6 +243,13 @@ jobs:
       - name: Fetch CIA packaging tools
         run: |
           set -eux
+          # Latest makerom release; v0.19.0 at the time of this writing. The
+          # tool version is NOT the variable that decides whether the .cia
+          # launches on real hardware -- both v0.18.3 and v0.19.0 were verified
+          # on an Old 2DS (2026-09-28) under this repo's packaging posture
+          # (fully test-signed, real title version, -exefslogo, banner); what
+          # the previously-failing build lacked was that posture, not a
+          # different makerom.
           MAKEROM_VER=0.19.0
           curl -fsSL -o /tmp/makerom.zip \
             "https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v${MAKEROM_VER}/makerom-v${MAKEROM_VER}-ubuntu_x86_64.zip"
@@ -270,15 +277,22 @@ jobs:
           # checked-in manifest: ELF -> .cia through makerom, with no helper
           # script in between and no CXI conversion step (makerom writes the
           # exheader from the .rsf and lays out the code section from the .elf
-          # itself). -target t marks it an application, -ignoresign because
-          # homebrew carries no Nintendo signature, -icon re-supplies the .smdh
-          # cmake built so the HOME-menu title/publisher/cover match the
-          # .3dsx. No RomFS: the assets live on the SD card (sdmc:/opticraft/),
-          # not in the CIA, so they stay editable without reinstalling.
-          makerom -v -f cia -o bin/3ds/OptiCraft.cia -target t -ignoresign \
+          # itself). -target t marks it an application and signs everything
+          # with the test keys (no -ignoresign -- that flag let failures
+          # through), -icon re-supplies the .smdh cmake built so the HOME-menu
+          # title/publisher/cover match the .3dsx, and -exefslogo + the checked
+          # -in resources/3ds_banner.bnr + the title version complete the
+          # launch-tested posture (verified on a real Old 2DS 2026-09-28; the
+          # previous v0.19.0/-ignoresign/no-version/no-banner build refused to
+          # launch on hardware while loading fine in emulators). No RomFS: the
+          # assets live on the SD card (sdmc:/opticraft/), not in the CIA, so
+          # they stay editable without reinstalling.
+          makerom -v -f cia -o bin/3ds/OptiCraft.cia -target t -exefslogo \
             -rsf resources/3ds_cia.rsf \
             -elf bin/3ds/OptiCraft.elf \
-            -icon bin/3ds/OptiCraft.smdh
+            -icon bin/3ds/OptiCraft.smdh \
+            -banner resources/3ds_banner.bnr \
+            -major 1 -minor 0 -micro 0
 
           test -f bin/3ds/OptiCraft.cia
           cp bin/3ds/OptiCraft.cia dist/
