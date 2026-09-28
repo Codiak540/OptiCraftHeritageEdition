@@ -2730,11 +2730,18 @@ void Minecraft::respawn(bool flag, int_t i, bool copyPlayerState)
     bool ownsBedSpawn = false;
     bool flag1 = true;
 
+    IChunkProvider *ichunkprovider = theWorld->getIChunkProvider();
+
     if (thePlayer != nullptr && !flag)
     {
         chunkcoordinates = thePlayer->getPlayerSpawnCoordinate();
         if (chunkcoordinates != nullptr)
         {
+            // Configure chunk cache over bed location prior to bed validity check.
+            // In bounded worlds / memory-constrained platforms, chunks outside the current
+            // player position return blankChunk (air), which erroneously triggers "tile.bed.notValid".
+            configureChunkProviderCache(ichunkprovider, chunkcoordinates->x >> 4, chunkcoordinates->z >> 4, gameSettings->renderDistance);
+
             chunkcoordinates1 = EntityPlayer::getNearestBedSpawnLocation(theWorld, chunkcoordinates);
             ownsBedSpawn = chunkcoordinates1 != nullptr;
             if (chunkcoordinates1 == nullptr)
@@ -2749,7 +2756,6 @@ void Minecraft::respawn(bool flag, int_t i, bool copyPlayerState)
         flag1 = false;
     }
 
-    IChunkProvider *ichunkprovider = theWorld->getIChunkProvider();
     configureChunkProviderCache(ichunkprovider, chunkcoordinates1->x >> 4, chunkcoordinates1->z >> 4, gameSettings->renderDistance);
 
     theWorld->setSpawnLocation();
