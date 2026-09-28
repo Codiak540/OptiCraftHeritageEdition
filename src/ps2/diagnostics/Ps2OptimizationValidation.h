@@ -9,6 +9,7 @@ void frameEnd(long long frameNs);
 
 void remoteLivingPhysics(bool fullPhysics);
 void remoteInterpolationQuery(bool executed);
+void remoteCreatureAiSkipped();
 void multiplayerItemPhysics(bool skippedSettledPhysics);
 void skeletonCullDraw();
 void particleFastMove();
@@ -59,6 +60,7 @@ inline void reportAndReset() {}
 inline void frameEnd(long long) {}
 inline void remoteLivingPhysics(bool) {}
 inline void remoteInterpolationQuery(bool) {}
+inline void remoteCreatureAiSkipped() {}
 inline void multiplayerItemPhysics(bool) {}
 inline void skeletonCullDraw() {}
 inline void particleFastMove() {}

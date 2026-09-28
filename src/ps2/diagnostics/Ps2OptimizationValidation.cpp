@@ -16,6 +16,7 @@ struct Counters
     std::uint32_t remoteLite = 0;
     std::uint32_t remoteQuery = 0;
     std::uint32_t remoteQuerySkipped = 0;
+    std::uint32_t remoteAiSkipped = 0;
     std::uint32_t itemFull = 0;
     std::uint32_t itemSettledSkip = 0;
     std::uint32_t skeletonCullDraws = 0;
@@ -183,10 +184,10 @@ void reportAndReset()
     reportConfig();
 
     MC_LOG_INFO("ps2.validate",
-        "entity remoteFull=%u remoteLite=%u interpQuery=%u interpSkip=%u itemFull=%u itemSettledSkip=%u"
+        "entity remoteFull=%u remoteLite=%u interpQuery=%u interpSkip=%u remoteAiSkip=%u itemFull=%u itemSettledSkip=%u"
         " skeletonCull=%u particleFastMove=%u particleCapEvict=%u\n",
         g_counters.remoteFull, g_counters.remoteLite,
-        g_counters.remoteQuery, g_counters.remoteQuerySkipped,
+        g_counters.remoteQuery, g_counters.remoteQuerySkipped, g_counters.remoteAiSkipped,
         g_counters.itemFull, g_counters.itemSettledSkip, g_counters.skeletonCullDraws,
         g_counters.particleFastMoves, g_counters.particleCapEvictions);
 
@@ -301,6 +302,11 @@ void remoteLivingPhysics(bool fullPhysics)
 void remoteInterpolationQuery(bool executed)
 {
     executed ? ++g_counters.remoteQuery : ++g_counters.remoteQuerySkipped;
+}
+
+void remoteCreatureAiSkipped()
+{
+    ++g_counters.remoteAiSkipped;
 }
 
 void multiplayerItemPhysics(bool skippedSettledPhysics)

@@ -1539,7 +1539,25 @@ void EntityLiving::onLivingUpdate()
 	}
 	else if (isClientWorld())
 	{
-		if (isAIEnabled())
+		const bool aiEnabled = isAIEnabled();
+#if PLATFORM_MULTIPLAYER_REMOTE_LIVING_PHYSICS_TICK_DIVISOR > 1
+		// Remote multiplayer mobs are server-authoritative. Running the client AI
+		// task graph for new-AI mobs only performs target/path/look work that is
+		// overwritten by network movement. Preserve interpolation and the periodic
+		// physics path below, but do not simulate server AI locally.
+		if (aiEnabled && isRemoteMultiplayerLiving(this))
+		{
+			moveStrafing = 0.0f;
+			moveForward = 0.0f;
+			randomYawVelocity = 0.0f;
+			isJumping = false;
+#ifdef PS2_OPTIMIZATION_VALIDATION
+			Ps2OptimizationValidation::remoteCreatureAiSkipped();
+#endif
+		}
+		else
+#endif
+		if (aiEnabled)
 		{
 			updateAITasks();
 		}
