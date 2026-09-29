@@ -7,8 +7,10 @@
 // axes), and this file only reshapes it into the shared structs. The
 // circle-pad axes ride in platformGamepadSnapshot() with the same
 // deadzone+rescale the PS2 backend applies (Ps2AnalogFilter); the raw variant
-// stays unfiltered for the calibration screens, and there is no second stick,
-// so the right-side fields stay zero.
+// stays unfiltered for the calibration screens. The New 3DS C-Stick fills the
+// right-side fields the same way (deadzone+rescale filtered, raw in the raw
+// variant); on an Old 3DS it reads as a centred stick, so those fields stay
+// zero there exactly as they did before the nub existed.
 //
 // Note on the mode flags Input.h also declares (text-input-exclusive,
 // container-navigation, pad-rebind): those are NOT part of the backend half --
@@ -86,6 +88,13 @@ PlatformGamepadSnapshot platformGamepadSnapshot(int port)
     // rescale, so nothing downstream needs to know the filter moved.
     out.leftX = applyStickDeadzone(ds.stickX);
     out.leftY = applyStickDeadzone(ds.stickY);
+    // The New 3DS C-Stick rides the right-stick fields with the same filter
+    // and the same axis conventions, so any future consumer of the shared
+    // snapshot (EntityRenderer's direct pad camera, menu scroll, ...) finds
+    // a PS2-shaped right stick. Zero on Old hardware -- a centred stick --
+    // and nothing reads these fields on this platform today.
+    out.rightX = applyStickDeadzone(ds.cstickX);
+    out.rightY = applyStickDeadzone(ds.cstickY);
     return out;
 }
 
@@ -99,6 +108,8 @@ PlatformGamepadSnapshot platformRawGamepadSnapshot(int port)
     out.connected = ds.stickConnected;
     out.leftX = ds.stickX;
     out.leftY = ds.stickY;
+    out.rightX = ds.cstickX;
+    out.rightY = ds.cstickY;
     return out;
 }
 

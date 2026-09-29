@@ -31,6 +31,12 @@ constexpr int_t BUTTON_DEADZONE = 602;
 constexpr int_t BUTTON_DONE = 600;
 constexpr int_t BUTTON_EDIT_PLAYER_NAME = 606;
 constexpr int_t BUTTON_SPLITSCREEN_LAYOUT = 607;
+#if defined(CTR_PLATFORM)
+// The face-button camera toggle lives in both options screens (this legacy
+// one is the screen the 3DS actually shows; GuiOptiCraftOptions is the
+// non-legacy twin).
+constexpr int_t BUTTON_FACE_CAMERA = 608;
+#endif
 
 }
 
@@ -38,6 +44,9 @@ LegacyHeritageOptions::LegacyHeritageOptions(GuiScreen *parent, GameSettings *se
     LegacyOptionsBackgroundMode backgroundModeValue)
     : LegacyOptionsScreen(parent, settingsValue, backgroundModeValue), nameField(nullptr), legacyUiCheckbox(nullptr),
       legacyLookCheckbox(nullptr), alternativeControlsCheckbox(nullptr)
+#if defined(CTR_PLATFORM)
+      , faceCameraCheckbox(nullptr)
+#endif
 {
 }
 
@@ -57,6 +66,9 @@ void LegacyHeritageOptions::initGui()
     ++rowCount;
 #endif
 #ifdef WII_PLATFORM
+    ++rowCount;
+#endif
+#if defined(CTR_PLATFORM)
     ++rowCount;
 #endif
 #if PLATFORM_HAS_CONTROLLER_CALIBRATION
@@ -98,6 +110,12 @@ void LegacyHeritageOptions::initGui()
     legacyLookCheckbox = new LegacyOptionCheckbox(BUTTON_LEGACY_LOOK, x, legacyLayout.rowY(row++), w, h,
         uiText("Legacy Look"), settings->legacyLook);
     controlList.push_back(legacyLookCheckbox);
+
+#if defined(CTR_PLATFORM)
+    faceCameraCheckbox = new LegacyOptionCheckbox(BUTTON_FACE_CAMERA, x, legacyLayout.rowY(row++), w, h,
+        uiText("Face-Button Camera"), settings->faceButtonCamera);
+    controlList.push_back(faceCameraCheckbox);
+#endif
 
 #ifdef WII_PLATFORM
     alternativeControlsCheckbox = new LegacyOptionCheckbox(BUTTON_ALTERNATIVE_CONTROLS, x,
@@ -227,6 +245,16 @@ void LegacyHeritageOptions::actionPerformed(GuiButton *button)
             mc->entityRenderer->updateWorldLightLevels();
         return;
     }
+
+#if defined(CTR_PLATFORM)
+    if (button->id == BUTTON_FACE_CAMERA)
+    {
+        settings->setFaceButtonCamera(!settings->faceButtonCamera);
+        if (faceCameraCheckbox != nullptr)
+            faceCameraCheckbox->setChecked(settings->faceButtonCamera);
+        return;
+    }
+#endif
 
 #ifdef WII_PLATFORM
     if (button->id == BUTTON_ALTERNATIVE_CONTROLS)

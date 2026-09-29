@@ -318,6 +318,14 @@ void NetworkManager::processReadPackets()
 	// many-minute zombie where the player's blocks silently come back.
 	constexpr int_t MAX_SEND_QUEUE_BYTES = 512 * 1024;
 	constexpr int_t MAX_PACKETS_PER_TICK = 128;
+	// Map-chunk imports are the one dispatch with a real per-packet heap
+	// cost (a whole resident Chunk column per Packet51). A login flood
+	// imported up to 128 columns inside one tick -- tens of MB of transient
+	// heap on a 64 MB console, which was the release-session std::bad_alloc
+	// (debug.log, 2026-09-28). A handful per tick lets the client-side trim
+	// evict behind the flood as it lands; the decoded queue (4 MB) holds
+	// the rest, and TCP backpressure stops the server running away.
+	constexpr int_t MAX_CHUNK_PACKETS_PER_TICK = 6;
 	#else
 	constexpr int_t MAX_SEND_QUEUE_BYTES = 0x100000;
 	constexpr int_t MAX_PACKETS_PER_TICK = 1000;
@@ -350,21 +358,37 @@ void NetworkManager::processReadPackets()
 	// Limit packet dispatch work per game tick on PS2. A large burst remains
 	// queued for subsequent ticks instead of monopolizing the EE and causing a
 	// visible frame hitch.
+	int_t chunkImportsThisTick = 0;
 	for (int_t i = MAX_PACKETS_PER_TICK; i-- > 0;)
 	{
 		std::unique_ptr<Packet> packet;
+		int_t packetBytes = 0;
 		{
 			std::lock_guard<PlatformMutex> guard(readQueueLock);
 			if (readPackets.empty())
 				break;
+#if defined(CTR_PLATFORM)
+			// The chunk-import cap: re-queue a Packet51 at the front and
+			// stop the dispatch there, so the import cost is spread over
+			// ticks and the smaller packets behind it are not starved by a
+			// flood that would never yield (see MAX_CHUNK_PACKETS_PER_TICK).
+			if (readPackets.front() != nullptr &&
+			    readPackets.front()->getPacketId() == 51 &&
+			    chunkImportsThisTick >= MAX_CHUNK_PACKETS_PER_TICK)
+				break;
+#endif
 			packet = std::move(readPackets.front());
 			readPackets.pop_front();
-			const int_t packetBytes = packet != nullptr ? packet->getPacketSize() + 1 : 0;
+			packetBytes = packet != nullptr ? packet->getPacketSize() + 1 : 0;
 			if (packetBytes > 0 && static_cast<std::size_t>(packetBytes) <= readQueueByteLength)
 				readQueueByteLength -= static_cast<std::size_t>(packetBytes);
 			else if (packetBytes > 0)
 				readQueueByteLength = 0;
 		}
+#if defined(CTR_PLATFORM)
+		if (packet != nullptr && packet->getPacketId() == 51)
+			++chunkImportsThisTick;
+#endif
 		if (packet != nullptr && netHandler != nullptr)
 		{
 			try

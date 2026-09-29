@@ -89,6 +89,15 @@ void VirtualKeyboard::notifyFocus(GuiTextField* field, bool focused)
 	platformSetTextInputExclusive(focusedField != nullptr);
 }
 
+// See the header. Only a pointer comparison: the field may already be freed
+// memory (its screen was purged), and a field that IS the caller's own is
+// left untouched.
+void VirtualKeyboard::dropForeignField(GuiTextField* field)
+{
+	if (focusedField != nullptr && focusedField != field)
+		notifyFocus(focusedField, false);
+}
+
 void VirtualKeyboard::tick()
 {
 	if (!isActive())

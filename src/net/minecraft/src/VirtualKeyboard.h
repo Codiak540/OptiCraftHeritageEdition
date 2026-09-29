@@ -28,6 +28,14 @@ public:
 	// Called by GuiTextField::setFocused(). The keyboard is active while a field
 	// is focused; focusing a different field resets the selection.
 	void notifyFocus(GuiTextField* field, bool focused);
+	// Called by GuiScreen::handleInput right before tick(): the keyboard may
+	// only hold the focused field of the screen that is receiving input.
+	// Screens outlive their turn as current (they are kept for the
+	// back-stack and purged only on return to gameplay), so a field left
+	// focused would otherwise keep the keyboard "active" over a foreign,
+	// possibly dangling pointer -- holding text-exclusive input and eating
+	// the platform text snapshot before the container navigator reads it.
+	void dropForeignField(GuiTextField* field);
 	bool isActive() const { return focusedField != nullptr; }
 
 	// Per-frame while active: read the pad and inject input events.

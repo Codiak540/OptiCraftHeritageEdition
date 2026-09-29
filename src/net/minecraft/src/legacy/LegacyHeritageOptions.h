@@ -32,4 +32,7 @@ private:
     LegacyOptionCheckbox *legacyUiCheckbox;
     LegacyOptionCheckbox *legacyLookCheckbox;
     LegacyOptionCheckbox *alternativeControlsCheckbox;
+#if defined(CTR_PLATFORM)
+    LegacyOptionCheckbox *faceCameraCheckbox;
+#endif
 };

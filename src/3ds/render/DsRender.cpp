@@ -512,11 +512,15 @@ void applyState(const GpuState& state, const void* vertexBase)
 
 	// Texture: bind and hand the shader the padding ratio. An untextured
 	// draw leaves the binding alone -- stage 0 below simply does not read it.
+	// The components are (ratioU, ratioV, 1-ratioV, 1): the shader folds U
+	// with the ratio directly (the sampler never mirrors columns) but V
+	// mirrored -- see the texcoord block of DsShader.v.pica for why the V
+	// window is [1-ratioV, 1] in GPU space.
 	float uvScale[2] = {1.0f, 1.0f};
 	if (state.texture2d)
 		texture::bind(state.boundTexture, uvScale);
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, VSH_FVEC_texScale,
-	              uvScale[0], uvScale[1], 1.0f, 1.0f);
+	              uvScale[0], uvScale[1], 1.0f - uvScale[1], 1.0f);
 
 	// TexEnv stage 0: texel * vertex colour when texturing, vertex colour
 	// alone when not. Stages 1..5 stay the pass-through their init-time
@@ -745,6 +749,21 @@ void clear(unsigned mask)
 	const float depth = static_cast<float>(s_clearDepth);
 	const u32 storedDepth =
 		static_cast<u32>((1.0f - depth) * 16777215.0f + 0.5f);
+
+	// GX_MemoryFill -- what C3D_FrameBufClear turns this into -- only
+	// APPENDS to the GX queue, while the draws recorded so far only reach
+	// that queue at C3D_FrameEnd (C3D_FrameSplit -> GX_ProcessCommandList).
+	// Without splitting first, this fill would execute BEFORE every draw of
+	// the frame: a mid-frame renderClear() (the screen pass's depth clear,
+	// the HUD overlay's, GuiInventory's model clear) would wipe stale
+	// content and leave the world's and HUD's depth written *after* it, so
+	// GUI quads at the ortho plane lose the depth test against the 3D item
+	// icons sitting nearer than the plane -- the hotbar's block icons punch
+	// through the inventory menu. Splitting queues the recorded draws ahead
+	// of the fill; citro3d's own C3D_SyncMemoryFill does the same. An
+	// empty buffer makes C3Di_SplitFrame return false, so the frame-start
+	// clear stays a no-op split.
+	C3D_FrameSplit(0);
 	C3D_RenderTargetClear(s_target, static_cast<C3D_ClearBits>(bits), color,
 	                      storedDepth);
 }

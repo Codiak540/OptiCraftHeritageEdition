@@ -21,6 +21,9 @@
 #include "platform/PlatformKeyBindings.h"
 #include "platform/PlatformTuning.h"
 #include "platform/PlatformUserSettings.h"
+#if defined(CTR_PLATFORM)
+#include "3ds/input/DsInput.h"
+#endif
 #include "platform/Storage.h"
 #include "net/minecraft/src/legacy/LegacyUiScalePolicy.h"
 #include "skin/SkinManager.h"
@@ -193,6 +196,8 @@ void GameSettings::loadOptions()
 				}
 				if (key == "alternativeControllerLayout" || key == "wiiAlternativeControls")
 					alternativeControllerLayout = value == "true";
+				if (key == "faceButtonCamera")
+					faceButtonCamera = value == "true";
 				if (key == "controllerDeadzone" || key == "wiiStickDeadzone")
 					controllerDeadzone = Config::limit(parseFloat(value), 0.05f, 0.35f);
 				platformGameSettingsLoadOption(*this, key, value);
@@ -351,6 +356,13 @@ void GameSettings::loadOptions()
 		legacyUI, guiScale, loadedLegacyGuiScaleRestore, legacyGuiScaleRestore);
 	guiScale = legacyUiEffectiveGuiScale(legacyUI, legacyGuiScaleRestore);
 
+#if defined(CTR_PLATFORM)
+	// The input layer polls before any screen exists; the loaded toggle has
+	// to reach it immediately so the first frame of gameplay already honours
+	// it.
+	dsInputSetFaceButtonCamera(faceButtonCamera);
+#endif
+
 	if (particleSetting < 0 || particleSetting > 2)
 		particleSetting = 0;
 	fovSetting = Config::limit(fovSetting, 0.0f, 1.0f);
@@ -400,6 +412,9 @@ void GameSettings::saveOptions()
 		"difficulty", "fancyGraphics", "ao", "skin", "lastServer", "lang", "playerName", "selectedSkin", "selectedSkinP2", "legacyUI",
 		"legacyLook", "legacyGuiScaleRestore",
 		"alternativeControllerLayout", "wiiAlternativeControls", "controllerDeadzone", "wiiStickDeadzone",
+#if defined(CTR_PLATFORM)
+		"faceButtonCamera",
+#endif
 		"ofFogFancy", "ofFogOff", "ofFogStart", "ofLoadFar", "ofPreloadedChunks", "ofOcclusionFancy",
 		"ofSmoothFps", "ofSmoothInput", "ofBrightness", "ofAoLevel", "ofClouds",
 		"ofCloudsHeight", "ofTrees", "ofGrass", "ofRain", "ofWater",
@@ -479,6 +494,9 @@ void GameSettings::saveOptions()
 	printwriter << "legacyGuiScaleRestore:" << legacyGuiScaleRestore << "\n";
 	printwriter << "alternativeControllerLayout:" << (alternativeControllerLayout ? "true" : "false") << "\n";
 	printwriter << "controllerDeadzone:" << controllerDeadzone << "\n";
+#if defined(CTR_PLATFORM)
+	printwriter << "faceButtonCamera:" << (faceButtonCamera ? "true" : "false") << "\n";
+#endif
 #ifndef PS2_PLATFORM
 	platformGameSettingsWriteOptions(*this, printwriter);
 #endif

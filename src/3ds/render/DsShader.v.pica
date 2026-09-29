@@ -81,9 +81,21 @@
 	; TexEnv but left well-formed rather than garbage. (PICA200 quirk: in
 	; two-source ALU ops the uniform must be the first source, hence the
 	; operand order -- component-wise mul is commutative so it reads the same.)
+	;
+	; U folds with the ratio directly: the sampler does not mirror columns.
+	; V does NOT -- the 3DS pak's MC-3DS row order and this target's sampler
+	; read V=0 at the LAST stored row (that mirror is what makes the flipped
+	; pak render right-side-up, see scripts/pak_flip_mc3ds.py), so the
+	; content of a padded texture occupies V in [1-ratio, 1], not [0, ratio).
+	; Folding without the shift sampled the padding at the top of the screen:
+	; the legacy menus' strip (2026-09-29; the panorama's (128-108)/128 =
+	; 37.5 rows, the boot logos' (512-480)/512 = 15). texScale.z carries the
+	; (1 - ratioY) offset from DsRender; both are 0 for power-of-two
+	; textures, so every existing draw is unchanged.
 	mov r3, zeros
 	mov r3.xy, intex
-	mul r3, texScale, r3
+	mul r3.xy, texScale.xy, r3.xy
+	add r3.y, texScale.z, r3.y
 	mov r3.w, ones
 	mov outtc0, r3
 

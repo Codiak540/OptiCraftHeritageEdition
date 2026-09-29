@@ -34,6 +34,7 @@ public:
 	void loadOptions();
 	void saveOptions();
 	void setLegacyUiEnabled(bool enabled);
+	void setFaceButtonCamera(bool enabled);
 	void setAllAnimations(bool flag);
 	// Wii only: pushes the per-family (GameCube/Wiimote/Classic) raw button
 	// assignments so WiiGameCubePad/WiiRemote read the configured button
@@ -115,6 +116,11 @@ public:
 	bool legacyLook;
 	int_t renderBackend;
 	bool alternativeControllerLayout;
+	// 3DS only (see DsInput.cpp's face-button camera): gameplay gives the
+	// A/B/X/Y diamond to the camera and remaps jump/sneak/inventory. Stored
+	// here like legacyUI so it survives options.txt round-trips; meaningless
+	// on the other platforms.
+	bool faceButtonCamera;
 	// Platform-neutral controller settings consumed through PlatformUserSettings.
 	float controllerDeadzone;
 	// Wii only: raw button assigned to Jump/Sneak/Drop/Inventory/Attack/Use/

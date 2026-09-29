@@ -282,7 +282,12 @@ public:
 	virtual void onEntityRemoved(Entity *entity);
 	bool isLoadedEntityPointer(const Entity *entity) const;
 	bool isLoadedTileEntityPointer(const TileEntity *tileEntity) const;
-	void detachEntityForWorldChange(Entity *entity);
+	// Virtual because WorldClient keeps three more non-owning entity sets
+	// (knownEntities/entityHash/entitySpawnQueue) that its destructor re-adopts
+	// from -- an entity detached for a world change must leave those too, or
+	// the abandoned world frees it while the new one still lists it (the MP
+	// dimension-change respawn double-free, 2026-09-28).
+	virtual void detachEntityForWorldChange(Entity *entity);
 	void addWorldAccess(IWorldAccess *iworldaccess);
 	void removeWorldAccess(IWorldAccess *iworldaccess);
 	std::vector<AxisAlignedBB *> &getCollidingBoundingBoxes(Entity *entity, AxisAlignedBB *axisalignedbb);

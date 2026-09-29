@@ -217,6 +217,10 @@
 #  define PLATFORM_FAST_CHUNK_BLOCK_READS                PS2_FAST_CHUNK_BLOCK_READS
 #  define PLATFORM_FAST_BLOCK_COUNT_SCAN                 1
 #  define PLATFORM_MP_DEFERRED_CHUNKS                    PS2_MP_DEFERRED_CHUNKS
+// Bounded-console MP clients keep this on even where the deferred pipeline
+// is rolled back: it is the eviction half (WorldClient::trimClientChunkCache)
+// that keeps a server-driven chunk map inside PLATFORM_CHUNK_UNLOAD_RADIUS.
+#  define PLATFORM_MP_BOUNDED_CHUNK_CACHE               1
 #  define PLATFORM_MP_COMPRESSED_CHUNK_CACHE_BYTES       PS2_MP_COMPRESSED_CHUNK_CACHE_BYTES
 #  define PLATFORM_MP_CHUNK_PROMOTIONS_PER_TICK          PS2_MP_CHUNK_PROMOTIONS_PER_TICK
 #  define PLATFORM_MP_MAX_DEFERRED_CHUNKS                PS2_MP_MAX_DEFERRED_CHUNKS
@@ -501,6 +505,9 @@
 #  define PLATFORM_FAST_CHUNK_BLOCK_READS                (PLATFORM_PC_LEGACY ? PC_LEGACY_FAST_CHUNK_BLOCK_READS : 0)
 #  define PLATFORM_FAST_BLOCK_COUNT_SCAN                 (PLATFORM_PC_LEGACY ? PC_LEGACY_FAST_BLOCK_COUNT_SCAN : 0)
 #  define PLATFORM_MP_DEFERRED_CHUNKS                    0
+// Desktop keeps an unbounded client chunk map: RAM is not the constraint
+// there. Consoles override this to 1 in their tuning headers.
+#  define PLATFORM_MP_BOUNDED_CHUNK_CACHE               0
 #  define PLATFORM_MP_COMPRESSED_CHUNK_CACHE_BYTES       0u
 #  define PLATFORM_MP_CHUNK_PROMOTIONS_PER_TICK          0
 #  define PLATFORM_MP_MAX_DEFERRED_CHUNKS                768u

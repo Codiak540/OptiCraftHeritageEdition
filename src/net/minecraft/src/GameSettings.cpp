@@ -34,6 +34,9 @@
 #include "platform/PlatformUserSettings.h"
 #include "net/minecraft/src/legacy/LegacyUiPolicy.h"
 #include "net/minecraft/src/legacy/LegacyUiScalePolicy.h"
+#if defined(CTR_PLATFORM)
+#include "3ds/input/DsInput.h"
+#endif
 #if PLATFORM_PC
 #include "pc/render/PcRenderBackend.h"
 #endif
@@ -141,6 +144,7 @@ void GameSettings::setDefaults()
     legacyUI = legacyUiDefaultEnabled();
     legacyLook = legacyLookDefaultEnabled();
     alternativeControllerLayout = false;
+    faceButtonCamera = false;
     controllerDeadzone = 0.20f;
     wiiDeflicker = true;
     widescreen = ConsoleAspectRatio::getDefaultWidescreen();
@@ -486,6 +490,17 @@ void GameSettings::setLegacyUiEnabled(bool enabled)
 
     legacyUI = enabled;
     guiScale = legacyUiEffectiveGuiScale(legacyUI, legacyGuiScaleRestore);
+}
+
+void GameSettings::setFaceButtonCamera(bool enabled)
+{
+    if (enabled == faceButtonCamera)
+        return;
+    faceButtonCamera = enabled;
+#if defined(CTR_PLATFORM)
+    dsInputSetFaceButtonCamera(faceButtonCamera);
+#endif
+    saveOptions();
 }
 
 void GameSettings::setOptionValue(const EnumOptions *enumoptions, int_t i)

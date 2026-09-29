@@ -25,6 +25,7 @@
 #include "platform/Input.h"
 #include "platform/PlatformConfig.h"
 #include "platform/RenderAPI.h"
+#include "platform/ConsoleInputClock.h"
 #include "LegacyMenuHints.h"
 #include "LegacySelectionCursor.h"
 #include "LegacyUiTheme.h"
@@ -1484,8 +1485,10 @@ LegacyCraftingScreen::LegacyCraftingScreen(InventoryPlayer *playerInventory, Wor
     : inventory(playerInventory), world(worldObj), posX(x), posY(y), posZ(z),
       is2x2Mode(is2x2), entityPlayer(player), selectedCategory(0),
       craftHoldTicks(0), ps2ActionReleaseLatch(true),
+      navRepeatMs(0),
       guiLeft(0), guiTop(0), xSize(276), ySize(188),
-      ownerPlayerIndex(-1)
+      ownerPlayerIndex(-1),
+      invZoneActive(false), invCursorRow(0), invCursorCol(0), grabbedSlotIndex(-1)
 {
     initStaticRecipes();
 
@@ -1523,6 +1526,12 @@ void LegacyCraftingScreen::initGui()
     ySize = 188;
     guiLeft = (width - xSize) / 2;
     guiTop = (height - ySize) / 2;
+    // A revived screen (see Minecraft::displayGuiScreen) must not keep a
+    // strip cursor or a half-finished grab from its previous life.
+    invZoneActive = false;
+    invCursorRow = 0;
+    invCursorCol = 0;
+    grabbedSlotIndex = -1;
     ensureSelectionVisible();
 }
 
@@ -1567,17 +1576,30 @@ void LegacyCraftingScreen::changeVariant(int dir)
     const int_t varCount = s_categories[cat].groups[grp].variantCount;
     if (varCount <= 1) return;
 
+    // Wraps: the D-pad's second carousel direction became the strip handoff
+    // (see handleNavigation), so the pad cycles variants on UP alone and
+    // needs the wrap to reach every variant. The touch arrows above/below
+    // the selected recipe use the same calls and wrap identically.
     int_t newVar = selectedVariant[cat][grp] + dir;
-    if (newVar >= 0 && newVar < varCount)
-    {
-        selectedVariant[cat][grp] = newVar;
-        if (mc != nullptr && mc->sndManager != nullptr)
-            mc->sndManager->playSoundFX("random.focus", 1.0f, 1.0f);
-    }
+    if (newVar < 0) newVar = varCount - 1;
+    if (newVar >= varCount) newVar = 0;
+
+    selectedVariant[cat][grp] = newVar;
+    if (mc != nullptr && mc->sndManager != nullptr)
+        mc->sndManager->playSoundFX("random.focus", 1.0f, 1.0f);
 }
 
 void LegacyCraftingScreen::handleNavigation(int dirX, int dirY)
 {
+    // The strip zone owns the D-pad while it is active; the carousel keeps
+    // left/right and its variants ride UP (the touch arrows above/below the
+    // selected recipe stay for direct access).
+    if (invZoneActive)
+    {
+        handleInventoryZoneNavigation(dirX, dirY);
+        return;
+    }
+
     const int_t cat = selectedCategory;
     const int_t groupCount = s_categories[cat].groupCount;
 
@@ -1592,9 +1614,127 @@ void LegacyCraftingScreen::handleNavigation(int dirX, int dirY)
                 mc->sndManager->playSoundFX("random.focus", 1.0f, 1.0f);
         }
     }
-    if (dirY != 0)
+    else if (dirY > 0)
     {
-        changeVariant(-dirY); // up is previous (-1), down is next (+1)
+        // Up cycles variants -- with wrap, since down is no longer the
+        // carousel's second direction (see below); the touch arrows above
+        // and below the selected recipe stay for direct access.
+        changeVariant(1);
+    }
+    else if (dirY < 0)
+    {
+        // Down leaves the recipes for the inventory strip -- the strip is
+        // the console inventory and reaching it is the whole point of the
+        // D-pad here (2026-09-28: "the cursor never came down to the
+        // inventory" on every platform). NOTE: this screen's callers pass
+        // dirY=+1 for UP (see handleSpecializedMenuInput), so DOWN is the
+        // negative dirY here.
+        enterInventoryZone();
+    }
+}
+
+void LegacyCraftingScreen::enterInventoryZone()
+{
+    // Enter under the recipe cursor: the strip's top row continues the
+    // carousel's spatial flow, so the recipe's x maps onto a strip column.
+    constexpr int_t visibleCount = 10;
+    const int_t carouselW = visibleCount * 22;
+    const int_t carouselStartX = guiLeft + (xSize - carouselW) / 2;
+    const int_t activeSlotX = carouselStartX + (selectedGroup[selectedCategory] - scrollOffset[selectedCategory]) * 22;
+    const int_t invX = guiLeft + 104;
+    int_t col = (activeSlotX + 9 - invX) / 18;
+    if (col < 0) col = 0;
+    if (col > 8) col = 8;
+
+    invCursorRow = 0;
+    invCursorCol = col;
+    invZoneActive = true;
+    if (mc != nullptr && mc->sndManager != nullptr)
+        mc->sndManager->playSoundFX("random.focus", 1.0f, 1.0f);
+}
+
+void LegacyCraftingScreen::handleInventoryZoneNavigation(int dirX, int dirY)
+{
+    // Screen-space rows: row 0 is the strip's top row and row 3 the hotbar,
+    // but this screen's callers pass dirY=+1 for UP (see the carousel's
+    // handleNavigation note), so up is the positive dirY here too.
+    if (dirX < 0)
+    {
+        if (invCursorCol > 0)
+        {
+            --invCursorCol;
+            if (mc != nullptr && mc->sndManager != nullptr)
+                mc->sndManager->playSoundFX("random.focus", 1.0f, 1.0f);
+        }
+    }
+    else if (dirX > 0)
+    {
+        if (invCursorCol < 8)
+        {
+            ++invCursorCol;
+            if (mc != nullptr && mc->sndManager != nullptr)
+                mc->sndManager->playSoundFX("random.focus", 1.0f, 1.0f);
+        }
+    }
+    else if (dirY > 0)
+    {
+        // Up from the strip's top row hands the D-pad back to the recipes.
+        if (invCursorRow > 0)
+        {
+            --invCursorRow;
+            if (mc != nullptr && mc->sndManager != nullptr)
+                mc->sndManager->playSoundFX("random.focus", 1.0f, 1.0f);
+        }
+        else
+        {
+            invZoneActive = false;
+            if (mc != nullptr && mc->sndManager != nullptr)
+                mc->sndManager->playSoundFX("random.focus", 1.0f, 1.0f);
+        }
+    }
+    else if (dirY < 0)
+    {
+        // Down stops at the hotbar; wrapping between the strip and the
+        // carousel would make the handoff unpredictable.
+        if (invCursorRow < 3)
+        {
+            ++invCursorRow;
+            if (mc != nullptr && mc->sndManager != nullptr)
+                mc->sndManager->playSoundFX("random.focus", 1.0f, 1.0f);
+        }
+    }
+}
+
+void LegacyCraftingScreen::clickStripSlot(int slotIndex)
+{
+    if (slotIndex < 0 || slotIndex >= 36 ||
+        inventory == nullptr || inventory->mainInventory == nullptr)
+        return;
+
+    if (mc != nullptr && mc->sndManager != nullptr)
+        mc->sndManager->playSoundFX("random.click", 1.0f, 1.0f);
+
+    if (grabbedSlotIndex < 0)
+    {
+        // Nothing held: lift this slot's stack. Lifting an empty slot is a
+        // no-op -- there is nothing to move and no cursor item would show.
+        if (inventory->mainInventory[slotIndex] != nullptr)
+            grabbedSlotIndex = slotIndex;
+    }
+    else if (grabbedSlotIndex == slotIndex)
+    {
+        grabbedSlotIndex = -1; // same slot again: put it back down
+    }
+    else
+    {
+        // Swap in place between the two slots. No cursor item ever exists,
+        // so closing the screen mid-move loses nothing and nothing can be
+        // duplicated; crafting's ingredient scan reads the same array and
+        // is unaffected.
+        ItemStack *held = inventory->mainInventory[grabbedSlotIndex];
+        inventory->mainInventory[grabbedSlotIndex] = inventory->mainInventory[slotIndex];
+        inventory->mainInventory[slotIndex] = held;
+        grabbedSlotIndex = -1;
     }
 }
 
@@ -1827,10 +1967,17 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
         renderDisable(RenderCapability::Lighting);
     }
 
-    // Shoulder button tab hints
+    // Shoulder button tab hints: the buttons that ride SPACE/SHIFT in
+    // handleSpecializedMenuInput(). PS2's are L1/R1, the 3DS's are L/R
+    // (mapTextButtons); the Wii maps them to its controller-dependent
+    // X/Z (GameCube) or -/2 (Wiimote) pair, so it keeps the generic
+    // desktop legend rather than a wrong single label.
 #if PLATFORM_PS2
     fontRenderer->drawStringWithShadow("L1", guiLeft + 4, guiTop + 9, 0xffe0e0e0);
     fontRenderer->drawStringWithShadow("R1", guiLeft + 148, guiTop + 9, 0xffe0e0e0);
+#elif PLATFORM_3DS
+    fontRenderer->drawStringWithShadow("L", guiLeft + 5, guiTop + 9, 0xffe0e0e0);
+    fontRenderer->drawStringWithShadow("R", guiLeft + 149, guiTop + 9, 0xffe0e0e0);
 #else
     fontRenderer->drawStringWithShadow("Q", guiLeft + 6, guiTop + 9, 0xffe0e0e0);
     fontRenderer->drawStringWithShadow("E", guiLeft + 148, guiTop + 9, 0xffe0e0e0);
@@ -2079,13 +2226,29 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
                 if (mouseX >= sx && mouseX < sx + 18 && mouseY >= sy && mouseY < sy + 18)
                     hoveredStack = st;
             }
+
+            // The lifted stack keeps a tint until it lands somewhere: the
+            // grab is the strip's only "cursor item" and it lives in its own
+            // slot until the swap, so it needs a marker to be findable.
+            if (grabbedSlotIndex == slotIndex)
+                drawRect(sx + 1, sy + 1, sx + 17, sy + 17, 0x5020a0ff);
         }
     }
 
-    // Selection cursor centered on active recipe carousel slot
+    // Selection cursor centered on active recipe carousel slot, and on the
+    // strip slot the pad cursor is on while that zone is active (same cursor,
+    // one screen, whichever zone owns the D-pad).
     renderDisable(RenderCapability::Lighting);
     const int_t activeSlotX = carouselStartX + (curGroup - scroll) * 22;
-    legacyDrawSelectionCursorCentered(mc, activeSlotX + 9, carouselY + 9, 20, zLevel + 64.0f);
+    if (invZoneActive)
+    {
+        const int_t stripCursorY = invY + invCursorRow * 18 + (invCursorRow == 3 ? 3 : 0);
+        legacyDrawSelectionCursorCentered(mc, invX + invCursorCol * 18 + 9, stripCursorY + 9, 20, zLevel + 64.0f);
+    }
+    else
+    {
+        legacyDrawSelectionCursorCentered(mc, activeSlotX + 9, carouselY + 9, 20, zLevel + 64.0f);
+    }
 
     renderDisable(RenderCapability::RescaleNormal);
     RenderHelper::disableStandardItemLighting();
@@ -2098,15 +2261,19 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
     // Bottom Action Hints
 #if PLATFORM_PS2
     const std::string buttons[] = {"L1/R1", "D-Pad", "Cross", "Circle"};
-    const std::string actions[] = {uiText("Category"), uiText("Navigate"), uiText("Craft"), uiText("Back")};
+    const std::string actions[] = {uiText("Category"), uiText("Navigate"), uiText("Craft/Move"), uiText("Back")};
     drawControlHintRow(mc, width, legacyHintRowY(height), buttons, actions, 4);
 #elif PLATFORM_WII
     const std::string buttons[] = {"L/R", "D-Pad", "A", "B"};
-    const std::string actions[] = {uiText("Category"), uiText("Navigate"), uiText("Craft"), uiText("Back")};
+    const std::string actions[] = {uiText("Category"), uiText("Navigate"), uiText("Craft/Move"), uiText("Back")};
+    drawControlHintRow(mc, width, legacyHintRowY(height), buttons, actions, 4);
+#elif PLATFORM_3DS
+    const std::string buttons[] = {"L/R", "D-Pad", "A", "B"};
+    const std::string actions[] = {uiText("Category"), uiText("Navigate"), uiText("Craft/Move"), uiText("Back")};
     drawControlHintRow(mc, width, legacyHintRowY(height), buttons, actions, 4);
 #else
     const std::string buttons[] = {"Q/E", "Arrows", "Enter", "Esc"};
-    const std::string actions[] = {uiText("Category"), uiText("Navigate"), uiText("Craft"), uiText("Back")};
+    const std::string actions[] = {uiText("Category"), uiText("Navigate"), uiText("Craft/Move"), uiText("Back")};
     drawControlHintRow(mc, width, legacyHintRowY(height), buttons, actions, 4);
 #endif
 }
@@ -2114,6 +2281,52 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
 void LegacyCraftingScreen::updateScreen()
 {
     GuiScreen::updateScreen();
+}
+
+#if PLATFORM_3DS
+void LegacyCraftingScreen::legacyNavigationRepeat(const PlatformTextInputSnapshot &pad)
+{
+    // Hold-to-repeat for the navigation bits -- the D-pad's own bits, which
+    // the circle pad also rides while a screen is open (DsInput's
+    // menuStickNavBits feeds both channels). The 250 ms/90 ms cadence is
+    // ContainerSlotNavigator's, so the carousel and the strip scroll while a
+    // direction is held instead of stepping once per push.
+    constexpr int kRepeatDelayMs = 250;
+    constexpr int kRepeatIntervalMs = 90;
+
+    const unsigned int heldBits =
+        pad.held & (PLATFORM_TEXT_LEFT | PLATFORM_TEXT_RIGHT | PLATFORM_TEXT_UP | PLATFORM_TEXT_DOWN);
+    // A fresh press steps through the edge handlers in
+    // handleSpecializedMenuInput; arm the delay here and let this frame pass.
+    if ((pad.pressed & heldBits) != 0)
+    {
+        navRepeatMs = consoleInputNowMs() + kRepeatDelayMs;
+        return;
+    }
+
+    const int now = consoleInputNowMs();
+    if (heldBits == 0 || now < navRepeatMs)
+        return;
+
+    int dirX = 0;
+    int dirY = 0;
+    if (heldBits & PLATFORM_TEXT_LEFT)       dirX = -1;
+    else if (heldBits & PLATFORM_TEXT_RIGHT) dirX = 1;
+    else if (heldBits & PLATFORM_TEXT_UP)    dirY = 1;
+    else if (heldBits & PLATFORM_TEXT_DOWN)  dirY = -1;
+    navRepeatMs = now + kRepeatIntervalMs;
+    if (dirX != 0 || dirY != 0)
+        handleNavigation(dirX, dirY);
+}
+#endif
+
+void LegacyCraftingScreen::handleSpecializedMenuInput()
+{
+    // The specialized hook can be called on a screen that was replaced earlier
+    // in the same frame's queue drain; a stale recipe click then would craft
+    // into the wrong window.
+    if (mc != nullptr && mc->currentScreen != this)
+        return;
 
 #if PLATFORM_PS2
     const Ps2PadSnapshot &ps2Pad = ps2PadGetSnapshot(getOwnerPlayerIndex());
@@ -2134,8 +2347,15 @@ void LegacyCraftingScreen::updateScreen()
         if (pressed & PS2_PAD_UP)    handleNavigation(0, 1);
         if (pressed & PS2_PAD_DOWN)  handleNavigation(0, -1);
 
+        // In the strip zone the action button moves items; on the recipes it
+        // crafts.
         if (pressed & PS2_PAD_CROSS)
-            craftCurrentRecipe();
+        {
+            if (invZoneActive)
+                clickStripSlot(stripSlotIndex(static_cast<int>(invCursorRow), static_cast<int>(invCursorCol)));
+            else
+                craftCurrentRecipe();
+        }
 
         if (pressed & PS2_PAD_CIRCLE)
         {
@@ -2148,8 +2368,9 @@ void LegacyCraftingScreen::updateScreen()
             return;
         }
 
-        // Hold-to-repeat crafting
-        if (!ps2ActionReleaseLatch && (ps2Pad.held & PS2_PAD_CROSS) != 0)
+        // Hold-to-repeat crafting: recipes only -- a held button must not
+        // rattle off swaps in the strip zone.
+        if (!ps2ActionReleaseLatch && (ps2Pad.held & PS2_PAD_CROSS) != 0 && !invZoneActive)
         {
             ++craftHoldTicks;
             if (craftHoldTicks >= 10 && (craftHoldTicks % 3 == 0))
@@ -2170,9 +2391,27 @@ void LegacyCraftingScreen::updateScreen()
         if (pad.pressed & PLATFORM_TEXT_RIGHT) handleNavigation(1, 0);
         if (pad.pressed & PLATFORM_TEXT_UP)    handleNavigation(0, 1);
         if (pad.pressed & PLATFORM_TEXT_DOWN)  handleNavigation(0, -1);
-        if (pad.pressed & PLATFORM_TEXT_TYPE)  craftCurrentRecipe();
+#if PLATFORM_3DS
+        // Held directions repeat (D-pad and circle pad alike -- the stick
+        // rides these same bits through DsInput's menu channel).
+        legacyNavigationRepeat(pad);
+#endif
+        // Category tabs ride the same shoulders the virtual keyboard uses as
+        // SPACE/SHIFT (3DS L/R, GC-pad X/Z, Wiimote MINUS/2) -- the same
+        // role PS2's L1/R1 play above. Before this the tabs had no button on
+        // any pad in the generic branch.
+        if (pad.pressed & PLATFORM_TEXT_SPACE) changeCategory(-1);
+        if (pad.pressed & PLATFORM_TEXT_SHIFT) changeCategory(1);
+        // Strip zone: the action button grabs/swaps a stack; recipes: it crafts.
+        if (pad.pressed & PLATFORM_TEXT_TYPE)
+        {
+            if (invZoneActive)
+                clickStripSlot(stripSlotIndex(static_cast<int>(invCursorRow), static_cast<int>(invCursorCol)));
+            else
+                craftCurrentRecipe();
+        }
 
-        if (pad.pressed & (PLATFORM_TEXT_CLOSE | PLATFORM_TEXT_SHIFT))
+        if (pad.pressed & PLATFORM_TEXT_CLOSE)
         {
             if (mc != nullptr && mc->sndManager != nullptr)
                 mc->sndManager->playSoundFX("random.back", 1.0f, 1.0f);
@@ -2183,7 +2422,7 @@ void LegacyCraftingScreen::updateScreen()
             return;
         }
 
-        if (pad.held & PLATFORM_TEXT_TYPE)
+        if (pad.held & PLATFORM_TEXT_TYPE && !invZoneActive)
         {
             ++craftHoldTicks;
             if (craftHoldTicks >= 10 && (craftHoldTicks % 3 == 0))
@@ -2209,6 +2448,14 @@ void LegacyCraftingScreen::keyTyped(char_t c, int_t key)
         return;
     }
 
+    // The keyboard handlers below are desktop's. On the consoles the same
+    // buttons arrive through handleSpecializedMenuInput() as PLATFORM_TEXT_*
+    // edges, AND the menu channel queues the D-pad/A as keyboard events that
+    // end up here -- handling them twice made every D-pad step skip two slots
+    // and every craft press produce two crafts (2026-09-28, 3DS). ESC stays
+    // for everyone: B on 3DS, CIRCLE on PS2 and PLUS on Wii all reach this
+    // screen as KEY_ESCAPE, which is the console "back" convention.
+#if !defined(PS2_PLATFORM) && !defined(WII_PLATFORM) && !defined(CTR_PLATFORM)
     if (key == lwjgl::Keyboard::KEY_Q || key == lwjgl::Keyboard::KEY_PRIOR)
     {
         changeCategory(-1);
@@ -2243,7 +2490,12 @@ void LegacyCraftingScreen::keyTyped(char_t c, int_t key)
 
     if (key == lwjgl::Keyboard::KEY_RETURN || key == lwjgl::Keyboard::KEY_SPACE)
     {
-        craftCurrentRecipe();
+        // Desktop shares the pad's zone semantics: Enter on the strip moves
+        // items, on the recipes it crafts.
+        if (invZoneActive)
+            clickStripSlot(stripSlotIndex(static_cast<int>(invCursorRow), static_cast<int>(invCursorCol)));
+        else
+            craftCurrentRecipe();
         return;
     }
 
@@ -2260,6 +2512,7 @@ void LegacyCraftingScreen::keyTyped(char_t c, int_t key)
             return;
         }
     }
+#endif
 
     GuiScreen::keyTyped(c, key);
 }
@@ -2339,6 +2592,24 @@ void LegacyCraftingScreen::mouseClicked(int_t mouseX, int_t mouseY, int_t button
     if (mouseX >= resultX && mouseX < resultX + 22 && mouseY >= resultY && mouseY < resultY + 22)
     {
         craftCurrentRecipe();
+        return;
+    }
+
+    // 4. Click on the inventory strip -> grab/swap. The same state the pad's
+    // strip cursor uses, so touch and pad move the same stacks; the pad's
+    // zone cursor itself is untouched (touch acts where it lands, as it does
+    // on the tabs and recipes above).
+    const int_t stripX = guiLeft + 104;
+    const int_t stripY = panelTop + 60;
+    if (mouseX >= stripX && mouseX < stripX + 9 * 18 && mouseY >= stripY && mouseY < stripY + 4 * 18 + 3)
+    {
+        int_t col = (mouseX - stripX) / 18;
+        int_t row = (mouseY - stripY) / 18;
+        if (col < 0) col = 0;
+        if (col > 8) col = 8;
+        if (row < 0) row = 0;
+        if (row > 3) row = 3; // the hotbar row sits 3px lower; the gap rounds down onto it
+        clickStripSlot(stripSlotIndex(static_cast<int>(row), static_cast<int>(col)));
         return;
     }
 }

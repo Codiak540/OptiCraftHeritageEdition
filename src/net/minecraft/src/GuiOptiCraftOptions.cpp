@@ -19,6 +19,12 @@
 namespace
 {
 constexpr int_t BUTTON_EDIT_PLAYER_NAME = 206;
+#if defined(CTR_PLATFORM)
+// The face-button camera toggle (see DsInput.cpp): the option only exists
+// on the 3DS, where it remaps gameplay controls; on the other platforms the
+// diamond already has dedicated actions and the field is meaningless.
+constexpr int_t BUTTON_FACE_CAMERA = 207;
+#endif
 }
 
 GuiOptiCraftOptions::GuiOptiCraftOptions(GuiScreen *parent, GameSettings *options)
@@ -54,6 +60,11 @@ void GuiOptiCraftOptions::initGui()
 	controlList.push_back(new GuiButton(205, width / 2 - 100, buttonY,
 		uiText("Legacy Look: ") + std::string(settings->legacyLook ? uiText("ON") : uiText("OFF"))));
 	buttonY += 20;
+#if defined(CTR_PLATFORM)
+	controlList.push_back(new GuiButton(BUTTON_FACE_CAMERA, width / 2 - 100, buttonY,
+		uiText("Face-Button Camera: ") + std::string(settings->faceButtonCamera ? uiText("ON") : uiText("OFF"))));
+	buttonY += 20;
+#endif
 #ifdef WII_PLATFORM
 	controlList.push_back(new GuiButton(201, width / 2 - 100, buttonY,
 		uiText("Alternative controls: ") + std::string(settings->alternativeControllerLayout ? uiText("ON") : uiText("OFF"))));
@@ -173,6 +184,15 @@ void GuiOptiCraftOptions::actionPerformed(GuiButton *button)
 			mc->entityRenderer->updateWorldLightLevels();
 		return;
 	}
+#if defined(CTR_PLATFORM)
+	if (button->id == BUTTON_FACE_CAMERA)
+	{
+		settings->setFaceButtonCamera(!settings->faceButtonCamera);
+		button->displayString = uiText("Face-Button Camera: ") +
+			std::string(settings->faceButtonCamera ? uiText("ON") : uiText("OFF"));
+		return;
+	}
+#endif
 #ifdef WII_PLATFORM
 	if (button->id == 201)
 	{

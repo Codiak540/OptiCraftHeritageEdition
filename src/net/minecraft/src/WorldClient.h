@@ -49,6 +49,7 @@ public:
 	bool entityJoinedWorld(Entity *entity) override;
 	void setEntityDead(Entity *entity) override;
 	void unloadEntities(const std::vector<Entity *> &list) override;
+	void detachEntityForWorldChange(Entity *entity) override;
 	void addEntityToWorld(int_t entityId, Entity *entity);
 	void applyNetworkPosition(Entity *entity, double x, double y, double z, float yaw, float pitch);
 	Entity *getEntityByID(int_t entityId);

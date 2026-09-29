@@ -77,6 +77,13 @@
 // try before the clock says stop.
 #undef  PLATFORM_MAX_RENDERER_UPDATES_PER_FRAME
 #define PLATFORM_MAX_RENDERER_UPDATES_PER_FRAME    10
+// Candidate cap, the Wii's value (WiiFrameTuning.h): the desktop branch
+// scans 99 renderers per frame for eligibility. Candidates that bail on the
+// generation gate cost almost nothing, but the cap keeps the governor's
+// worst case predictable and stops one frame burning its whole pass in
+// candidate checks when the queue is long.
+#undef  PLATFORM_RENDERER_UPDATE_CANDIDATES_PER_FRAME
+#define PLATFORM_RENDERER_UPDATE_CANDIDATES_PER_FRAME 12
 #undef  PLATFORM_CHUNK_BUILD_BUDGET_MS
 #define PLATFORM_CHUNK_BUILD_BUDGET_MS             5
 
@@ -156,6 +163,15 @@
 #define PLATFORM_INCREMENTAL_CHUNK_SAVE_LIMIT        2
 #undef  PLATFORM_SAVE_RUNTIME_CHUNK_EDITS_ON_UNLOAD
 #define PLATFORM_SAVE_RUNTIME_CHUNK_EDITS_ON_UNLOAD   1
+
+// The other half of the PS2's new-world answer (Ps2CoreTuning.h): the
+// initial full save serializes the whole spawn area to SD synchronously on
+// the loading screen, right after PRELOAD_RADIUS already generated it. With
+// runtime autosave off above, that pass is pure loading-screen time for a
+// world whose terrain is deterministic from the seed; the first real save
+// is the "Saving chunks" pass on exit, same as the PS2's flow.
+#undef  PLATFORM_SKIP_NEW_WORLD_FULL_SAVE
+#define PLATFORM_SKIP_NEW_WORLD_FULL_SAVE             1
 
 // Entity simulation normally requires every chunk in a 32-block radius (5x5
 // columns); the resident cache above is 5x5 (radius 2), so the halved range
@@ -238,6 +254,17 @@
 #undef  PLATFORM_ENTITY_AI_FAR_TICK_DIVISOR
 #define PLATFORM_ENTITY_AI_FAR_TICK_DIVISOR        4
 
+// Entity blob shadows OFF, the Wii's lever (WiiGameplayTuning.h):
+// Render::doRenderShadowAndFire's shadow is a per-entity, per-frame CPU
+// block scan (up to (2*shadowSize+1)^2 columns under the entity) plus a
+// light lookup per hit column. The Wii kept its shadows visually correct
+// and still dropped them once sessions carried ~260 entities; here the
+// same scan runs on an in-order 268 MHz core and the soft blob is barely
+// legible on the 240-line top screen. MAX_LIVE_MOBS 8 bounds the count but
+// every rendered entity still pays the scan every frame.
+#undef  PLATFORM_SKIP_ENTITY_SHADOWS
+#define PLATFORM_SKIP_ENTITY_SHADOWS                 1
+
 // Async chunk generation (PLATFORM_ASYNC_CHUNK_GENERATION), the Wii's
 // streaming shape on the 3DS's own cores. PlatformAsyncTuning.h maps these
 // onto the shared scheduler knobs; the rationale mirrors
@@ -294,6 +321,45 @@
 // which read as "breaking blocks does nothing").
 #undef  PLATFORM_NETWORK_THREAD_AFFINITY_MASK
 #define PLATFORM_NETWORK_THREAD_AFFINITY_MASK      (1u << 1)
+
+// MP chunk pipeline: ROLLED BACK on this platform (PLATFORM_MP_DEFERRED_CHUNKS 0,
+// 2026-09-29) and CONFIRMED on hardware: with the deferred machinery compiled
+// in, chunks stream in on vanilla servers but never appear on CraftBukkit;
+// the direct desktop path works on both. The 3DS inflates every Packet51 on
+// arrival into the client chunk and applies block changes immediately -- no
+// parking lot, no 2/tick promotion budget, no deferred change log. Why the
+// deferred pipeline breaks on CraftBukkit specifically was not chased past
+// the rollback: it proved to be the fix, and any return to the deferred
+// pipeline here must be validated against a CraftBukkit server, not just a
+// vanilla one -- that is the exact regression this rollback repaired.
+//
+// The bounded eviction is NOT part of the rollback. PLATFORM_MP_BOUNDED_
+// CHUNK_CACHE keeps evicting live columns beyond PLATFORM_CHUNK_UNLOAD_RADIUS
+// every tick (the view+1 ring singleplayer keeps): a server streams chunks
+// for ITS view distance, not the client's, so without the eviction the
+// client chunk map grows without bound -- the release-session std::bad_alloc.
+// The known cost of the evict-only profile: walking back into an evicted
+// column re-downloads it from the server (a visible hole while the inflate
+// + import run on the game thread), because with the deferred cache gone
+// there is no compressed copy to re-inflate from.
+//
+// The sizes below are the deferred table the PS2 still runs. They are inert
+// while the flag is 0 and stay here so a future, CraftBukkit-validated
+// re-enable is the one-line flip back to 1.
+#undef  PLATFORM_MP_DEFERRED_CHUNKS
+#define PLATFORM_MP_DEFERRED_CHUNKS                 0
+#undef  PLATFORM_MP_BOUNDED_CHUNK_CACHE
+#define PLATFORM_MP_BOUNDED_CHUNK_CACHE            1
+#undef  PLATFORM_MP_COMPRESSED_CHUNK_CACHE_BYTES
+#define PLATFORM_MP_COMPRESSED_CHUNK_CACHE_BYTES   (3u * 1024u * 1024u)
+#undef  PLATFORM_MP_CHUNK_PROMOTIONS_PER_TICK
+#define PLATFORM_MP_CHUNK_PROMOTIONS_PER_TICK       2
+#undef  PLATFORM_MP_MAX_DEFERRED_CHUNKS
+#define PLATFORM_MP_MAX_DEFERRED_CHUNKS             256u
+#undef  PLATFORM_MP_MAX_CHANGES_PER_CHUNK
+#define PLATFORM_MP_MAX_CHANGES_PER_CHUNK          128
+#undef  PLATFORM_MP_MAX_DEFERRED_CHANGES
+#define PLATFORM_MP_MAX_DEFERRED_CHANGES           4096
 
 // Streaming schedule: when the GAME THREAD itself does worldgen work. The
 // values are the PS2's (Ps2WorldTuning.h) because the 3DS shares that
@@ -432,6 +498,29 @@
 #define PLATFORM_PRECOMPUTE_INITIAL_HEIGHTMAP      DS_FAST_WORLDGEN
 #undef  PLATFORM_FLOAT_TERRAIN_NOISE
 #define PLATFORM_FLOAT_TERRAIN_NOISE               1
+
+// Two CPU-class knobs the 3DS was still leaving at the desktop defaults:
+//
+//   INTEGER_FLOOR_DOUBLE (the PS2's, Ps2CoreTuning.h): MathHelper::floor_double
+//   is one of the hottest helpers in the game (entity ticks, collision,
+//   picking, the mesher). The PS2 took the integer IEEE-754 path because the
+//   EE has no double hardware at all; the ARM11 has VFPv2 doubles, but the
+//   expression still costs a coprocessor double compare whose flag readback
+//   stalls this in-order core, and the integer form keeps the whole
+//   computation on the ALU. Bit-identical for every input class including
+//   NaN and the saturation boundaries -- MathHelperFloorTests holds the
+//   equivalence over eight million values (platform/IntegerFloorDouble.h).
+//
+//   FAST_CHUNK_BLOCK_READS (the PS2's and PC_LEGACY's): the mesher's
+//   ChunkCache resolved every getBlockId/getBlockMetadata through the
+//   per-access Chunk vtable dispatch; this caches each source chunk's raw
+//   arrays once per ChunkCache instead (see ChunkCache.h). Same shared
+//   RenderBlocks path this console runs, proven on the two platforms that
+//   mesh with it today.
+#undef  PLATFORM_INTEGER_FLOOR_DOUBLE
+#define PLATFORM_INTEGER_FLOOR_DOUBLE               1
+#undef  PLATFORM_FAST_CHUNK_BLOCK_READS
+#define PLATFORM_FAST_CHUNK_BLOCK_READS            1
 #undef  PLATFORM_HEIGHTMAP_SEA_LEVEL
 #define PLATFORM_HEIGHTMAP_SEA_LEVEL               63
 #undef  PLATFORM_HEIGHTMAP_BASE_HEIGHT

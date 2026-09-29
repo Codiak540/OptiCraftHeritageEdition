@@ -33,6 +33,15 @@ struct DsInputState
     bool stickConnected = true; // circle pad present (always true on 3DS)
     float stickX = 0.0f;        // -1..1, raw (deadzone handling is downstream)
     float stickY = 0.0f;
+
+    // New 3DS C-Stick, same raw -1..1 axis contract as the circle pad fields
+    // (Y down-positive, nub up reads negative). On an Old 3DS ir:rst never
+    // initialises (hidInit only starts it on New hardware), so
+    // irrstCstickRead reports a zeroed position and these stay 0 -- the
+    // gameplay look channel is inert rather than absent, and the shared
+    // snapshot's right-stick fields read a centred stick.
+    float cstickX = 0.0f;
+    float cstickY = 0.0f;
 };
 
 // One-time setup: remember the top-screen size used for the touch mapping.
@@ -43,15 +52,23 @@ void dsInputInit(int screenW, int screenH);
 // lwjgl::Display::processMessages(). Also forwards touch -> mouse, START ->
 // KEY_ESCAPE (or ENTER while a field has focus), and the gameplay channel
 // (jump/inventory/sneak keys; attack from X or R and use from B or L as
-// mouse buttons; hotbar wheel from D-pad LEFT/RIGHT; chat from D-pad UP).
-// While a field has focus the menu navigation and the mouse forwarding stand
-// down -- see DsInput.cpp.
+// mouse buttons; hotbar wheel from D-pad LEFT/RIGHT, ZL/ZR on a New 3DS,
+// and the C-Stick as a look pad there; chat from D-pad UP). While a field
+// has focus the menu navigation and the mouse forwarding stand down -- see
+// DsInput.cpp.
 //
 // inMenu is "a GuiScreen is currently open", which the input layer cannot
 // work out for itself -- the same reason WiiPadState::wiiPadPoll() and
 // Ps2Input::update() take it as a parameter (see the header comment in
 // DsInput.cpp for what it gates).
 void dsInputPoll(bool inMenu);
+
+// Face-button camera toggle (OptiCraft Options): while on, gameplay gives
+// the A/B/X/Y diamond to the camera (Y/A/X/B = look left/right/up/down),
+// jump moves to SELECT-tap or double-tap-B, sneak to holding SELECT, and
+// inventory to double-tap-Y; attack/use stay on the shoulders. Called from
+// GameSettings whenever the option is (re)loaded or changed.
+void dsInputSetFaceButtonCamera(bool enabled);
 
 const DsInputState& dsInputState();
 

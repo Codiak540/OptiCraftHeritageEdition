@@ -85,6 +85,40 @@ bool menuCursorSuppressed(Minecraft *mc, const GuiScreen *screen = nullptr)
 	(void)mc;
 	(void)target;
 	return !platformMenuCursorVisible() || !platformMenuPointerActive();
+#elif PLATFORM_3DS
+	// Same rule as the Wii's, for the touch panel: the software cursor is
+	// the finger's shadow, so it is drawn only while the finger owns the
+	// pointer and stops sitting on the title/pause screens untouched.
+	// Containers draw their own D-pad slot cursor (GuiContainer::drawScreen),
+	// so nothing else needs the mouse cursor visible while idle.
+	(void)mc;
+	(void)target;
+	return !platformMenuCursorVisible() || !platformMenuPointerActive();
+#else
+	(void)mc;
+	(void)target;
+	return false;
+#endif
+}
+
+// Whether button HOVER VISUALS must be suppressed this frame. The 3DS touch
+// pointer is absolute and only samples while the finger is down, yet the
+// shared GUI keeps reading the LAST sample as the "mouse" position
+// (PlatformCompat::getMouseState); in gameplay that sample is a camera LOOK
+// drag, so it can sit anywhere on screen. Left alone it goes on drawing a
+// hovered button beside the pad's own selection from the moment a menu
+// opens. Only a live contact may draw hover -- the same rule the Wii gets
+// from menuPointerInputSuppressed(). The 3DS cannot reuse that helper,
+// though: it also gates GuiScreen::handleMouseInput(), which has to keep
+// delivering the touch click's release edge -- DsInput emits it on the poll
+// AFTER the finger lifted, when pointerActive is already false
+// (see updateGameplay() there).
+bool menuPointerHoverSuppressed(Minecraft *mc, const GuiScreen *screen = nullptr)
+{
+	const GuiScreen *target = (screen != nullptr) ? screen : (mc != nullptr ? mc->currentScreen : nullptr);
+#if PLATFORM_3DS
+	(void)target;
+	return !platformMenuPointerActive();
 #else
 	(void)mc;
 	(void)target;
@@ -126,6 +160,21 @@ GuiScreen::~GuiScreen()
 	controlList.clear();
 	delete guiParticles;
 	guiParticles = nullptr;
+#if PLATFORM_PS2 || PLATFORM_WII || PLATFORM_3DS
+	// The on-screen keyboard must not outlive the screen whose field it
+	// holds. The normal path is the field unfocusing on close, but screens
+	// routinely die with the field still focused (Add Server's Done, world
+	// creation, ...). A stale focusedField keeps
+	// platformTextInputExclusive() on forever -- every menu gate reads it,
+	// so B/START navigation and touch die in ALL screens -- and the
+	// keyboard's tick keeps taking the text snapshot before
+	// ContainerSlotNavigator can, leaving every container deaf: no slot
+	// movement, nothing closes. Pointer comparison only (the derived
+	// destructor has already destroyed the field itself), and a field owned
+	// by a different screen is not ours to clear.
+	if (focusedTextField != nullptr)
+		VirtualKeyboard::instance().notifyFocus(focusedTextField, false);
+#endif
 }
 
 void GuiScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick)
@@ -134,7 +183,8 @@ void GuiScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick)
 		syncKeyboardSelection();
 	const bool suppressPointerInput = menuPointerInputSuppressed(mc, this);
 	const bool suppressCursor = menuCursorSuppressed(mc, this);
-	const bool suppressMouseHover = keyboardSelectedControlIndex >= 0 && isJavaUiKeyboardNavigationEnabled();
+	const bool suppressMouseHover = (keyboardSelectedControlIndex >= 0 && isJavaUiKeyboardNavigationEnabled()) ||
+		menuPointerHoverSuppressed(mc, this);
 	const int_t effectiveMouseX = suppressPointerInput || suppressMouseHover ? -10000 : mouseX;
 	const int_t effectiveMouseY = suppressPointerInput || suppressMouseHover ? -10000 : mouseY;
 	for (int_t i = 0; i < (int_t)controlList.size(); i++)
@@ -282,7 +332,21 @@ void GuiScreen::handleInput()
 	if (mc != nullptr)
 	{
 		if (mc->currentScreen != nullptr && mc->currentScreen != this)
+		{
+			// handleSpecializedMenuInput() replaced the screen mid-turn (a
+			// join, a sub-screen, a back-stack push). The input layer may
+			// still hold THIS turn's pad-synthesized key events -- on the 3DS
+			// A is pushed as KEY_RETURN alongside its PLATFORM_TEXT_TYPE latch
+			// -- and the new screen would read them one frame later as a
+			// fresh press, e.g. auto-clicking its first button through the
+			// Java-UI navigation. The PS2 never queues them (Ps2InputMapper
+			// refuses to push for a specialized screen); every other turn that
+			// ends here retires its leftovers instead. Up edges are level
+			// bookkeeping and harmless; only this drain decides a press died
+			// with the screen it was made on.
+			while (lwjgl::Keyboard::next()) {}
 			return;
+		}
 		if (mc->currentScreen != this && mc->getPlayerScreen(0) != this && mc->getPlayerScreen(1) != this)
 			return;
 	}
@@ -299,6 +363,14 @@ void GuiScreen::handleInput()
 	// mouse/keyboard events are dispatched to the screen. Keeping this routing
 	// in shared GUI code prevents Wii/PS2/3DS input backends from depending on
 	// Minecraft screen classes.
+	//
+	// The keyboard may only hold THIS screen's focused field: a field left
+	// focused when its screen stopped being current (screens stay alive for
+	// the back-stack; see Minecraft::displayGuiScreen) would keep it "active"
+	// over a foreign pointer -- text-exclusive input on, which gates the pad
+	// and touch menu channels everywhere, and the text snapshot consumed
+	// before ContainerSlotNavigator can read it. Drop it first.
+	VirtualKeyboard::instance().dropForeignField(focusedTextField);
 	VirtualKeyboard::instance().tick();
 	if (!platformTextInputExclusive())
 		ContainerSlotNavigator::instance(getOwnerPlayerIndex()).tick();

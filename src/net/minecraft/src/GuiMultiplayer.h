@@ -84,4 +84,12 @@ private:
     std::string lagTooltip;
     std::shared_ptr<ServerNBTStorage> tempServer;
     int_t controllerFocus;
+    // 3DS only: the first specialized input turn after (re)entry must not
+    // act on the pad latch. The A that opened -- or returned to -- this
+    // screen leaves its PLATFORM_TEXT_TYPE edge in that latch, because the
+    // legacy menus it is reached from navigate through the synthesized
+    // KEY_* channel and never consume it (DsInput only clears the latch on
+    // the gameplay boundary, not on menu-to-menu transitions). Seeded by
+    // initGui(); see handleSpecializedMenuInput.
+    bool padOpeningTurnArmed;
 };

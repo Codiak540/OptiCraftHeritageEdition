@@ -3297,6 +3297,35 @@ void World::updateEntities()
     // bookkeeping, the unload drain and the tile-entity pass around it.
     long_t platformPhaseStartNs = System::nanoTime();
 #endif
+
+    // Entities destroyed this pass. Java never frees an object while a
+    // reference exists; this port deletes in destroyEntity(), and deleting
+    // while the pass is still walking its lists left later loops calling
+    // virtuals (mob AI targets, rider links, vtables) on freed memory -- the
+    // MP-respawn "Undefined Instruction at 0x518" crash was exactly that:
+    // the unload drain freed the dead player's EntityClientPlayerMP, and a
+    // blx through its reused vtable slot jumped to a garbage thumb address.
+    // Deferring the deletes to the end of the pass keeps every object the
+    // pass touches valid for the whole pass; holders in LATER ticks see
+    // isDead=true on memory that is still alive and clear their pointers
+    // (onEntityRemoved clears old-AI targets, setEntityDead unmounts riders)
+    // before the deferred delete can ever run.
+    //
+    // The dedup matters too: a dead weather effect lives in BOTH
+    // weatherEffects and loadedEntityList, so the weather loop below and the
+    // unload drain used to destroyEntity the same pointer -- a double free
+    // that corrupts the heap with small ints, which is where a garbage
+    // vtable slot like 0x519 comes from.
+    std::vector<Entity *> entityGraveyard;
+    auto deferDestroy = [&entityGraveyard](Entity *entity)
+    {
+        if (entity == nullptr)
+            return;
+        if (std::find(entityGraveyard.begin(), entityGraveyard.end(), entity) ==
+            entityGraveyard.end())
+            entityGraveyard.push_back(entity);
+    };
+
     // Update weather effects
     for (size_t i = 0; i < weatherEffects.size(); i++)
     {
@@ -3307,7 +3336,7 @@ void World::updateEntities()
         {
             weatherEffects.erase(weatherEffects.begin() + i);
             onEntityRemoved(entity);
-            destroyEntity(entity);
+            deferDestroy(entity);
             i--;
         }
     }
@@ -3362,7 +3391,7 @@ void World::updateEntities()
     {
         releaseEntitySkin(unloadedEntityList[j]);
         onEntityRemoved(unloadedEntityList[j]);
-        destroyEntity(unloadedEntityList[j]);
+        deferDestroy(unloadedEntityList[j]);
     }
     
     unloadedEntityList.clear();
@@ -3417,7 +3446,7 @@ void World::updateEntities()
             l--;
             releaseEntitySkin(entity);
             onEntityRemoved(entity);
-            destroyEntity(entity);
+            deferDestroy(entity);
         }
     }
     
@@ -3504,6 +3533,11 @@ void World::updateEntities()
 #if PLATFORM_PROFILE_RENDER_PHASES
     platformProfileTickPhase("entTile", System::nanoTime() - platformPhaseStartNs);
 #endif
+
+    // The whole pass has walked its lists; nothing scheduled above can still
+    // be touched, so the entities deferred above can finally be freed.
+    for (Entity *entity : entityGraveyard)
+        destroyEntity(entity);
 }
 
 void World::addLoadedTileEntities(const std::vector<TileEntity*>& collection)
@@ -6073,6 +6107,12 @@ void World::updateEntityList()
             entityCountsDirty = true;
             k--;
             releaseEntitySkin(entity);
+            // Java routes dead entities found here into unloadedEntityList so
+            // updateEntities' drain owns them; the port drops them instead,
+            // which leaks every entity that dies in the same window (this
+            // runs only from Minecraft::respawn). Keep the vanilla routing
+            // -- the drain deletes, now deferred to its pass end.
+            unloadedEntityList.push_back(entity);
         }
     }
 }

@@ -214,7 +214,12 @@ void ItemRenderer::renderItemInFirstPerson(float partialTick) {
     renderRotate((player->rotationYaw - armYaw) * 0.1f, 0.0f, 1.0f, 0.0f);
 
     ItemStack* itemstack = itemToRender;
-    if (!isRenderableStack(itemstack)) {
+    // Identity before content: the tick may have freed the stack this cache
+    // points at (eating the last bite, placing the last block -- see
+    // InventoryPlayer::isOwnStackPointer), and isRenderableStack reads the
+    // object. A dead cache drops to the empty-hand render; updateEquippedItem
+    // re-seeds it from the live slot on the next frame.
+    if (!player->inventory->isOwnStackPointer(itemstack) || !isRenderableStack(itemstack)) {
         itemstack = nullptr;
         itemToRender = nullptr;
     }
@@ -563,7 +568,13 @@ void ItemRenderer::updateEquippedItem() {
     EntityPlayerSP* entityplayersp = mc->thePlayer;
     EntityPlayer* entityplayer = (EntityPlayer*)entityplayersp;
     ItemStack* itemstack1 = entityplayer->inventory->getCurrentItem();
-    if (!isRenderableStack(itemToRender)) {
+    // Same rule as renderItemInFirstPerson: identity before content. A stack
+    // freed by this frame's tick (consumed, dropped) must not be touched,
+    // not even by isRenderableStack -- the freed object's fields can hold
+    // allocator garbage (the "ench" data abort read a tag pointer of 0x18).
+    if (!entityplayer->inventory->isOwnStackPointer(itemToRender)) {
+        itemToRender = nullptr;
+    } else if (!isRenderableStack(itemToRender)) {
         itemToRender = nullptr;
     }
     if (!isRenderableStack(itemstack1)) {

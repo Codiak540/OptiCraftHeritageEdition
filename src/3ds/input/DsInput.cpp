@@ -20,13 +20,23 @@
 //                                                         LEFT/RIGHT -> hotbar wheel
 //                                                         +1/-1; DOWN unmapped
 //   START   ENTER     only while typing      pause     -> KEY_ESCAPE
-//   ZL/ZR   --                               unmapped (New-3DS only; phase 2)
+//   ZL/ZR   --                               hotbar wheel +1/-1 (New 3DS only)
 //
 //   circle pad -> stick axes (analog movement, PLATFORM_DIRECT_ANALOG_MOVEMENT)
+//   C-Stick  -> look pad in gameplay (New 3DS only; Old hardware reports a
+//               zeroed position, so the channel is inert there). Deltas ride
+//               the same touch-look pipeline as the face-button camera,
+//               scaled by deflection at a frame-rate-free rate.
 //   touch      -> menus: absolute pointer + click. Gameplay: LOOK ONLY (panel
 //                 drags move the camera; the triggers own the buttons). While
 //                 a text field has focus the on-screen keyboard owns the
 //                 panel and reads RAW 320x240 coordinates instead.
+//
+// FACE-BUTTON CAMERA (the OptiCraft-Options toggle, gameplay only): A/B/X/Y
+// become a look pad (Y=left A=right X=up B=down) at a frame-rate-free rate,
+// attack/use live on the shoulders alone, jump = SELECT tap or double-tap B,
+// sneak = hold SELECT, inventory = double-tap Y. The deltas ride the touch
+// look pipeline, so the sensitivity slider covers both.
 //
 // Attack and Use are mouse buttons rather than keys because that is what
 // GameSettings binds them to (-100 / -99) and what clickMouse() reads -- and
@@ -60,8 +70,10 @@
 #include "3ds/input/DsPadKeyCodes.h"
 #include "lwjgl/Keyboard.h"
 #include "lwjgl/Mouse.h"
+#include "platform/ConsoleInputClock.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 
 namespace
@@ -102,6 +114,46 @@ bool g_prevTextExclusive = false;
 // the B button's split-half role and the START escape below.
 bool g_prevContainerNav = false;
 
+// Face-button camera (the OptiCraft-Options toggle): while on, in gameplay
+// the diamond becomes a look pad (Y left, A right, X up, B down), attack and
+// place live only on the shoulders, SELECT taps jump / holds sneak, and a
+// double tap of B or Y still fires jump / inventory. Deltas ride the same
+// mouse-queue look pipeline the touch panel uses, so sensitivity settings
+// apply to both alike.
+bool g_faceButtonCamera = false;
+std::uint32_t g_faceCameraMask = 0;      // face buttons present in face mode
+int g_selectDownSinceMs = 0;              // 0 = not down
+bool g_selectSneakLatched = false;
+int g_lastFaceJumpTapMs = 0;              // last B tap edge, for double-tap
+int g_lastFaceInventoryTapMs = 0;        // last Y tap edge, for double-tap
+int g_faceCameraLastMs = 0;              // poll timestamp, for frame-rate-free rates
+int g_faceJumpHoldFrames = 0;            // polls left on a synthesized jump press
+
+constexpr int kFaceSneakHoldMs = 350;     // SELECT held this long = sneak
+constexpr int kFaceDoubleTapMs = 300;    // taps closer than this = double
+// How many polls a synthesized jump stays pressed. Jump is level-sampled
+// (the movement input reads keyBindJump->pressed inside the entity tick),
+// unlike the inventory's edge-consumed isPressed(): a down+up pair pushed
+// in the same poll nets to false before the tick ever looks. Five polls is
+// ~one game tick or more at 30 and 60 fps alike -- about the hold of a real
+// button tap.
+constexpr int kFaceJumpHoldPolls = 5;
+// Look rate in mouse pixels per second: the default sensitivity cube is 1.0,
+// so one pixel is 0.15 degrees -- 480 px/s is a comfortable ~72 deg/s sweep.
+// Shared by the face-button camera and the New 3DS C-Stick channel below,
+// which scale it by how far the input is pushed.
+constexpr float kFaceCameraPixelsPerSec = 480.0f;
+
+// New 3DS C-Stick camera state. The nub self-centres well, but a resting
+// offset must not creep the view, so the same deadzone+rescale the published
+// stick axes get (InputBackend_3DS) is applied before any rate scaling --
+// the camera reads DsInputState's RAW axes, because the deadzone lives in the
+// backend half and must not be applied twice.
+constexpr float kCStickDeadzone = 0.20f;
+int g_cstickCameraLastMs = 0;          // poll timestamp, frame-rate-free rate
+float g_cstickAccumX = 0.0f;           // sub-pixel remainders: a gentle nudge
+float g_cstickAccumY = 0.0f;           // at 60 fps moves <1 px per poll
+
 // Gameplay channel state. Separate from PLATFORM_TEXT_*, which is the menu
 // channel and keeps working with a screen open.
 //
@@ -117,6 +169,18 @@ constexpr std::uint32_t GP_DPAD_UP     = 1u << 5;
 constexpr std::uint32_t GP_DPAD_DOWN   = 1u << 6;
 constexpr std::uint32_t GP_DPAD_LEFT   = 1u << 7; // wheel +1 (previous slot)
 constexpr std::uint32_t GP_DPAD_RIGHT  = 1u << 8; // wheel -1 (next slot)
+// KEY_B alone. Gameplay folds B into GP_USE together with L, but the menu
+// navigation below must not: L is the SPACE/SHIFT pair's left half there
+// (the legacy crafting screen's category tabs), and riding GP_USE made it
+// push KEY_ESCAPE -- one shoulder switched category while the other closed
+// the inventory (2026-09-29, 3DS).
+constexpr std::uint32_t GP_BACK        = 1u << 9;
+// New 3DS triggers. They share the hotbar wheel with the D-pad's horizontal
+// pair rather than folding into GP_DPAD_LEFT/RIGHT: the D-pad bits also
+// carry menu navigation while a screen is open, and ZL/ZR must not step the
+// GUI. The bits stay zero on Old hardware (KEY_ZL/KEY_ZR never report).
+constexpr std::uint32_t GP_SLOT_PREV   = 1u << 10; // ZL: wheel +1 (previous slot)
+constexpr std::uint32_t GP_SLOT_NEXT   = 1u << 11; // ZR: wheel -1 (next slot)
 
 // Latched by dsInputPoll() from the screen-open state Display hands it; the
 // input layer cannot discover that for itself (see DsInput.h).
@@ -148,7 +212,7 @@ constexpr int kTouchPanelW = 320;
 // +/-156 on both axes, so normalise against that directly.
 constexpr float kCirclePadMax = 156.0f;
 
-char g_debugLine[96];
+char g_debugLine[112];
 
 std::uint32_t mapTextButtons(u32 keys)
 {
@@ -158,8 +222,13 @@ std::uint32_t mapTextButtons(u32 keys)
 	if (keys & KEY_DLEFT)  value |= PLATFORM_TEXT_LEFT;
 	if (keys & KEY_DRIGHT) value |= PLATFORM_TEXT_RIGHT;
 	if (keys & KEY_A)      value |= PLATFORM_TEXT_TYPE;
-	if (keys & KEY_B)      value |= PLATFORM_TEXT_BACK;
-	if (keys & KEY_X)      value |= PLATFORM_TEXT_SPACE;
+	// In a container B is the close button (B/START push KEY_ESCAPE below --
+	// the same back convention as every other menu), so the navigator's
+	// split-half/place-one click moves to X for the container's lifetime;
+	// anywhere else B stays the keyboard's backspace and X the space bar.
+	const bool containerNav = platformContainerNavigationActive();
+	if ((keys & KEY_B) && !containerNav) value |= PLATFORM_TEXT_BACK;
+	if (keys & KEY_X)      value |= (containerNav ? PLATFORM_TEXT_BACK : PLATFORM_TEXT_SPACE);
 	if (keys & KEY_Y)      value |= PLATFORM_TEXT_CLOSE;
 	if (keys & KEY_L)      value |= PLATFORM_TEXT_SPACE;
 	if (keys & KEY_R)      value |= PLATFORM_TEXT_SHIFT;
@@ -170,10 +239,12 @@ std::uint32_t mapTextButtons(u32 keys)
 	// and otherwise forwardStartToEscape() keeps its fixed KEY_ESCAPE role.
 	if ((keys & KEY_START) && platformTextInputExclusive())
 		value |= PLATFORM_TEXT_ENTER;
-	// ZL/ZR wait for phase 2. Pure D-pad bits otherwise: the circle pad is
-	// analog movement and reaches the game through the stick axes, not
-	// through this mask; the D-pad's gameplay roles are the hotbar wheel and
-	// chat (see updateGameplay()), and DOWN has no gameplay action at all.
+	// ZL/ZR carry no menu meaning: they are the hotbar wheel in gameplay
+	// (readGameplayButtons) and the D-pad owns menu scrolling. Pure D-pad
+	// bits otherwise: the circle pad is analog movement and reaches the game
+	// through the stick axes, not through this mask; the D-pad's gameplay
+	// roles are the hotbar wheel and chat (see updateGameplay()), and DOWN
+	// has no gameplay action at all.
 	return value;
 }
 
@@ -183,7 +254,7 @@ std::uint32_t readGameplayButtons(u32 keys)
 {
 	std::uint32_t value = 0;
 	if (keys & KEY_A)      value |= GP_JUMP;
-	if (keys & KEY_B)      value |= GP_USE;
+	if (keys & KEY_B)      value |= GP_USE | GP_BACK;
 	if (keys & KEY_X)      value |= GP_ATTACK;
 	if (keys & KEY_Y)      value |= GP_INVENTORY;
 	// The shoulders are clicks, deliberately swapped from the PC's mouse
@@ -196,7 +267,50 @@ std::uint32_t readGameplayButtons(u32 keys)
 	if (keys & KEY_DDOWN)  value |= GP_DPAD_DOWN;
 	if (keys & KEY_DLEFT)  value |= GP_DPAD_LEFT;
 	if (keys & KEY_DRIGHT) value |= GP_DPAD_RIGHT;
+	// New 3DS only: the extra triggers step the hotbar alongside the D-pad's
+	// horizontal pair (see the GP_SLOT_* declaration for why they are separate
+	// bits). Zero on Old hardware, so nothing changes there.
+	if (keys & KEY_ZL)     value |= GP_SLOT_PREV;
+	if (keys & KEY_ZR)     value |= GP_SLOT_NEXT;
 	return value;
+}
+
+// The circle pad's menu direction as GP_DPAD_* bits: the dominant axis past
+// a deliberate-push threshold on the RAW axes (the deadzone rescale happens
+// downstream in InputBackend_3DS; 0.5 raw is about a half push). stickY is
+// down-positive (see the circle-pad block in dsInputPoll).
+std::uint32_t menuStickNavBits()
+{
+	constexpr float kMenuStickThreshold = 0.5f;
+	int x = 0;
+	int y = 0;
+	if (g_state.stickX < -kMenuStickThreshold) x = -1;
+	else if (g_state.stickX > kMenuStickThreshold) x = 1;
+	if (g_state.stickY > kMenuStickThreshold) y = 1;
+	else if (g_state.stickY < -kMenuStickThreshold) y = -1;
+	if (x != 0 && y != 0)
+	{
+		if (std::abs(g_state.stickX) >= std::abs(g_state.stickY)) y = 0;
+		else x = 0;
+	}
+	std::uint32_t bits = 0;
+	if (x < 0) bits |= GP_DPAD_LEFT;
+	if (x > 0) bits |= GP_DPAD_RIGHT;
+	if (y < 0) bits |= GP_DPAD_UP;
+	if (y > 0) bits |= GP_DPAD_DOWN;
+	return bits;
+}
+
+// The same direction as the PLATFORM_TEXT_* bits the text mask carries, so
+// the stick rides the exact channel the D-pad already owns there.
+std::uint32_t menuStickTextBits(std::uint32_t navBits)
+{
+	std::uint32_t bits = 0;
+	if (navBits & GP_DPAD_LEFT)  bits |= PLATFORM_TEXT_LEFT;
+	if (navBits & GP_DPAD_RIGHT) bits |= PLATFORM_TEXT_RIGHT;
+	if (navBits & GP_DPAD_UP)    bits |= PLATFORM_TEXT_UP;
+	if (navBits & GP_DPAD_DOWN)  bits |= PLATFORM_TEXT_DOWN;
+	return bits;
 }
 
 // Deliver the gameplay half of this frame's scan. `touchDown` comes in
@@ -208,6 +322,8 @@ std::uint32_t readGameplayButtons(u32 keys)
 void updateGameplay(u32 keys, bool touchDown)
 {
 	const std::uint32_t held = readGameplayButtons(keys);
+	// The circle pad's menu direction, for the keyboard-code channel below.
+	const std::uint32_t stickBits = menuStickNavBits();
 
 	if (g_inMenu != g_prevInMenu)
 	{
@@ -221,8 +337,11 @@ void updateGameplay(u32 keys, bool touchDown)
 		g_latchedPressed = 0;
 		// The navigation pushes below seed from here, so a button held at
 		// the boundary does not fire a menu navigation step it was never
-		// pressed for; it navigates on its next fresh press instead.
-		g_prevMenuNav = held;
+		// pressed for; it navigates on its next fresh press instead. The
+		// stick seeds the same way: walking with the pad pushed is the
+		// normal way a pause screen opens, and the menu must not step on
+		// the deflection it opened with.
+		g_prevMenuNav = held | stickBits;
 	}
 	g_suppressed &= held; // forget buttons that have since been released
 
@@ -264,9 +383,11 @@ void updateGameplay(u32 keys, bool touchDown)
 	// START's KEY_ESCAPE is decided in dsInputPoll(), and B here is the
 	// screens' own back button.
 	const bool typing = platformTextInputExclusive();
+	// The stick rides the same D-pad navigation bits -- one mechanism for
+	// both, and every menu that answers the D-pad answers the stick.
 	const std::uint32_t navActive = g_inMenu
-	    ? (held & (GP_DPAD_UP | GP_DPAD_DOWN | GP_DPAD_LEFT | GP_DPAD_RIGHT |
-	               GP_JUMP | GP_USE))
+	    ? ((held | stickBits) & (GP_DPAD_UP | GP_DPAD_DOWN | GP_DPAD_LEFT | GP_DPAD_RIGHT |
+	                             GP_JUMP | GP_BACK))
 	    : 0u;
 	const std::uint32_t navChanged = navActive ^ g_prevMenuNav;
 	if (!typing)
@@ -276,13 +397,15 @@ void updateGameplay(u32 keys, bool touchDown)
 		if (navChanged & GP_DPAD_LEFT)  lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_LEFT, (navActive & GP_DPAD_LEFT) != 0);
 		if (navChanged & GP_DPAD_RIGHT) lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_RIGHT, (navActive & GP_DPAD_RIGHT) != 0);
 		if (navChanged & GP_JUMP)       lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_RETURN, (navActive & GP_JUMP) != 0);
-		// B is the screens' back button -- except while the container
-		// navigator owns this screen, where B is the split-half / place-one
-		// slot click (PLATFORM_TEXT_BACK) and closing on it would fight the
-		// selection. dsInputPoll releases an escape pressed before the
-		// handoff.
-		if ((navChanged & GP_USE) != 0 && !platformContainerNavigationActive())
-			lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_ESCAPE, (navActive & GP_USE) != 0);
+		// B alone stays the screens' back button everywhere -- containers
+		// included (their split-half/place-one click rides X instead while a
+		// container is open; see mapTextButtons). PS2/Wii keep their own
+		// back buttons live during container navigation too. L shares
+		// GP_USE with B in gameplay, but in a menu it is the keyboard
+		// pair's left half (SPACE: the crafting screen's category tabs),
+		// so the escape rides B's dedicated GP_BACK bit instead.
+		if ((navChanged & GP_BACK) != 0)
+			lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_ESCAPE, (navActive & GP_BACK) != 0);
 	}
 	g_prevMenuNav = navActive;
 
@@ -294,9 +417,10 @@ void updateGameplay(u32 keys, bool touchDown)
 	// InventoryPlayer::changeCurrentItem() subtracts its argument, so LEFT
 	// steps the hotbar back and RIGHT steps it forward. The D-pad owns the
 	// wheel in gameplay precisely because L/R clicked away to mouse buttons
-	// (header table).
-	if (pressed & GP_DPAD_LEFT)  lwjgl::Mouse::detail::pushWheel(1, x, y);
-	if (pressed & GP_DPAD_RIGHT) lwjgl::Mouse::detail::pushWheel(-1, x, y);
+	// (header table). ZL/ZR (New 3DS) join the same wheel as dedicated
+	// impulse bits, so the player can hold the D-pad free for the camera.
+	if (pressed & (GP_DPAD_LEFT | GP_SLOT_PREV))  lwjgl::Mouse::detail::pushWheel(1, x, y);
+	if (pressed & (GP_DPAD_RIGHT | GP_SLOT_NEXT)) lwjgl::Mouse::detail::pushWheel(-1, x, y);
 
 	// Chat: KEY_T is what keyBindChat is bound to (GameSettings' fixed
 	// default), and pushing it from a pad button is how the Wii already does
@@ -328,6 +452,168 @@ void updateGameplay(u32 keys, bool touchDown)
 	}
 
 	g_prevGameplay = active;
+}
+
+// The face-button camera channel: called from dsInputPoll() only in gameplay
+// with the toggle on. The four face buttons never reach updateGameplay() in
+// that mode (dsInputPoll strips them first), so this is their whole meaning.
+// Begin a synthesized jump: press now, release kFaceJumpHoldPolls later.
+// The hold (not a same-poll edge) is what makes it a jump -- see the
+// counter's declaration above.
+void startFaceJumpHold()
+{
+	lwjgl::Keyboard::detail::pushKey(DS_KEY_A, true);
+	g_faceJumpHoldFrames = kFaceJumpHoldPolls;
+}
+
+void updateFaceButtonCamera(u32 keys, u32 keysPressed, u32 keysReleased)
+{
+	(void)keysReleased;
+	const int now = consoleInputNowMs();
+
+	// Expire a synthesized jump before anything else, so the level is
+	// false again by the poll the hold ends on.
+	if (g_faceJumpHoldFrames > 0 && --g_faceJumpHoldFrames == 0)
+		lwjgl::Keyboard::detail::pushKey(DS_KEY_A, false);
+
+	// Look pad: hold to pan, at a frame-rate-free rate. The signs mirror a
+	// touch drag exactly (right-drag = look right, down-drag = look down),
+	// because both ride the same pushMotion -> mouseXYChange -> turnEntity
+	// pipeline and share the sensitivity settings.
+	int dx = 0;
+	int dy = 0;
+	if (keys & KEY_A) dx += 1;
+	if (keys & KEY_Y) dx -= 1;
+	if (keys & KEY_B) dy += 1;
+	if (keys & KEY_X) dy -= 1;
+	if (dx != 0 || dy != 0)
+	{
+		int elapsedMs = now - g_faceCameraLastMs;
+		if (elapsedMs < 0)
+			elapsedMs = 0;
+		if (elapsedMs > 100)
+			elapsedMs = 100;
+		const float pixels =
+			kFaceCameraPixelsPerSec * static_cast<float>(elapsedMs) / 1000.0f;
+		lwjgl::Mouse::detail::pushMotion(g_state.pointerX, g_state.pointerY,
+			static_cast<int>(dx * pixels), static_cast<int>(dy * pixels));
+	}
+	g_faceCameraLastMs = now;
+
+	// SELECT: tap = jump, hold = sneak. The level push (and its release) is
+	// what the ordinary sneak channel does; a tap that turns out to be a
+	// hold must not also jump, so the jump fires on release instead.
+	if (keysPressed & KEY_SELECT)
+	{
+		g_selectDownSinceMs = now;
+		g_selectSneakLatched = false;
+	}
+	else if (keys & KEY_SELECT)
+	{
+		if (!g_selectSneakLatched &&
+		    now - g_selectDownSinceMs >= kFaceSneakHoldMs)
+		{
+			g_selectSneakLatched = true;
+			lwjgl::Keyboard::detail::pushKey(DS_KEY_SELECT, true);
+		}
+	}
+	else if (g_selectDownSinceMs != 0)
+	{
+		if (g_selectSneakLatched)
+			lwjgl::Keyboard::detail::pushKey(DS_KEY_SELECT, false);
+		else
+		{
+			// A short tap: jump, held for a few polls rather than edged,
+			// so the level survives until the entity tick reads it.
+			startFaceJumpHold();
+		}
+		g_selectDownSinceMs = 0;
+	}
+
+	// Double-tap B = jump, double-tap Y = inventory: one tap is a camera
+	// blip, two quick ones fire the action.
+	if (keysPressed & KEY_B)
+	{
+		if (now - g_lastFaceJumpTapMs < kFaceDoubleTapMs)
+		{
+			startFaceJumpHold();
+			g_lastFaceJumpTapMs = 0;
+		}
+		else
+			g_lastFaceJumpTapMs = now;
+	}
+	if (keysPressed & KEY_Y)
+	{
+		if (now - g_lastFaceInventoryTapMs < kFaceDoubleTapMs)
+		{
+			lwjgl::Keyboard::detail::pushKey(DS_KEY_Y, true);
+			lwjgl::Keyboard::detail::pushKey(DS_KEY_Y, false);
+			g_lastFaceInventoryTapMs = 0;
+		}
+		else
+			g_lastFaceInventoryTapMs = now;
+	}
+}
+
+// Deadzone + rescale for the C-Stick, mirroring InputBackend_3DS's
+// applyStickDeadzone: the camera consumes the RAW axes (deadzones are
+// downstream for the shared snapshot, per DsInput.h), so the filter has to
+// happen here for this channel.
+float cStickDeflection(float raw)
+{
+	if (raw > -kCStickDeadzone && raw < kCStickDeadzone)
+		return 0.0f;
+	const float sign = raw < 0.0f ? -1.0f : 1.0f;
+	float magnitude = (std::abs(raw) - kCStickDeadzone) / (1.0f - kCStickDeadzone);
+	if (magnitude < 0.0f)
+		magnitude = 0.0f;
+	if (magnitude > 1.0f)
+		magnitude = 1.0f;
+	return magnitude * sign;
+}
+
+// The New 3DS C-Stick look channel: a deflection-scaled look pad riding the
+// same pushMotion -> mouseXYChange -> turnEntity pipeline as the touch panel
+// and the face-button camera, so the sensitivity slider and the invert
+// option cover all three alike. dsInputPoll() calls it in gameplay only --
+// menus keep the nub inert (the D-pad and circle pad own navigation there)
+// and so does text entry. On Old hardware irrstCstickRead reports libctru's
+// zeroed cache, both deflections stay 0, and nothing ever fires.
+void updateCStickCamera()
+{
+	const int now = consoleInputNowMs();
+	int elapsedMs = now - g_cstickCameraLastMs;
+	g_cstickCameraLastMs = now;
+	if (elapsedMs < 0)
+		elapsedMs = 0;
+	if (elapsedMs > 100)
+		elapsedMs = 100;
+
+	const float deflX = cStickDeflection(g_state.cstickX);
+	const float deflY = cStickDeflection(g_state.cstickY);
+	if (deflX == 0.0f && deflY == 0.0f)
+	{
+		// Drop the remainders too: re-centering the nub must not replay the
+		// half-pixel a previous poll left behind as one last twitch.
+		g_cstickAccumX = 0.0f;
+		g_cstickAccumY = 0.0f;
+		return;
+	}
+
+	// Signs mirror a touch drag exactly (right-drag = look right, down-drag =
+	// look down) because both ride the same pipeline. cstickY already follows
+	// the stick axes' down-positive convention (the circle-pad block in
+	// dsInputPoll negates libctru's upward dy), so it maps straight on.
+	const float pixels =
+		kFaceCameraPixelsPerSec * static_cast<float>(elapsedMs) / 1000.0f;
+	g_cstickAccumX += deflX * pixels;
+	g_cstickAccumY += deflY * pixels;
+	const int dx = static_cast<int>(g_cstickAccumX);
+	const int dy = static_cast<int>(g_cstickAccumY);
+	g_cstickAccumX -= static_cast<float>(dx);
+	g_cstickAccumY -= static_cast<float>(dy);
+	if (dx != 0 || dy != 0)
+		lwjgl::Mouse::detail::pushMotion(g_state.pointerX, g_state.pointerY, dx, dy);
 }
 
 // START edges -> KEY_ESCAPE on the keyboard queue, both down and up so
@@ -367,6 +653,16 @@ void dsInputInit(int screenW, int screenH)
 	g_prevTouchY = 0;
 	g_prevTextExclusive = false;
 	g_prevContainerNav = false;
+	g_faceCameraMask = 0;
+	g_selectDownSinceMs = 0;
+	g_selectSneakLatched = false;
+	g_lastFaceJumpTapMs = 0;
+	g_lastFaceInventoryTapMs = 0;
+	g_faceCameraLastMs = 0;
+	g_faceJumpHoldFrames = 0;
+	g_cstickCameraLastMs = 0;
+	g_cstickAccumX = 0.0f;
+	g_cstickAccumY = 0.0f;
 	g_inMenu = false;
 	g_prevInMenu = false;
 	g_suppressed = 0;
@@ -376,13 +672,18 @@ void dsInputInit(int screenW, int screenH)
 	g_prevBtn1 = false;
 }
 
+void dsInputSetFaceButtonCamera(bool enabled)
+{
+	g_faceButtonCamera = enabled;
+}
+
 void dsInputPoll(bool inMenu)
 {
 	// The scan lives here so the poll is self-contained: HID state is latched
 	// per scan, so every read below must come from the same one, and callers
 	// (lwjgl::Display::processMessages) never have to remember to scan.
 	hidScanInput();
-	const u32 keys = hidKeysHeld();
+	const u32 heldKeysRaw = hidKeysHeld();
 	// Never name locals keysDown/keysUp: hid.h's compatibility macros
 	// (#define keysDown hidKeysDown) would rewrite the tokens.
 	const u32 keysPressed = hidKeysDown();
@@ -397,9 +698,40 @@ void dsInputPoll(bool inMenu)
 	// START mean this frame.
 	const bool typing = platformTextInputExclusive();
 
+	// Circle pad -> raw -1..1 stick axes (deadzones are downstream, per
+	// DsInput.h). Read before the text mask below: while a screen is open
+	// the stick also rides the menu channels (menuStickNavBits), and both
+	// channels must see the same poll's deflection. libctru's dy grows
+	// UPWARD (push up = positive, the opposite of the raw-joystick
+	// contract), so negate it into the down-positive Y the backends and
+	// MovementInputFromOptions expect -- "stick up reads negative"
+	// (InputBackend_3DS). Clamp because the s16 can exceed the nominal
+	// saturation.
+	circlePosition circle = {};
+	hidCircleRead(&circle);
+	g_state.stickX = std::clamp(static_cast<float>(circle.dx) / kCirclePadMax, -1.0f, 1.0f);
+	g_state.stickY = std::clamp(static_cast<float>(-circle.dy) / kCirclePadMax, -1.0f, 1.0f);
+
+	// New 3DS C-Stick -> raw -1..1 with the same axis conventions as the
+	// circle pad above (Y negated into down-positive, so "nub up reads
+	// negative" the way every downstream consumer expects). hidScanInput()
+	// already refreshed libctru's cache through irrstScanInput() -- hidInit()
+	// starts ir:rst on New hardware only -- and on Old hardware the call
+	// returns that zeroed cache, so the axes read as a centred stick.
+	circlePosition cstick = {};
+	hidCstickRead(&cstick);
+	g_state.cstickX = std::clamp(static_cast<float>(cstick.dx) / kCirclePadMax, -1.0f, 1.0f);
+	g_state.cstickY = std::clamp(static_cast<float>(-cstick.dy) / kCirclePadMax, -1.0f, 1.0f);
+
 	// Buttons -> PLATFORM_TEXT_* mask; rising edges accumulate until
-	// dsInputConsumePressed() takes them.
-	const std::uint32_t held = mapTextButtons(keys);
+	// dsInputConsumePressed() takes them. The circle pad's menu direction
+	// joins the D-pad bits unconditionally: the latch is dropped in gameplay
+	// anyway (updateGameplay clears it below) and the unconditional OR keeps
+	// the edge differencing continuous across menu boundaries, so a stick
+	// held while a screen opens does not fire a step it was never pushed
+	// for.
+	const std::uint32_t held =
+	    mapTextButtons(heldKeysRaw) | menuStickTextBits(menuStickNavBits());
 	g_latchedPressed |= held & ~g_prevHeld;
 	g_prevHeld = held;
 	g_state.held = held;
@@ -415,7 +747,7 @@ void dsInputPoll(bool inMenu)
 	// converts them against InputBackend_3DS's pointerWidth), and nothing
 	// enters the mouse queue -- a click at panel coordinates would land
 	// under the top screen's cursor instead of under the finger.
-	const bool touchDown = (keys & KEY_TOUCH) != 0;
+	const bool touchDown = (heldKeysRaw & KEY_TOUCH) != 0;
 	if (touchDown)
 	{
 		touchPosition touch = {};
@@ -458,13 +790,40 @@ void dsInputPoll(bool inMenu)
 	g_prevTouchX = g_state.pointerX;
 	g_prevTouchY = g_state.pointerY;
 
-	// Circle pad -> raw -1..1 stick axes (deadzones are downstream, per
-	// DsInput.h). Raw dy grows downward; the game's stick Y is up-positive,
-	// so negate it. Clamp because the s16 can exceed the nominal saturation.
-	circlePosition circle = {};
-	hidCircleRead(&circle);
-	g_state.stickX = std::clamp(static_cast<float>(circle.dx) / kCirclePadMax, -1.0f, 1.0f);
-	g_state.stickY = std::clamp(static_cast<float>(-circle.dy) / kCirclePadMax, -1.0f, 1.0f);
+	// Face-button camera: in gameplay with the toggle on, the diamond and
+	// SELECT leave the ordinary gameplay channel entirely (their roles move
+	// to updateFaceButtonCamera below), so attack/use live on the shoulders
+	// alone and nothing double-fires. In menus the buttons keep their usual
+	// meanings -- the mode is a camera, not a full control scheme swap.
+	u32 keys = heldKeysRaw;
+	if (g_faceButtonCamera && !g_inMenu && !typing)
+	{
+		constexpr std::uint32_t kFaceMask = KEY_A | KEY_B | KEY_X | KEY_Y | KEY_SELECT;
+		const std::uint32_t faceHeld = keys & kFaceMask;
+		keys &= ~kFaceMask;
+		updateFaceButtonCamera(faceHeld, keysPressed & kFaceMask, keysReleased & kFaceMask);
+	}
+	else if (g_selectDownSinceMs != 0 || g_selectSneakLatched || g_faceJumpHoldFrames > 0)
+	{
+		// The face context ended (menu opened, field focused) while a SELECT
+		// tap/hold was mid-flight: a latched sneak must be released or the
+		// player stays crouched behind the menu, a pending tap must not
+		// jump on the way back, and a jump press still on its hold must
+		// come up too or the player hops once when the menu closes.
+		if (g_selectSneakLatched)
+			lwjgl::Keyboard::detail::pushKey(DS_KEY_SELECT, false);
+		if (g_faceJumpHoldFrames > 0)
+			lwjgl::Keyboard::detail::pushKey(DS_KEY_A, false);
+		g_selectDownSinceMs = 0;
+		g_selectSneakLatched = false;
+		g_faceJumpHoldFrames = 0;
+	}
+
+	// New 3DS C-Stick look, gameplay only: menus and text entry keep the nub
+	// inert so it never fights the D-pad/keyboard, the same way the
+	// face-button camera stands down outside gameplay.
+	if (!g_inMenu && !typing)
+		updateCStickCamera();
 
 	// After the touch block, so clicks carry this frame's coordinates. The
 	// finger is a click only where there is something to click: in menus it
@@ -473,29 +832,30 @@ void dsInputPoll(bool inMenu)
 	// pickaxe. Text entry keeps its own exclusion either way.
 	updateGameplay(keys, g_inMenu && touchDown && !typing);
 
-	// Container navigation is the other context that changes what B means:
-	// while the slot navigator owns a screen, B is the split-half/place-one
-	// click (PLATFORM_TEXT_BACK) and must not close the container out from
-	// under the selection. The gate inside updateGameplay takes care of the
-	// presses; the transition release here takes care of an escape key that
-	// was already down when a container opened, so it cannot stay stuck.
+	// Container navigation still runs its transition detector: an escape
+	// key that was already down when a container opened (pressed in the menu
+	// the container came from) is released on the handoff so it cannot stay
+	// stuck. B and START themselves keep closing the container -- the
+	// navigator's split-half click rides X instead while one is open.
 	const bool containerNav = platformContainerNavigationActive();
 	if (containerNav && !g_prevContainerNav)
 		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_ESCAPE, false);
 	g_prevContainerNav = containerNav;
 
 	// START keeps its fixed KEY_ESCAPE role only while nothing has focus:
-	// pause in-world, "go back" in a screen, edge-driven off keysPressed
-	// rather than the held mask so one held across the boundary does not
-	// re-fire. With a field focused, mapTextButtons turned START into
-	// ENTER instead (what submits chat), and forwarding its edges as ESC
-	// here would close the very screen being typed in. An escape key whose
-	// press went out before focus arrived is released on the transition,
-	// otherwise it would stay stuck down for the rest of the session.
+	// pause in-world, "go back" in a screen -- containers included, whose
+	// slot cursor never conflicts with the pause/back key -- edge-driven off
+	// keysPressed rather than the held mask so one held across the boundary
+	// does not re-fire. With a field focused, mapTextButtons turned START
+	// into ENTER instead (what submits chat), and forwarding its edges as
+	// ESC here would close the very screen being typed in. An escape key
+	// whose press went out before focus arrived is released on the
+	// transition, otherwise it would stay stuck down for the rest of the
+	// session.
 	if (typing && !g_prevTextExclusive)
 		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_ESCAPE, false);
 	g_prevTextExclusive = typing;
-	if (!typing && !containerNav)
+	if (!typing)
 		forwardStartToEscape(keysPressed, keysReleased);
 }
 
@@ -518,12 +878,14 @@ const char* dsInputDebugLine()
 	if (!g_initialized)
 		return nullptr;
 	std::snprintf(g_debugLine, sizeof(g_debugLine),
-	              "held=%03X t%c %d,%d cp%+.2f,%+.2f",
+	              "held=%03X t%c %d,%d cp%+.2f,%+.2f n%+.2f,%+.2f",
 	              static_cast<unsigned>(g_state.held),
 	              g_state.pointerActive ? '+' : '-',
 	              g_state.pointerX, g_state.pointerY,
 	              static_cast<double>(g_state.stickX),
-	              static_cast<double>(g_state.stickY));
+	              static_cast<double>(g_state.stickY),
+	              static_cast<double>(g_state.cstickX),
+	              static_cast<double>(g_state.cstickY));
 	return g_debugLine;
 }
 

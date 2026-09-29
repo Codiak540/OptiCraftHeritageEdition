@@ -137,17 +137,34 @@ void WorldClient::tick()
 	// spawn and its map chunk could therefore not be joined until a later world
 	// tick, and the general terrain promotion order could delay that still more.
 	// Keep the same bounded promotion/cache policy, but make received state ready
-	// before retrying its entities.
-#if PLATFORM_PS2 && PLATFORM_MP_DEFERRED_CHUNKS
+	// before retrying its entities. The bounded Wii/3DS clients take the same
+	// order now: their promoteDeferredChunks() ran with a null entity list, so
+	// the entity-priority lane of the non-PS2 branch (written for it, but never
+	// reached) was dead code and a pending spawn's chunk competed only by
+	// distance, waiting however many ticks the per-tick promotion budget
+	// needed to reach it. Desktop keeps its historical retry-then-dispatch
+	// order in the #else below.
+#if PLATFORM_MP_DEFERRED_CHUNKS
 	sendQueue->processReadPackets();
 	std::vector<Entity *> spawnCandidates = entitySpawnQueue.valuesInIterationOrder();
+#if PLATFORM_PS2
 	selectClientEntityRetryBatch(spawnCandidates, entityRetryCursor, 24);
+#else
+	if (spawnCandidates.size() > 10)
+		spawnCandidates.resize(10);
+#endif
 	promoteDeferredChunks(&spawnCandidates);
-	trimClientChunkCache();
 #else
 	std::vector<Entity *> spawnCandidates = entitySpawnQueue.valuesInIterationOrder();
 	if (spawnCandidates.size() > 10)
 		spawnCandidates.resize(10);
+#endif
+#if PLATFORM_MP_BOUNDED_CHUNK_CACHE
+	// Bounded-console clients evict every tick whichever way chunks arrive --
+	// deferred promotion above, direct inflate in NetClientHandler -- or a
+	// server pushing its own view distance grows the client chunk map past
+	// the heap. Desktop compiles this out (its chunk map is unbounded).
+	trimClientChunkCache();
 #endif
 	for (Entity *entity : spawnCandidates)
 	{
@@ -194,12 +211,10 @@ void WorldClient::tick()
 #endif
 
 
-#if !(PLATFORM_PS2 && PLATFORM_MP_DEFERRED_CHUNKS)
+#if !PLATFORM_MP_DEFERRED_CHUNKS
+	// Desktop keeps its historical dispatch point: the pending-entity retry
+	// above runs on last tick's queue, then the socket queue drains here.
 	sendQueue->processReadPackets();
-#if PLATFORM_MP_DEFERRED_CHUNKS
-	promoteDeferredChunks();
-	trimClientChunkCache();
-#endif
 #endif
 	for (auto it = pendingBlockChanges.begin(); it != pendingBlockChanges.end();)
 	{
@@ -802,7 +817,19 @@ bool WorldClient::shouldKeepChunk(int_t chunkX, int_t chunkZ) const
 
 void WorldClient::trimClientChunkCache()
 {
-#if PLATFORM_MP_DEFERRED_CHUNKS
+#if PLATFORM_MP_BOUNDED_CHUNK_CACHE
+	// Bounded-cache consoles (PS2, Wii, 3DS -- the PLATFORM_MP_BOUNDED_CHUNK_
+	// CACHE table) evict live columns beyond PLATFORM_CHUNK_UNLOAD_RADIUS
+	// (the same view+1 ring singleplayer keeps), whichever profile fills the
+	// map: with PLATFORM_MP_DEFERRED_CHUNKS the promotion lane above, and
+	// without it NetClientHandler's direct inflate. A server streams chunks
+	// for ITS view distance, not the client's, so without this a vanilla
+	// server at the default distance pushes ~441 columns the console cannot
+	// hold -- the client chunk map grew without bound and surfaced as the
+	// intermittent std::bad_alloc mid-session, and as the respawn burst
+	// tipping an already-full heap. With the deferred cache compiled in,
+	// the walk back re-inflates from the parked compressed copy; without it
+	// (the evict-only profile) the column re-downloads from the server.
 	if (playerEntities.empty() || playerEntities[0] == nullptr || clientChunkProvider == nullptr)
 		return;
 	const EntityPlayer *player = playerEntities[0];
@@ -972,6 +999,27 @@ void WorldClient::onEntityRemoved(Entity *entity)
 			arrow->owner = nullptr;
 	}
 
+	entitySpawnQueue.remove(entity);
+	knownEntities.remove(entity);
+	if (static_cast<Entity *>(entityHash->lookup(entity->entityId)) == entity)
+		entityHash->removeObject(entity->entityId);
+}
+
+void WorldClient::detachEntityForWorldChange(Entity *entity)
+{
+	World::detachEntityForWorldChange(entity);
+	if (entity == nullptr)
+		return;
+
+	// The base scrub clears every World-owned list, but this class keeps three
+	// more non-owning sets, and ~WorldClient() RE-ADOPTS whatever is left in
+	// knownEntities so the base destructor deletes it. An entity detached for a
+	// world change (the local player on an MP dimension-change respawn) already
+	// belongs to the world it crossed into, which destroys it through the normal
+	// updateEntities graveyard; leaving it in the abandoned world's sets made
+	// BOTH worlds free it -- the respawn "Undefined Instruction" crash, whose
+	// dump pointed at the graveyard deleting an already-poisoned vtable
+	// (PC=0 / slot 0x519, 2026-09-28).
 	entitySpawnQueue.remove(entity);
 	knownEntities.remove(entity);
 	if (static_cast<Entity *>(entityHash->lookup(entity->entityId)) == entity)

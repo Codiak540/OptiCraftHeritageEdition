@@ -91,11 +91,10 @@ int openBlockingConnection(const std::string &host, int port)
 	const int noDelay = 1;
 	(void)::setsockopt(newFd, IPPROTO_TCP, TCP_NODELAY, &noDelay, sizeof(noDelay));
 
-	// Bounded, interruptible sends (see DsSocket::write for the select-loop
-	// this replaces): a stalled peer must fail the write instead of wedging
-	// the write thread forever -- an unbounded blocking send was the one way
-	// the outbound pipe could die without any code ever noticing, leaving
-	// blocks coming back and mobs ignoring the player.
+	// Bounded, interruptible sends (see DsSocket::write, which replaced the
+	// original unbounded blocking send: a stalled peer must fail the write
+	// instead of wedging the write thread forever, or the outbound pipe dies
+	// with no code ever noticing -- blocks come back and mobs ignore you).
 	(void)0;
 
 	if (::connect(newFd, reinterpret_cast<sockaddr *>(&target), sizeof(target)) < 0)
@@ -259,48 +258,52 @@ public:
 		// disconnect flush can both push bytes through this socket.
 		std::lock_guard<PlatformMutex> guard(writeLock);
 		int offset = 0;
-		int waitedMs = 0;
 		while (offset < length)
 		{
 			const int socketFd = fd.load(std::memory_order_acquire);
 			if (socketFd < 0 || closing.load(std::memory_order_acquire))
 				return false;
 
-			// Bounded, interruptible send (read()'s shape, on writability):
-			// the SOC stack carries no SO_SNDTIMEO, so wait for the kernel to
-			// have buffer space in 100 ms slices -- close() takes effect
-			// within one slice. The 10 s budget only resets on progress, so a
-			// peer that stops draining for good surfaces as a failed write
-			// (a disconnect) instead of a wedged thread.
-			fd_set writeSet;
-			struct timeval tv{};
-			tv.tv_sec = 0;
-			tv.tv_usec = 100000; // 100 ms slices
-
-			FD_ZERO(&writeSet);
-			FD_SET(socketFd, &writeSet);
-
-			const int ready = ::select(socketFd + 1, nullptr, &writeSet, nullptr, &tv);
-			if (fd.load(std::memory_order_acquire) != socketFd ||
-			    closing.load(std::memory_order_acquire))
-				return false;
-			if (ready < 0)
-				return false;
-			if (ready == 0)
+			const int count = static_cast<int>(
+				::send(socketFd, buffer + offset, static_cast<std::size_t>(length - offset), 0));
+			if (count > 0)
 			{
+				sentBytes.fetch_add(static_cast<std::size_t>(count), std::memory_order_relaxed);
+				offset += count;
+				continue;
+			}
+			if (count < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+				return false;
+			// EWOULDBLOCK (or a bare 0): the kernel buffer is full. The SOC
+			// stack has no SO_SNDTIMEO, so wait for writability in 100 ms
+			// slices -- close() takes effect within one slice, and a peer
+			// that stops draining for good surfaces as a failed write (a
+			// disconnect) instead of a wedged thread. The budget resets on
+			// progress only, so a healthy but slow peer is never cut off.
+			int waitedMs = 0;
+			while (!closing.load(std::memory_order_acquire))
+			{
+				fd_set writeSet;
+				struct timeval tv{};
+				tv.tv_sec = 0;
+				tv.tv_usec = 100000; // 100 ms slices
+
+				FD_ZERO(&writeSet);
+				FD_SET(socketFd, &writeSet);
+
+				const int ready = ::select(socketFd + 1, nullptr, &writeSet, nullptr, &tv);
+				if (fd.load(std::memory_order_acquire) != socketFd ||
+				    closing.load(std::memory_order_acquire))
+					return false;
+				if (ready < 0)
+					return false;
+				if (ready > 0)
+					break; // writable again -- retry the send
+
 				waitedMs += 100;
 				if (waitedMs >= 10000)
 					return false;
-				continue; // slice elapsed, re-check the flags
 			}
-
-			const int count = static_cast<int>(
-				::send(socketFd, buffer + offset, static_cast<std::size_t>(length - offset), 0));
-			if (count <= 0)
-				return false;
-			waitedMs = 0;
-			sentBytes.fetch_add(static_cast<std::size_t>(count), std::memory_order_relaxed);
-			offset += count;
 		}
 		return true;
 	}
