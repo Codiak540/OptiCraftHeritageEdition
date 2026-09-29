@@ -2405,6 +2405,8 @@ bool RenderGlobal::updateRenderers(EntityLiving *entityliving, bool flag)
 	if (PLATFORM_URGENT_MESH_BUDGET_MS > 0)
 	{
 		long long urgentSpentUs = 0;
+		int urgentChunkCount = 0;
+		int urgentVerticesBuilt = 0;
 		for (std::size_t i = 0; i < sortedCandidateCount; ++i)
 		{
 			WorldRenderer *candidate = rendererUpdateCandidates[i];
@@ -2427,6 +2429,7 @@ bool RenderGlobal::updateRenderers(EntityLiving *entityliving, bool flag)
 #endif
 			}
 
+			urgentChunkCount++;
 			attempted++;
 			// Step cap as well as the clock: on a board where the monotonic
 			// clock reads 0 (see PS2_CHUNK_BUILD_BUDGET_MS) the clock alone
@@ -2522,7 +2525,15 @@ bool RenderGlobal::updateRenderers(EntityLiving *entityliving, bool flag)
 			{
 				candidate->urgentRebuild = false;
 				completed++;
+#if PLATFORM_PS2 || PLATFORM_WII
+				urgentVerticesBuilt += (int)candidate->getTotalMeshVertexCount();
+#endif
 			}
+		}
+		if (urgentChunkCount > 0)
+		{
+			printf("[PERF] Urgent meshing queue: %d chunks | Tiempo total remallado: %.2f ms | Vértices generados: %d\n",
+			       urgentChunkCount, (double)urgentSpentUs / 1000.0, urgentVerticesBuilt);
 		}
 	}
 
@@ -2844,7 +2855,20 @@ void RenderGlobal::drawOutlinedBoundingBox(AxisAlignedBB *axisalignedbb)
 
 void RenderGlobal::markBlockAndNeighborsNeedsUpdate(int_t i, int_t j, int_t k)
 {
-	markRenderersInRange(i - 1, j - 1, k - 1, i + 1, j + 1, k + 1);
+	int_t minY = j - 1;
+	if (worldObj != nullptr && j > 0 && (j & 15) == 0)
+	{
+		int_t blockBelow = worldObj->getBlockId(i, j - 1, k);
+		int_t currentBlock = worldObj->getBlockId(i, j, k);
+		if (blockBelow > 0 && blockBelow < Block::BLOCK_REGISTRY_SIZE && Block::opaqueCubeLookup[blockBelow])
+		{
+			if (currentBlock > 0 && Block::opaqueCubeLookup[currentBlock])
+			{
+				minY = j;
+			}
+		}
+	}
+	markRenderersInRange(i - 1, minY, k - 1, i + 1, j + 1, k + 1);
 }
 
 void RenderGlobal::markBlockRangeNeedsUpdate(int_t i, int_t j, int_t k, int_t l, int_t i1, int_t j1)
@@ -2884,6 +2908,10 @@ void RenderGlobal::markRenderersInRange(int_t i, int_t j, int_t k, int_t l, int_
 	int_t k2 = MathHelper::bucketInt(i1, 16);
 	int_t l2 = MathHelper::bucketInt(j1, 16);
 
+	const int_t centerSectionX = MathHelper::bucketInt((i + l) / 2, 16);
+	const int_t centerSectionY = MathHelper::bucketInt((j + i1) / 2, 16);
+	const int_t centerSectionZ = MathHelper::bucketInt((k + j1) / 2, 16);
+
 	for (int_t i3 = k1; i3 <= j2; i3++)
 	{
 		int_t j3 = i3 % renderChunksWide;
@@ -2915,6 +2943,8 @@ void RenderGlobal::markRenderersInRange(int_t i, int_t j, int_t k, int_t l, int_
 				int_t k4 = (j4 * renderChunksTall + l3) * renderChunksWide + j3;
 				WorldRenderer *worldrenderer = worldRenderers[k4];
 
+				const bool isPrimarySection = (i3 == centerSectionX && k3 == centerSectionY && i4 == centerSectionZ);
+
 #if PLATFORM_PS2 || PLATFORM_WII
 				// Active builds must observe every mutation so deferred population
 				// can mark one final rebuild without throwing away the current staging
@@ -2932,7 +2962,10 @@ void RenderGlobal::markRenderersInRange(int_t i, int_t j, int_t k, int_t l, int_
 					// See the urgent lane in updateRenderers(). The edit scope is
 					// what separates it from a spring or a gravel vein settling at
 					// the same distance while terrain streams in.
-					if (PLATFORM_URGENT_MESH_DISTANCE_SQ > 0.0f && mc != nullptr &&
+					// Only the primary section containing the player edit is marked urgent;
+					// neighbor sections are marked dirty for time-sliced streaming rebuild.
+					if (isPrimarySection &&
+					    PLATFORM_URGENT_MESH_DISTANCE_SQ > 0.0f && mc != nullptr &&
 					    mc->renderViewEntity != nullptr &&
 					    worldObj != nullptr && worldObj->isMarkingFromPlayerEdit() &&
 					    worldrenderer->distanceToEntitySquared(mc->renderViewEntity) <= PLATFORM_URGENT_MESH_DISTANCE_SQ)
