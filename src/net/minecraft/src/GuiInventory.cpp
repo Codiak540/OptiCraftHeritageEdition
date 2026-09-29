@@ -207,8 +207,9 @@ void GuiInventory::keyTyped(char_t c, int_t key)
 {
 	if (mc != nullptr && mc->gameSettings != nullptr && mc->gameSettings->legacyUI && mc->gameSettings->legacyCrafting)
 	{
-		if ((mc->gameSettings->keyBindInventory != nullptr && key == mc->gameSettings->keyBindInventory->keyCode) ||
-			key == lwjgl::Keyboard::KEY_C)
+		const bool isCraftingKey = (mc->gameSettings->keyBindCrafting != nullptr && key == mc->gameSettings->keyBindCrafting->keyCode) ||
+			key == lwjgl::Keyboard::KEY_C;
+		if (isCraftingKey)
 		{
 			EntityPlayer *p = inventoryPlayer ? inventoryPlayer : mc->thePlayer;
 			if (p != nullptr)

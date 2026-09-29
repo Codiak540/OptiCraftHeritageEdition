@@ -89,6 +89,7 @@ public:
 	KeyBinding *keyBindRight;
 	KeyBinding *keyBindJump;
 	KeyBinding *keyBindInventory;
+	KeyBinding *keyBindCrafting;
 	KeyBinding *keyBindDrop;
 	KeyBinding *keyBindChat;
 	KeyBinding *keyBindPlayerList;

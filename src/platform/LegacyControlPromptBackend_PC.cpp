@@ -10,6 +10,7 @@ const KeyBinding *bindingForAction(const GameSettings &settings, LegacyControlAc
     switch (action)
     {
     case LegacyControlAction::Inventory: return settings.keyBindInventory;
+    case LegacyControlAction::Crafting: return settings.keyBindCrafting;
     case LegacyControlAction::Drop: return settings.keyBindDrop;
     case LegacyControlAction::Jump: return settings.keyBindJump;
     case LegacyControlAction::Attack: return settings.keyBindAttack;

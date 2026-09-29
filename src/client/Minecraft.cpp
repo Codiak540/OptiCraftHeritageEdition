@@ -2041,18 +2041,6 @@ void Minecraft::runTick()
             if (eventKey == lwjgl::Keyboard::KEY_F8)
                 gameSettings->smoothCamera = !gameSettings->smoothCamera;
 
-            if (eventKey == lwjgl::Keyboard::KEY_C)
-            {
-                if (gameSettings->legacyCrafting && thePlayer != nullptr && !thePlayer->isDead)
-                {
-                    if (isSplitScreenActive())
-                        displayPlayerScreen(0, new LegacyCraftingScreen(thePlayer->inventory, theWorld, 0, 0, 0, true, thePlayer));
-                    else
-                        displayGuiScreen(new LegacyCraftingScreen(thePlayer->inventory, theWorld, 0, 0, 0, true, thePlayer));
-                    continue;
-                }
-            }
-
             for (int_t slot = 0; slot < 9; ++slot)
             {
                 if (eventKey == lwjgl::Keyboard::KEY_1 + slot)
@@ -2080,8 +2068,6 @@ void Minecraft::runTick()
                 {
                     if (playerController->isInCreativeMode())
                         displayPlayerScreen(0, new GuiContainerCreative(thePlayer));
-                    else if (gameSettings->legacyUI && gameSettings->legacyCrafting)
-                        displayPlayerScreen(0, new LegacyCraftingScreen(thePlayer->inventory, theWorld, 0, 0, 0, true, thePlayer));
                     else
                         displayPlayerScreen(0, new GuiInventory(thePlayer));
                 }
@@ -2089,7 +2075,28 @@ void Minecraft::runTick()
             }
             if (playerController->isInCreativeMode())
                 displayGuiScreen(new GuiContainerCreative(thePlayer));
-            else if (gameSettings->legacyUI && gameSettings->legacyCrafting)
+            else
+                displayGuiScreen(new GuiInventory(thePlayer));
+        }
+
+        while (gameSettings->keyBindCrafting != nullptr && gameSettings->keyBindCrafting->isPressed())
+        {
+            if (playerController->isInCreativeMode())
+                continue;
+            if (isSplitScreenActive())
+            {
+                if (isPlayerScreenActive(0))
+                    closePlayerScreen(0);
+                else
+                {
+                    if (gameSettings->legacyUI && gameSettings->legacyCrafting)
+                        displayPlayerScreen(0, new LegacyCraftingScreen(thePlayer->inventory, theWorld, 0, 0, 0, true, thePlayer));
+                    else
+                        displayPlayerScreen(0, new GuiInventory(thePlayer));
+                }
+                continue;
+            }
+            if (gameSettings->legacyUI && gameSettings->legacyCrafting)
                 displayGuiScreen(new LegacyCraftingScreen(thePlayer->inventory, theWorld, 0, 0, 0, true, thePlayer));
             else
                 displayGuiScreen(new GuiInventory(thePlayer));

@@ -220,6 +220,7 @@ void LegacyControllerLayoutScreen::initGui()
     appendBinding(settings->keyBindAttack);
     appendBinding(settings->keyBindJump);
     appendBinding(settings->keyBindInventory);
+    appendBinding(settings->keyBindCrafting);
     appendBinding(settings->keyBindDrop);
     appendBinding(settings->keyBindSneak);
 

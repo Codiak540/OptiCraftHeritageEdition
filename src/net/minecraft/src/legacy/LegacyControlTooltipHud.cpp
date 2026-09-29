@@ -23,6 +23,7 @@ std::string actionName(LegacyControlAction action)
     switch (action)
     {
     case LegacyControlAction::Inventory: return uiText("Inventory");
+    case LegacyControlAction::Crafting: return uiText("Crafting");
     case LegacyControlAction::Drop: return uiText("Drop");
     case LegacyControlAction::Jump: return uiText("Jump");
     case LegacyControlAction::Attack: return uiText("Attack");

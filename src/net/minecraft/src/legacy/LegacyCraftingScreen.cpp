@@ -21,6 +21,7 @@
 #include "net/minecraft/src/ControlIcon.h"
 #include "net/minecraft/src/UiStrings.h"
 #include "net/minecraft/src/GuiInventory.h"
+#include "net/minecraft/src/KeyBinding.h"
 #include "net/minecraft/src/OpenGlHelper.h"
 #include "platform/Input.h"
 #include "platform/PlatformConfig.h"
@@ -2157,9 +2158,18 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
 
     // Bottom Action Hints (static strings to avoid runtime heap allocation)
 #if PLATFORM_PS2
-    static const std::string buttons[] = {"L1/R1", "D-Pad", "Cross", "Circle"};
-    static const std::string actions[] = {uiText("Category"), uiText("Navigate"), uiText("Craft"), uiText("Back")};
-    drawControlHintRow(mc, width, legacyHintRowY(height), buttons, actions, 4);
+    if (is2x2Mode)
+    {
+        static const std::string buttons[] = {"L1/R1", "D-Pad", "Cross", "Triangle", "Circle"};
+        static const std::string actions[] = {uiText("Category"), uiText("Navigate"), uiText("Craft"), uiText("Inventory"), uiText("Back")};
+        drawControlHintRow(mc, width, legacyHintRowY(height), buttons, actions, 5);
+    }
+    else
+    {
+        static const std::string buttons[] = {"L1/R1", "D-Pad", "Cross", "Circle"};
+        static const std::string actions[] = {uiText("Category"), uiText("Navigate"), uiText("Craft"), uiText("Back")};
+        drawControlHintRow(mc, width, legacyHintRowY(height), buttons, actions, 4);
+    }
 #elif PLATFORM_WII
     static const std::string buttons[] = {"L/R", "D-Pad", "A", "B"};
     static const std::string actions[] = {uiText("Category"), uiText("Navigate"), uiText("Craft"), uiText("Back")};
@@ -2213,7 +2223,7 @@ void LegacyCraftingScreen::updateScreen()
         if (pressed & PS2_PAD_CROSS)
             craftCurrentRecipe();
 
-        if (pressed & PS2_PAD_CIRCLE)
+        if (pressed & (PS2_PAD_CIRCLE | PS2_PAD_SQUARE))
         {
             if (mc != nullptr && mc->sndManager != nullptr)
                 mc->sndManager->playSoundFX("random.back", 1.0f, 1.0f);
@@ -2276,7 +2286,9 @@ void LegacyCraftingScreen::updateScreen()
 
 void LegacyCraftingScreen::keyTyped(char_t c, int_t key)
 {
-    if (key == lwjgl::Keyboard::KEY_ESCAPE)
+    const bool isCloseKey = (key == lwjgl::Keyboard::KEY_ESCAPE) ||
+        (mc != nullptr && mc->gameSettings != nullptr && mc->gameSettings->keyBindCrafting != nullptr && key == mc->gameSettings->keyBindCrafting->keyCode);
+    if (isCloseKey)
     {
         if (mc != nullptr && mc->sndManager != nullptr)
             mc->sndManager->playSoundFX("random.back", 1.0f, 1.0f);
@@ -2285,6 +2297,35 @@ void LegacyCraftingScreen::keyTyped(char_t c, int_t key)
         else if (mc != nullptr)
             mc->displayGuiScreen(nullptr);
         return;
+    }
+
+    // Toggle to Inventory if in 2x2 hand crafting mode, or close workbench if in 3x3 mode
+    const bool isInventoryKey = (key == lwjgl::Keyboard::KEY_I ||
+        (mc != nullptr && mc->gameSettings != nullptr && mc->gameSettings->keyBindInventory != nullptr && key == mc->gameSettings->keyBindInventory->keyCode));
+    if (isInventoryKey)
+    {
+        if (is2x2Mode)
+        {
+            EntityPlayer *p = entityPlayer ? entityPlayer : (mc ? static_cast<EntityPlayer*>(mc->thePlayer) : nullptr);
+            if (p != nullptr)
+            {
+                if (mc->isSplitScreenActive())
+                    mc->displayPlayerScreen(getOwnerPlayerIndex(), new GuiInventory(p));
+                else
+                    mc->displayGuiScreen(new GuiInventory(p));
+                return;
+            }
+        }
+        else
+        {
+            if (mc != nullptr && mc->sndManager != nullptr)
+                mc->sndManager->playSoundFX("random.back", 1.0f, 1.0f);
+            if (mc != nullptr && mc->isSplitScreenActive())
+                mc->closePlayerScreen(getOwnerPlayerIndex());
+            else if (mc != nullptr)
+                mc->displayGuiScreen(nullptr);
+            return;
+        }
     }
 
     if (key == lwjgl::Keyboard::KEY_Q || key == lwjgl::Keyboard::KEY_PRIOR)
@@ -2323,20 +2364,6 @@ void LegacyCraftingScreen::keyTyped(char_t c, int_t key)
     {
         craftCurrentRecipe();
         return;
-    }
-
-    // Toggle to Inventory if in 2x2 hand crafting mode
-    if (is2x2Mode && (key == lwjgl::Keyboard::KEY_I || key == lwjgl::Keyboard::KEY_E || key == lwjgl::Keyboard::KEY_C))
-    {
-        EntityPlayer *p = entityPlayer ? entityPlayer : (mc ? static_cast<EntityPlayer*>(mc->thePlayer) : nullptr);
-        if (p != nullptr)
-        {
-            if (mc->isSplitScreenActive())
-                mc->displayPlayerScreen(getOwnerPlayerIndex(), new GuiInventory(p));
-            else
-                mc->displayGuiScreen(new GuiInventory(p));
-            return;
-        }
     }
 
     GuiScreen::keyTyped(c, key);

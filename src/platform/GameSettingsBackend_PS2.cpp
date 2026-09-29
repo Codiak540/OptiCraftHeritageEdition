@@ -23,8 +23,10 @@ void platformGameSettingsInitialize(GameSettings& settings)
 	settings.keyBindBack->keyCode = PS2_KEY_DPAD_DOWN;
 	settings.keyBindRight->keyCode = PS2_KEY_DPAD_RIGHT;
 	settings.keyBindJump->keyCode = PS2_KEY_CROSS;
-	settings.keyBindInventory->keyCode = PS2_KEY_SQUARE;
-	settings.keyBindDrop->keyCode = PS2_KEY_TRIANGLE;
+	settings.keyBindInventory->keyCode = PS2_KEY_TRIANGLE;
+	if (settings.keyBindCrafting != nullptr)
+		settings.keyBindCrafting->keyCode = PS2_KEY_SQUARE;
+	settings.keyBindDrop->keyCode = PS2_KEY_CIRCLE;
 	settings.keyBindSneak->keyCode = PS2_KEY_L3;
 }
 
@@ -35,8 +37,10 @@ void platformGameSettingsResetControlBindings(GameSettings& settings)
 	settings.keyBindBack->keyCode = PS2_KEY_DPAD_DOWN;
 	settings.keyBindRight->keyCode = PS2_KEY_DPAD_RIGHT;
 	settings.keyBindJump->keyCode = PS2_KEY_CROSS;
-	settings.keyBindInventory->keyCode = PS2_KEY_SQUARE;
-	settings.keyBindDrop->keyCode = PS2_KEY_TRIANGLE;
+	settings.keyBindInventory->keyCode = PS2_KEY_TRIANGLE;
+	if (settings.keyBindCrafting != nullptr)
+		settings.keyBindCrafting->keyCode = PS2_KEY_SQUARE;
+	settings.keyBindDrop->keyCode = PS2_KEY_CIRCLE;
 	settings.keyBindSneak->keyCode = PS2_KEY_L3;
 }
 
@@ -60,8 +64,12 @@ void platformGameSettingsFinalizeLoad(GameSettings& settings)
 	migrateKey(settings.keyBindBack, PS2_KEY_DPAD_DOWN);
 	migrateKey(settings.keyBindRight, PS2_KEY_DPAD_RIGHT);
 	migrateKey(settings.keyBindJump, PS2_KEY_CROSS);
-	migrateKey(settings.keyBindInventory, PS2_KEY_SQUARE);
-	migrateKey(settings.keyBindDrop, PS2_KEY_TRIANGLE);
+	if (settings.keyBindInventory->keyCode == PS2_KEY_SQUARE || settings.keyBindInventory->keyCode < lwjgl::Keyboard::KEY_MAX)
+		settings.keyBindInventory->keyCode = PS2_KEY_TRIANGLE;
+	if (settings.keyBindDrop->keyCode == PS2_KEY_TRIANGLE || settings.keyBindDrop->keyCode < lwjgl::Keyboard::KEY_MAX)
+		settings.keyBindDrop->keyCode = PS2_KEY_CIRCLE;
+	if (settings.keyBindCrafting != nullptr)
+		migrateKey(settings.keyBindCrafting, PS2_KEY_SQUARE);
 	migrateKey(settings.keyBindSneak, PS2_KEY_L3);
 }
 

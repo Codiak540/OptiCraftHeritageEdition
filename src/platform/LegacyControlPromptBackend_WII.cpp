@@ -37,6 +37,7 @@ unsigned actionMask(const WiiButtonBindings::FamilySnapshot &bindings, LegacyCon
     switch (action)
     {
     case LegacyControlAction::Inventory: return bindings.inventory;
+    case LegacyControlAction::Crafting: return bindings.inventory;
     case LegacyControlAction::Drop: return bindings.drop;
     case LegacyControlAction::Jump: return bindings.jump;
     case LegacyControlAction::Attack: return bindings.attack;
