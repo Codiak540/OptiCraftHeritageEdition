@@ -454,7 +454,8 @@ void GameSettings::setOptionFloatValue(const EnumOptions *enumoptions, float f)
         {
             ofAoLevel = f;
             ambientOcclusion = (ofAoLevel > 0.0f);
-            invalidateChunkMeshes();
+            if (Minecraft::isAmbientOcclusionEnabled())
+                invalidateChunkMeshes();
         }
     }
     if (enumoptions == EnumOptions::RENDER_DISTANCE_FINE)
@@ -561,7 +562,8 @@ void GameSettings::setOptionValue(const EnumOptions *enumoptions, int_t i)
 #else
         ofAoLevel = ambientOcclusion ? 1.0f : 0.0f;
 #endif
-        invalidateChunkMeshes();
+        if (Minecraft::isAmbientOcclusionEnabled())
+            invalidateChunkMeshes();
     }
 #if PLATFORM_HAS_ASPECT_RATIO_OPTION
     if (enumoptions == EnumOptions::ASPECT_RATIO)
