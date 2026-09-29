@@ -18,7 +18,7 @@
 //   SELECT  SPACE     (PS2 SELECT/Wii MINUS) sneak     -> DS_KEY_SELECT
 //   D-pad   UP/DOWN/LEFT/RIGHT               UP       -> open chat (multiplayer)
 //                                                         LEFT/RIGHT -> hotbar wheel
-//                                                         +1/-1; DOWN unmapped
+//                                                         +1/-1; DOWN -> F5 (perspective)
 //   START   ENTER     only while typing      pause     -> KEY_ESCAPE
 //   ZL/ZR   --                               hotbar wheel +1/-1 (New 3DS only)
 //
@@ -27,6 +27,10 @@
 //               zeroed position, so the channel is inert there). Deltas ride
 //               the same touch-look pipeline as the face-button camera,
 //               scaled by deflection at a frame-rate-free rate.
+//   menu L/R -> their own DS_KEY_L/DS_KEY_R codes while a screen is up (they
+//               cannot be SPACE/SHIFT, which the keyboard and the container
+//               navigator already own); the creative screen maps them to
+//               its category tabs.
 //   touch      -> menus: absolute pointer + click. Gameplay: LOOK ONLY (panel
 //                 drags move the camera; the triggers own the buttons). While
 //                 a text field has focus the on-screen keyboard owns the
@@ -199,6 +203,12 @@ std::uint32_t g_prevGameplay = 0;
 // pushed as keyboard arrow/return/escape codes while a screen is up.
 std::uint32_t g_prevMenuNav = 0;
 
+// The menu shoulders' own edge state. L/R cannot ride the arrows' channel:
+// in menus they mean SPACE/SHIFT to the on-screen keyboard and the container
+// navigator, so screens that want them as buttons (the creative screen's
+// category tabs) get them as their dedicated DS_KEY_* pad codes instead.
+std::uint32_t g_prevMenuShoulders = 0;
+
 // Mouse button levels. Button 0 is driven by the touch tap OR GP_ATTACK, so
 // they are tracked together rather than per source.
 bool g_prevBtn0 = false;
@@ -342,6 +352,7 @@ void updateGameplay(u32 keys, bool touchDown)
 		// normal way a pause screen opens, and the menu must not step on
 		// the deflection it opened with.
 		g_prevMenuNav = held | stickBits;
+		g_prevMenuShoulders = g_inMenu ? (keys & (KEY_L | KEY_R)) : 0u;
 	}
 	g_suppressed &= held; // forget buttons that have since been released
 
@@ -409,6 +420,24 @@ void updateGameplay(u32 keys, bool touchDown)
 	}
 	g_prevMenuNav = navActive;
 
+	// Menu shoulders: L/R pushed as their dedicated DS_KEY_* pad codes so a
+	// screen can bind them (the creative screen's category tabs) without
+	// touching the SPACE/SHIFT pair the on-screen keyboard and the container
+	// navigator own. Edge-driven like the arrows above, seeded at the menu
+	// boundary for the same reason, and excluded from the Controls screen's
+	// rebind listener -- gameplay L/R are mouse clicks, so a binding nothing
+	// can emit would be a dead entry in that screen.
+	const std::uint32_t menuShoulders = g_inMenu ? (keys & (KEY_L | KEY_R)) : 0u;
+	const std::uint32_t shoulderChanged = menuShoulders ^ g_prevMenuShoulders;
+	if (!typing && !platformPadRebindExclusive() && shoulderChanged != 0)
+	{
+		if (shoulderChanged & KEY_L)
+			lwjgl::Keyboard::detail::pushKey(DS_KEY_L, (menuShoulders & KEY_L) != 0);
+		if (shoulderChanged & KEY_R)
+			lwjgl::Keyboard::detail::pushKey(DS_KEY_R, (menuShoulders & KEY_R) != 0);
+	}
+	g_prevMenuShoulders = menuShoulders;
+
 	const int x = g_state.pointerX;
 	const int y = g_state.pointerY;
 
@@ -432,6 +461,16 @@ void updateGameplay(u32 keys, bool touchDown)
 	{
 		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_T, true);
 		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_T, false);
+	}
+
+	// D-pad DOWN had no gameplay action either (header table) and no face
+	// button was spare, so it takes the desktop's F5: cycling the player's
+	// perspective (Minecraft::runTick). Both edges like the chat push, and
+	// menus keep the D-pad for navigation so this stays gameplay-only.
+	if (pressed & GP_DPAD_DOWN)
+	{
+		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_F5, true);
+		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_F5, false);
 	}
 
 	// Mouse buttons are a level. `touchDown` here is the MENU pointer click
@@ -668,6 +707,7 @@ void dsInputInit(int screenW, int screenH)
 	g_suppressed = 0;
 	g_prevGameplay = 0;
 	g_prevMenuNav = 0;
+	g_prevMenuShoulders = 0;
 	g_prevBtn0 = false;
 	g_prevBtn1 = false;
 }

@@ -114,6 +114,19 @@ bool LegacyOptionsScreen::handleLegacyNavigationKey(int_t key)
         moveLegacySelection(1);
         return true;
     }
+    // The D-pad and the Circle Pad both arrive as KEY_LEFT/KEY_RIGHT on the
+    // 3DS (the PS2/Wii take the pad-latch branch in updateScreen instead);
+    // without this the sliders could only be dragged by touch.
+    if (key == lwjgl::Keyboard::KEY_LEFT)
+    {
+        adjustLegacySelection(-1);
+        return true;
+    }
+    if (key == lwjgl::Keyboard::KEY_RIGHT)
+    {
+        adjustLegacySelection(1);
+        return true;
+    }
     if (key == lwjgl::Keyboard::KEY_RETURN)
     {
         activateLegacySelection();

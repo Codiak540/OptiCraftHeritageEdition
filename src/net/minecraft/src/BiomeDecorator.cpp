@@ -363,6 +363,15 @@ bool BiomeDecorator::advanceDecoration()
                     {
                         treeCount = 0;
                     }
+                    // The MCPE table above is a desktop-side aesthetic: bounded
+                    // consoles bought their populate budget with
+                    // PLATFORM_POPULATE_TREES_PER_CHUNK_MAX, and this branch
+                    // must honour it exactly like the vanilla one below --
+                    // the MCPE profile arrived from main without the cap and
+                    // 6-9 trees per chunk tripled the 3DS/PS2 populate cost
+                    // in Old worlds (2026-09-29). Desktop (-1) is unchanged.
+                    if (PLATFORM_POPULATE_TREES_PER_CHUNK_MAX >= 0 && treeCount > PLATFORM_POPULATE_TREES_PER_CHUNK_MAX)
+                        treeCount = PLATFORM_POPULATE_TREES_PER_CHUNK_MAX;
                 }
                 else
                 {
@@ -454,9 +463,13 @@ bool BiomeDecorator::advanceDecoration()
                         else if (biome == BiomeGenBase::plains)
                             maxGrass = 8;
                     }
+                    // The platform cap stays authoritative in BOTH profiles:
+                    // the limited-world escape that used to sit in this
+                    // condition is what let the MCPE plains value (8) run
+                    // 4x past the bounded consoles' budget; the per-profile
+                    // maxGrass above keeps the MCPE shape where no cap exists.
                     if (decorationIndex < maxGrass &&
-                        ((currentWorld != nullptr && currentWorld->isLimitedWorld()) ||
-                         PLATFORM_POPULATE_GRASS_PER_CHUNK_MAX < 0 || decorationIndex < PLATFORM_POPULATE_GRASS_PER_CHUNK_MAX))
+                        (PLATFORM_POPULATE_GRASS_PER_CHUNK_MAX < 0 || decorationIndex < PLATFORM_POPULATE_GRASS_PER_CHUNK_MAX))
                     {
                         const int_t x = JavaArithmetic::intAdd(JavaArithmetic::intAdd(chunk_X, randomGenerator->nextInt(16)), 8);
                         const int_t y = randomGenerator->nextInt(128);

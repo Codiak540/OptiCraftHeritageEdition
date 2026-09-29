@@ -19,6 +19,9 @@
 #include "Slot.h"
 #include "StatCollector.h"
 #include "Block.h"
+#if defined(CTR_PLATFORM)
+#include "3ds/input/DsPadKeyCodes.h"
+#endif
 #include "BlockFlower.h"
 #include "Item.h"
 #include "KeyBinding.h"
@@ -281,7 +284,11 @@ void GuiContainerCreative::keyTyped(char_t c, int_t key)
         return;
     }
 
-    if (key == lwjgl::Keyboard::KEY_PRIOR || key == lwjgl::Keyboard::KEY_Q)
+    if (key == lwjgl::Keyboard::KEY_PRIOR || key == lwjgl::Keyboard::KEY_Q
+#if defined(CTR_PLATFORM)
+        || key == DS_KEY_L
+#endif
+    )
     {
         ContainerCreative *container = static_cast<ContainerCreative *>(inventorySlots);
         if (container != nullptr)
@@ -292,7 +299,11 @@ void GuiContainerCreative::keyTyped(char_t c, int_t key)
             return;
         }
     }
-    else if (key == lwjgl::Keyboard::KEY_NEXT || key == lwjgl::Keyboard::KEY_TAB)
+    else if (key == lwjgl::Keyboard::KEY_NEXT || key == lwjgl::Keyboard::KEY_TAB
+#if defined(CTR_PLATFORM)
+        || key == DS_KEY_R
+#endif
+    )
     {
         ContainerCreative *container = static_cast<ContainerCreative *>(inventorySlots);
         if (container != nullptr)
@@ -526,6 +537,12 @@ void GuiContainerCreative::drawCategoryTabs(int_t guiLeft, int_t guiTop)
 #if PLATFORM_PS2
     fontRenderer->drawStringWithShadow("L1", tabStartX - 13, guiTop - 14, 0xffe0e0e0);
     fontRenderer->drawStringWithShadow("R1", tabStartX + 6 * 27 + 2, guiTop - 14, 0xffe0e0e0);
+#elif PLATFORM_3DS
+    // The shoulders arrive as DS_KEY_L/DS_KEY_R (see the keyTyped handlers
+    // above): in menus L/R cannot be SPACE/SHIFT, which the on-screen
+    // keyboard and the container slot navigator already own.
+    fontRenderer->drawStringWithShadow("L", tabStartX - 10, guiTop - 14, 0xffe0e0e0);
+    fontRenderer->drawStringWithShadow("R", tabStartX + 6 * 27 + 3, guiTop - 14, 0xffe0e0e0);
 #else
     fontRenderer->drawStringWithShadow("Q", tabStartX - 9, guiTop - 14, 0xffe0e0e0);
     fontRenderer->drawStringWithShadow("Tab", tabStartX + 6 * 27 + 2, guiTop - 14, 0xffe0e0e0);

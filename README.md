@@ -73,7 +73,7 @@ The `.cia` installs with FBI (or any CIA installer) and launches from the HOME m
 | L | space | place / use | space |
 | R | shift | attack / destroy | quick-move (shift-click) |
 | ZL / ZR (New 3DS) | — | previous / next hotbar slot | — |
-| D-Pad | menu navigation; keyboard cursor | left/right: hotbar slot, up: chat (multiplayer) | move the selected slot |
+| D-Pad | menu navigation; keyboard cursor | left/right: hotbar slot, up: chat (multiplayer), down: perspective (F5) | move the selected slot |
 | START | back; Enter while a text field is focused | pause | close the container |
 | SELECT | space | sneak | space |
 | Touch | pointer (the on-screen keyboard reads taps directly) | camera (drag to look) | pointer |
