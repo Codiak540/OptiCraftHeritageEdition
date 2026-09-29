@@ -30,7 +30,7 @@ void platformGameSettingsApplyLegacyCrafting(GameSettings& settings)
 		settings.keyBindInventory->keyCode = PS2_KEY_SQUARE;
 		if (settings.keyBindCrafting != nullptr)
 			settings.keyBindCrafting->keyCode = 0;
-		settings.keyBindDrop->keyCode = PS2_KEY_TRIANGLE;
+		settings.keyBindDrop->keyCode = PS2_KEY_CIRCLE;
 	}
 }
 
