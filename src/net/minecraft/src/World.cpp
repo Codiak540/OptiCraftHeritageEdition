@@ -2570,6 +2570,8 @@ MovingObjectPosition *World::rayTraceBlocks_do_do(Vec3D *start, Vec3D *end, bool
 
 void World::playSoundAtEntity(Entity* entity, const jstring& soundName, float volume, float pitch)
 {
+    if (entity == nullptr)
+        return;
     for (size_t i = 0; i < worldAccesses.size(); i++)
     {
         worldAccesses[i]->playSound(soundName, entity->posX, entity->posY - (double)entity->yOffset, entity->posZ, volume, pitch);
