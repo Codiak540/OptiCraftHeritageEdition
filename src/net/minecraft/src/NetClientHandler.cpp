@@ -698,9 +698,28 @@ void NetClientHandler::handleMapChunk(Packet51MapChunk* packet)
 #endif
 #endif
 
+    // Scope the receive-region to the sections this packet actually carries
+    // (Packet51's "yChMin" is the primary section bitmask, 1.2.5 wire
+    // format): a one-section update to a loaded column used to invalidate
+    // and re-mesh the full 128-block height -- every vertical renderer of
+    // the column, per packet. Full-initialize chunks carry the full mask and
+    // keep the previous whole-column behaviour bit for bit.
+    const int_t primaryMask = packet->yChMin & 0xffff;
+    int_t yMinBlocks = 0;
+    int_t yMaxBlocks = WorldHeight::HEIGHT;
+    if (primaryMask != 0)
+    {
+        int_t lo = 0;
+        while (((primaryMask >> lo) & 1) == 0) ++lo;
+        int_t hi = 15;
+        while (((primaryMask >> hi) & 1) == 0) --hi;
+        yMinBlocks = JavaArithmetic::intShl(lo, 4);
+        yMaxBlocks = std::min<int_t>(WorldHeight::HEIGHT, JavaArithmetic::intShl(hi + 1, 4));
+    }
+
     worldClient->invalidateBlockReceiveRegion(
-        JavaArithmetic::intShl(packet->xCh, 4), 0, JavaArithmetic::intShl(packet->zCh, 4),
-        JavaArithmetic::intAdd(JavaArithmetic::intShl(packet->xCh, 4), 15), WorldHeight::HEIGHT,
+        JavaArithmetic::intShl(packet->xCh, 4), yMinBlocks, JavaArithmetic::intShl(packet->zCh, 4),
+        JavaArithmetic::intAdd(JavaArithmetic::intShl(packet->xCh, 4), 15), yMaxBlocks,
         JavaArithmetic::intAdd(JavaArithmetic::intShl(packet->zCh, 4), 15));
 
 #if !(PLATFORM_PS2 && PLATFORM_MP_DEFERRED_CHUNKS)
@@ -728,9 +747,11 @@ void NetClientHandler::handleMapChunk(Packet51MapChunk* packet)
         return;
     }
 
+    // The same Y scoping on the dirty mark: func_48494_a imported only the
+    // masked sections, so only those renderers need re-meshing.
     worldClient->markBlocksDirty(
-        JavaArithmetic::intShl(packet->xCh, 4), 0, JavaArithmetic::intShl(packet->zCh, 4),
-        JavaArithmetic::intAdd(JavaArithmetic::intShl(packet->xCh, 4), 15), WorldHeight::HEIGHT,
+        JavaArithmetic::intShl(packet->xCh, 4), yMinBlocks, JavaArithmetic::intShl(packet->zCh, 4),
+        JavaArithmetic::intAdd(JavaArithmetic::intShl(packet->xCh, 4), 15), yMaxBlocks,
         JavaArithmetic::intAdd(JavaArithmetic::intShl(packet->zCh, 4), 15));
 
     if (!packet->includeInitialize || dynamic_cast<WorldProviderSurface *>(worldClient->worldProvider) == nullptr)
