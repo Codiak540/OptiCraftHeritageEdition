@@ -2068,8 +2068,6 @@ void Minecraft::runTick()
                 {
                     if (playerController->isInCreativeMode())
                         displayPlayerScreen(0, new GuiContainerCreative(thePlayer));
-                    else if (gameSettings->legacyUI)
-                        displayPlayerScreen(0, new LegacyCraftingScreen(thePlayer->inventory, theWorld, 0, 0, 0, true, thePlayer));
                     else
                         displayPlayerScreen(0, new GuiInventory(thePlayer));
                 }
@@ -2077,10 +2075,27 @@ void Minecraft::runTick()
             }
             if (playerController->isInCreativeMode())
                 displayGuiScreen(new GuiContainerCreative(thePlayer));
-            else if (gameSettings->legacyUI)
-                displayGuiScreen(new LegacyCraftingScreen(thePlayer->inventory, theWorld, 0, 0, 0, true, thePlayer));
             else
                 displayGuiScreen(new GuiInventory(thePlayer));
+        }
+
+        while (gameSettings->keyBindCrafting != nullptr && gameSettings->keyBindCrafting->isPressed())
+        {
+            if (playerController->isInCreativeMode() || !gameSettings->legacyCrafting)
+                continue;
+            if (isSplitScreenActive())
+            {
+                if (isPlayerScreenActive(0))
+                    closePlayerScreen(0);
+                else
+                {
+                    if (gameSettings->legacyUI)
+                        displayPlayerScreen(0, new LegacyCraftingScreen(thePlayer->inventory, theWorld, 0, 0, 0, true, thePlayer));
+                }
+                continue;
+            }
+            if (gameSettings->legacyUI)
+                displayGuiScreen(new LegacyCraftingScreen(thePlayer->inventory, theWorld, 0, 0, 0, true, thePlayer));
         }
 
         while (gameSettings->keyBindDrop->isPressed())
@@ -2199,6 +2214,11 @@ void Minecraft::runTick()
             effectRenderer->updateEffects();
             ClientProfiler::tickPhase("effects", System::nanoTime() - clientPhaseStartNs);
         }
+    }
+    else
+    {
+        if (sndManager != nullptr)
+            sndManager->playRandomMusicIfReady();
     }
 
     systemTime = System::currentTimeMillis();
@@ -2721,6 +2741,11 @@ void Minecraft::changeWorld(World *world, const std::string &s, EntityPlayerSP *
     else if (renderEngine != nullptr)
     {
         renderEngine->setBackgroundTextureLoadingEnabled(true);
+    }
+
+    if (world != nullptr && sndManager != nullptr)
+    {
+        sndManager->triggerMusicNow();
     }
 
 

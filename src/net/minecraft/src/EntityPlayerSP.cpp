@@ -327,7 +327,7 @@ void EntityPlayerSP::displayGUIChest(IInventory *iinventory)
 
 void EntityPlayerSP::displayWorkbenchGUI(int_t i, int_t j, int_t k)
 {
-	if (mc != nullptr && mc->gameSettings != nullptr && mc->gameSettings->legacyUI)
+	if (mc != nullptr && mc->gameSettings != nullptr && mc->gameSettings->legacyUI && mc->gameSettings->legacyCrafting)
 	{
 		if (mc->isSplitScreenActive())
 		{

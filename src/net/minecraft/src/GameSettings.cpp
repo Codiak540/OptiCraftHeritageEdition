@@ -84,7 +84,7 @@ GameSettings::~GameSettings()
     keyBindings.clear();
     keyBindAttack = keyBindUseItem = nullptr;
     keyBindForward = keyBindLeft = keyBindBack = keyBindRight = nullptr;
-    keyBindJump = keyBindInventory = keyBindDrop = keyBindChat = nullptr;
+    keyBindJump = keyBindInventory = keyBindCrafting = keyBindDrop = keyBindChat = nullptr;
     keyBindPlayerList = keyBindPickBlock = nullptr;
     keyBindToggleFog = keyBindSneak = ofKeyBindZoom = nullptr;
 }
@@ -113,6 +113,7 @@ void GameSettings::setDefaults()
     keyBindRight = new KeyBinding("key.right", 32);
     keyBindJump = new KeyBinding("key.jump", 57);
     keyBindInventory = new KeyBinding("key.inventory", 18);
+    keyBindCrafting = new KeyBinding("key.crafting", lwjgl::Keyboard::KEY_C);
     keyBindDrop = new KeyBinding("key.drop", 16);
     keyBindChat = new KeyBinding("key.chat", 20);
     keyBindPlayerList = new KeyBinding("key.playerlist", 15);
@@ -122,7 +123,7 @@ void GameSettings::setDefaults()
     platformGameSettingsInitialize(*this);
     keyBindings = {
         keyBindAttack, keyBindUseItem, keyBindForward, keyBindLeft, keyBindBack, keyBindRight,
-        keyBindJump, keyBindSneak, keyBindDrop, keyBindInventory, keyBindChat, keyBindPlayerList,
+        keyBindJump, keyBindSneak, keyBindDrop, keyBindInventory, keyBindCrafting, keyBindChat, keyBindPlayerList,
         keyBindPickBlock, keyBindToggleFog
     };
     mc = nullptr;
@@ -140,6 +141,8 @@ void GameSettings::setDefaults()
     selectedSkinP2 = "TennisSteve";
     legacyUI = legacyUiDefaultEnabled();
     legacyLook = legacyLookDefaultEnabled();
+    legacyCrafting = true;
+    legacyCreative = true;
     alternativeControllerLayout = false;
     controllerDeadzone = 0.20f;
     wiiDeflicker = true;
@@ -292,6 +295,14 @@ void GameSettings::syncControllerBindingsToPlatform()
     platformGameSettingsSyncControllerBindings(*this);
 }
 
+void GameSettings::applyLegacyCraftingBindings()
+{
+    platformGameSettingsApplyLegacyCrafting(*this);
+    KeyBinding::resetKeyBindingArrayAndHash();
+    syncKeyBindingsToPlatform();
+    syncControllerBindingsToPlatform();
+}
+
 void GameSettings::reloadChunkRenderers()
 {
     if (mc != nullptr && mc->renderGlobal != nullptr)
@@ -412,6 +423,8 @@ void GameSettings::resetControlBindingsToDefaults()
     keyBindRight->keyCode = 32;
     keyBindJump->keyCode = 57;
     keyBindInventory->keyCode = 18;
+    if (keyBindCrafting != nullptr)
+        keyBindCrafting->keyCode = lwjgl::Keyboard::KEY_C;
     keyBindDrop->keyCode = 16;
     keyBindChat->keyCode = 20;
     keyBindPlayerList->keyCode = 15;
