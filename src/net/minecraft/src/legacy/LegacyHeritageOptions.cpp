@@ -242,6 +242,7 @@ void LegacyHeritageOptions::actionPerformed(GuiButton *button)
     if (button->id == BUTTON_LEGACY_CRAFTING)
     {
         settings->legacyCrafting = !settings->legacyCrafting;
+        settings->applyLegacyCraftingBindings();
         if (legacyCraftingCheckbox != nullptr)
             legacyCraftingCheckbox->setChecked(settings->legacyCrafting);
         settings->saveOptions();

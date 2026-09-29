@@ -295,6 +295,14 @@ void GameSettings::syncControllerBindingsToPlatform()
     platformGameSettingsSyncControllerBindings(*this);
 }
 
+void GameSettings::applyLegacyCraftingBindings()
+{
+    platformGameSettingsApplyLegacyCrafting(*this);
+    KeyBinding::resetKeyBindingArrayAndHash();
+    syncKeyBindingsToPlatform();
+    syncControllerBindingsToPlatform();
+}
+
 void GameSettings::reloadChunkRenderers()
 {
     if (mc != nullptr && mc->renderGlobal != nullptr)

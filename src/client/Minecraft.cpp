@@ -2081,7 +2081,7 @@ void Minecraft::runTick()
 
         while (gameSettings->keyBindCrafting != nullptr && gameSettings->keyBindCrafting->isPressed())
         {
-            if (playerController->isInCreativeMode())
+            if (playerController->isInCreativeMode() || !gameSettings->legacyCrafting)
                 continue;
             if (isSplitScreenActive())
             {
@@ -2089,17 +2089,13 @@ void Minecraft::runTick()
                     closePlayerScreen(0);
                 else
                 {
-                    if (gameSettings->legacyUI && gameSettings->legacyCrafting)
+                    if (gameSettings->legacyUI)
                         displayPlayerScreen(0, new LegacyCraftingScreen(thePlayer->inventory, theWorld, 0, 0, 0, true, thePlayer));
-                    else
-                        displayPlayerScreen(0, new GuiInventory(thePlayer));
                 }
                 continue;
             }
-            if (gameSettings->legacyUI && gameSettings->legacyCrafting)
+            if (gameSettings->legacyUI)
                 displayGuiScreen(new LegacyCraftingScreen(thePlayer->inventory, theWorld, 0, 0, 0, true, thePlayer));
-            else
-                displayGuiScreen(new GuiInventory(thePlayer));
         }
 
         while (gameSettings->keyBindDrop->isPressed())

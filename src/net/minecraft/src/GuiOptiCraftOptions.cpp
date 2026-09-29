@@ -209,6 +209,7 @@ void GuiOptiCraftOptions::actionPerformed(GuiButton *button)
 	if (button->id == BUTTON_LEGACY_CRAFTING)
 	{
 		settings->legacyCrafting = !settings->legacyCrafting;
+		settings->applyLegacyCraftingBindings();
 		button->displayString = uiText("Legacy Crafting: ") + std::string(settings->legacyCrafting ? uiText("ON") : uiText("OFF"));
 		settings->saveOptions();
 		return;

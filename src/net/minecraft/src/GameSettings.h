@@ -41,6 +41,7 @@ public:
 	// after editing one of the wii*Jump/Sneak/Drop/Inventory fields below,
 	// same as GuiDeadzoneSettings calling PlatformUserSettings directly.
 	void syncControllerBindingsToPlatform();
+	void applyLegacyCraftingBindings();
 
 private:
 	void setDefaults();
