@@ -31,6 +31,8 @@ private:
     GuiTextField *nameField;
     LegacyOptionCheckbox *legacyUiCheckbox;
     LegacyOptionCheckbox *legacyLookCheckbox;
+    LegacyOptionCheckbox *legacyCraftingCheckbox;
+    LegacyOptionCheckbox *legacyCreativeCheckbox;
     LegacyOptionCheckbox *alternativeControlsCheckbox;
 #if defined(CTR_PLATFORM)
     LegacyOptionCheckbox *faceCameraCheckbox;

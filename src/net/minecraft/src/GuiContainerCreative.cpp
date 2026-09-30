@@ -31,6 +31,7 @@
 #include "pc/lwjgl/Keyboard.h"
 #include "pc/lwjgl/Mouse.h"
 #include "platform/PlatformConfig.h"
+#include "platform/Input.h"
 #include "platform/RenderAPI.h"
 #if PLATFORM_PS2
 #include "ps2/input/Ps2PadKeyCodes.h"
@@ -79,12 +80,13 @@ void GuiContainerCreative::updateScreen()
             mc->displayGuiScreen(new GuiInventory(p ? p : mc->thePlayer));
         return;
     }
+    const bool legacyCreativeEnabled = (mc == nullptr || mc->gameSettings == nullptr || mc->gameSettings->legacyCreative);
 #if PLATFORM_PS2
     const int pIdx = getOwnerPlayerIndex();
     const Ps2PadSnapshot &pad = ps2PadGetSnapshot(pIdx);
     if (pad.connected)
     {
-        if (pad.pressed & PS2_PAD_L1)
+        if (legacyCreativeEnabled && (pad.pressed & PS2_PAD_L1))
         {
             ContainerCreative *container = static_cast<ContainerCreative *>(inventorySlots);
             if (container != nullptr)
@@ -94,7 +96,7 @@ void GuiContainerCreative::updateScreen()
                     mc->sndManager->playSoundFX("random.click", 1.0f, 1.0f);
             }
         }
-        else if (pad.pressed & PS2_PAD_R1)
+        else if (legacyCreativeEnabled && (pad.pressed & PS2_PAD_R1))
         {
             ContainerCreative *container = static_cast<ContainerCreative *>(inventorySlots);
             if (container != nullptr)
@@ -107,6 +109,45 @@ void GuiContainerCreative::updateScreen()
 
         // Square button clears held item stack on cursor
         if (pad.pressed & PS2_PAD_SQUARE)
+        {
+            EntityPlayer *p = getContainerPlayer();
+            if (p == nullptr && mc != nullptr) p = mc->thePlayer;
+            if (p != nullptr && p->inventory != nullptr && p->inventory->getItemStack() != nullptr)
+            {
+                delete p->inventory->getItemStack();
+                p->inventory->setItemStack(nullptr);
+                if (mc != nullptr && mc->sndManager != nullptr)
+                    mc->sndManager->playSoundFX("random.pop", 0.6f, 0.8f);
+            }
+        }
+    }
+#else
+    const PlatformTextInputSnapshot pad = platformTextInputSnapshot(getOwnerPlayerIndex());
+    if (pad.connected)
+    {
+        if (legacyCreativeEnabled && (pad.pressed & PLATFORM_TEXT_PREV_PAGE))
+        {
+            ContainerCreative *container = static_cast<ContainerCreative *>(inventorySlots);
+            if (container != nullptr)
+            {
+                setCategory((container->getCategory() + 5) % 6);
+                if (mc != nullptr && mc->sndManager != nullptr)
+                    mc->sndManager->playSoundFX("random.click", 1.0f, 1.0f);
+            }
+        }
+        else if (legacyCreativeEnabled && (pad.pressed & PLATFORM_TEXT_NEXT_PAGE))
+        {
+            ContainerCreative *container = static_cast<ContainerCreative *>(inventorySlots);
+            if (container != nullptr)
+            {
+                setCategory((container->getCategory() + 1) % 6);
+                if (mc != nullptr && mc->sndManager != nullptr)
+                    mc->sndManager->playSoundFX("random.click", 1.0f, 1.0f);
+            }
+        }
+
+        // Clear cursor item (X/Y on Classic/GameCube, 2/C on Wiimote/Nunchuk)
+        if (pad.pressed & (PLATFORM_TEXT_SPACE | PLATFORM_TEXT_SHIFT))
         {
             EntityPlayer *p = getContainerPlayer();
             if (p == nullptr && mc != nullptr) p = mc->thePlayer;
@@ -250,12 +291,13 @@ void GuiContainerCreative::setCategory(int_t tabIndex)
 
 void GuiContainerCreative::mouseClicked(int_t mouseX, int_t mouseY, int_t button)
 {
+    const bool legacyCreativeEnabled = (mc == nullptr || mc->gameSettings == nullptr || mc->gameSettings->legacyCreative);
     int_t guiLeft = (width - xSize) / 2;
     int_t guiTop = (height - ySize) / 2;
     int_t tabStartX = guiLeft + 7;
     int_t tabY = guiTop - 22;
 
-    if (button == 0 && mouseY >= tabY && mouseY < guiTop)
+    if (legacyCreativeEnabled && button == 0 && mouseY >= tabY && mouseY < guiTop)
     {
         for (int_t t = 0; t < 6; ++t)
         {
@@ -284,11 +326,13 @@ void GuiContainerCreative::keyTyped(char_t c, int_t key)
         return;
     }
 
-    if (key == lwjgl::Keyboard::KEY_PRIOR || key == lwjgl::Keyboard::KEY_Q
+    const bool legacyCreativeEnabled = (mc == nullptr || mc->gameSettings == nullptr || mc->gameSettings->legacyCreative);
+    if (legacyCreativeEnabled &&
+        (key == lwjgl::Keyboard::KEY_PRIOR || key == lwjgl::Keyboard::KEY_Q
 #if defined(CTR_PLATFORM)
         || key == DS_KEY_L
 #endif
-    )
+        ))
     {
         ContainerCreative *container = static_cast<ContainerCreative *>(inventorySlots);
         if (container != nullptr)
@@ -299,11 +343,12 @@ void GuiContainerCreative::keyTyped(char_t c, int_t key)
             return;
         }
     }
-    else if (key == lwjgl::Keyboard::KEY_NEXT || key == lwjgl::Keyboard::KEY_TAB
+    else if (legacyCreativeEnabled &&
+        (key == lwjgl::Keyboard::KEY_NEXT || key == lwjgl::Keyboard::KEY_TAB
 #if defined(CTR_PLATFORM)
         || key == DS_KEY_R
 #endif
-    )
+        ))
     {
         ContainerCreative *container = static_cast<ContainerCreative *>(inventorySlots);
         if (container != nullptr)
@@ -449,9 +494,10 @@ void GuiContainerCreative::drawScreen(int_t mouseX, int_t mouseY, float_t partia
     GuiContainer::drawScreen(mouseX, mouseY, partialTick);
 
     // Draw tab tooltip if hovering over tabs
+    const bool legacyCreativeEnabled = (mc == nullptr || mc->gameSettings == nullptr || mc->gameSettings->legacyCreative);
     int_t tabStartX = guiLeft + 7;
     int_t tabY = guiTop - 22;
-    if (mouseY >= tabY && mouseY < guiTop)
+    if (legacyCreativeEnabled && mouseY >= tabY && mouseY < guiTop)
     {
         for (int_t t = 0; t < 6; ++t)
         {
@@ -471,8 +517,9 @@ void GuiContainerCreative::drawScreen(int_t mouseX, int_t mouseY, float_t partia
 void GuiContainerCreative::drawGuiContainerForegroundLayer()
 {
     ContainerCreative *container = static_cast<ContainerCreative *>(inventorySlots);
+    const bool legacyCreativeEnabled = (mc == nullptr || mc->gameSettings == nullptr || mc->gameSettings->legacyCreative);
     const int_t curTab = container ? container->getCategory() : 0;
-    const char *title = (curTab >= 0 && curTab < 6) ? s_creativeTabNames[curTab] : "Creative";
+    const char *title = (legacyCreativeEnabled && curTab >= 0 && curTab < 6) ? s_creativeTabNames[curTab] : "Creative";
     fontRenderer->drawString(title, 8, 6, 0x404040);
 }
 
@@ -494,6 +541,9 @@ void GuiContainerCreative::drawGuiContainerBackgroundLayer(float_t)
 
 void GuiContainerCreative::drawCategoryTabs(int_t guiLeft, int_t guiTop)
 {
+    if (mc != nullptr && mc->gameSettings != nullptr && !mc->gameSettings->legacyCreative)
+        return;
+
     ContainerCreative *container = static_cast<ContainerCreative *>(inventorySlots);
     const int_t selectedTab = container ? container->getCategory() : 0;
     const int_t tabStartX = guiLeft + 7;
@@ -543,6 +593,9 @@ void GuiContainerCreative::drawCategoryTabs(int_t guiLeft, int_t guiTop)
     // keyboard and the container slot navigator already own.
     fontRenderer->drawStringWithShadow("L", tabStartX - 10, guiTop - 14, 0xffe0e0e0);
     fontRenderer->drawStringWithShadow("R", tabStartX + 6 * 27 + 3, guiTop - 14, 0xffe0e0e0);
+#elif PLATFORM_WII
+    fontRenderer->drawStringWithShadow("L", tabStartX - 10, guiTop - 14, 0xffe0e0e0);
+    fontRenderer->drawStringWithShadow("R", tabStartX + 6 * 27 + 2, guiTop - 14, 0xffe0e0e0);
 #else
     fontRenderer->drawStringWithShadow("Q", tabStartX - 9, guiTop - 14, 0xffe0e0e0);
     fontRenderer->drawStringWithShadow("Tab", tabStartX + 6 * 27 + 2, guiTop - 14, 0xffe0e0e0);

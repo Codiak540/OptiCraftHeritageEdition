@@ -32,6 +32,7 @@ GuiCreateWorld::GuiCreateWorld(GuiScreen *parent)
     , worldTypeButton(nullptr)
     , worldSizeButton(nullptr)
     , limitedWorld(false)
+    , worldSizeType(0)
     , seed("")
     , localizedNewWorldText(StatCollector::translateToLocal("selectWorld.newWorld"))
     , worldTypeIndex(0)
@@ -134,11 +135,17 @@ void GuiCreateWorld::updateButtonText()
     if (worldSizeButton != nullptr)
     {
         const bool isEs = (tr != nullptr && tr->getCurrentLanguage().rfind("es_", 0) == 0);
-        if (limitedWorld)
+        if (worldSizeType == 1)
         {
             worldSizeButton->displayString = isEs
                 ? "Tamaño: Antiguo (256x256)"
                 : "World Size: Old (256x256)";
+        }
+        else if (worldSizeType == 2)
+        {
+            worldSizeButton->displayString = isEs
+                ? "Tamaño: Legacy 864x864"
+                : "World Size: Legacy 864x864";
         }
         else
         {
@@ -230,7 +237,7 @@ void GuiCreateWorld::actionPerformed(GuiButton *button)
             type = WorldType::worldTypes[worldTypeIndex];
         }
 
-        WorldSettings settings(worldSeed, gameType, generateStructures, hardcore, type, limitedWorld);
+        WorldSettings settings(worldSeed, gameType, generateStructures, hardcore, type, worldSizeType);
         mc->startWorld(folderName, textboxWorldName->getText(), &settings);
         mc->displayGuiScreen(nullptr);
     }
@@ -247,7 +254,8 @@ void GuiCreateWorld::actionPerformed(GuiButton *button)
     }
     else if (button->id == 7)
     {
-        limitedWorld = !limitedWorld;
+        worldSizeType = (worldSizeType + 1) % 3;
+        limitedWorld = (worldSizeType != 0);
         updateButtonText();
     }
     else if (button->id == 2)

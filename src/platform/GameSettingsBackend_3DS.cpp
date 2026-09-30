@@ -51,6 +51,13 @@ void applyDefaultBindings(GameSettings& settings)
 void platformGameSettingsInitialize(GameSettings& settings) { applyDefaultBindings(settings); }
 void platformGameSettingsResetControlBindings(GameSettings& settings) { applyDefaultBindings(settings); }
 
+// The legacy-crafting toggle rebinds the craft action on the platforms that
+// have a button to give it to (PC: KEY_C, PS2: SQUARE -- see their backends).
+// The decided 3DS layout has none: Y owns inventory and the 2x2 screen is
+// reached through it (GuiInventory::keyTyped / EntityPlayerSP::
+// displayWorkbenchGUI), so there is nothing to rebind -- a no-op, as on Wii.
+void platformGameSettingsApplyLegacyCrafting(GameSettings&) {}
+
 // The tuning half mirrors the PS2 file: both are fixed-grid bounded-world
 // consoles, so the render-distance surface is whatever the PLATFORM_* tuning
 // table implies -- a single default distance (Cycle and Clamp are pinned to
