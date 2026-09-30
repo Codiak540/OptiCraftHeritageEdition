@@ -112,28 +112,62 @@
 #endif
 #include "platform/world/StreamingFrameBudget.h"
 
-#if PLATFORM_BOUNDED_WORLD
+static bool isSafeSpawnBlock(int_t blockId)
+{
+    if (blockId <= 0 || blockId >= Block::BLOCK_REGISTRY_SIZE)
+        return false;
+    Block *block = Block::blocksList[blockId];
+    if (block == nullptr || block->blockMaterial == nullptr)
+        return false;
+    if (!block->blockMaterial->getIsSolid())
+        return false;
+    if (block->blockMaterial->getIsLiquid())
+        return false;
+    if (blockId == Block::ice->blockID || blockId == Block::cactus->blockID)
+        return false;
+    return true;
+}
+
+static bool isPassableAir(int_t blockId)
+{
+    if (blockId <= 0 || blockId >= Block::BLOCK_REGISTRY_SIZE)
+        return true;
+    Block *block = Block::blocksList[blockId];
+    if (block == nullptr || block->blockMaterial == nullptr)
+        return true;
+    if (block->blockMaterial->getIsSolid() || block->blockMaterial->getIsLiquid())
+        return false;
+    return true;
+}
+
 static int_t platformFindTopSpawnBlockY(World *world, int_t x, int_t z)
 {
-    // Find the highest solid block at the chosen spawn column. Vanilla Beta
-    // keeps SpawnY around 64 and lets the player fall/resolve collision, but a
-    // bounded chunk cache can delay player ticking. A resolved surface Y
-    // prevents the player from appearing far above the terrain while the world
-    // finishes loading.
-    for (int_t y = WorldHeight::MAX_Y; y >= 0; --y)
+    for (int_t y = WorldHeight::MAX_Y - 2; y >= 63; --y)
     {
         int_t id = world->getBlockId(x, y, z);
-        if (id <= 0)
+        if (!isSafeSpawnBlock(id))
             continue;
 
-        Block *block = Block::blocksList[id];
-        if (block != nullptr && block->blockMaterial != nullptr && block->blockMaterial->getIsSolid())
+        int_t feetId = world->getBlockId(x, y + 1, z);
+        int_t headId = world->getBlockId(x, y + 2, z);
+        if (isPassableAir(feetId) && isPassableAir(headId))
+            return y;
+    }
+
+    for (int_t y = 62; y >= 1; --y)
+    {
+        int_t id = world->getBlockId(x, y, z);
+        if (!isSafeSpawnBlock(id))
+            continue;
+
+        int_t feetId = world->getBlockId(x, y + 1, z);
+        int_t headId = world->getBlockId(x, y + 2, z);
+        if (isPassableAir(feetId) && isPassableAir(headId))
             return y;
     }
 
     return 64;
 }
-#endif
 
 // Static initialization
 int World::lightingUpdatesScheduled = 0;
@@ -612,24 +646,48 @@ void World::generateSpawnPoint()
     findingSpawnPoint = true;
     WORLD_LOAD_STAGE("generateSpawnPoint");
 
-#if PLATFORM_BOUNDED_WORLD
-    // Bounded console generators cannot afford vanilla's up-to-1000 synchronous
-    // chunk probes.  Keep the 1.2.5 biome-guided initial position, but cap the
-    // coordinate probes and resolve a safe local surface Y.
-#endif
     WorldChunkManager *manager = worldProvider->worldChunkMgr;
     std::vector<BiomeGenBase *> &spawnBiomes = manager->getBiomesToSpawnIn();
     Random spawnRandom(getSeed());
     WorldLoadTrace::step("findBiomePosition");
-#if defined(PS2_PLATFORM)
-    ChunkPosition *position = manager->findBiomePosition(0, 0, 64, spawnBiomes, spawnRandom);
-#else
-    ChunkPosition *position = manager->findBiomePosition(0, 0, 256, spawnBiomes, spawnRandom);
-#endif
 
-    int_t spawnX = 0;
+    int_t worldSizeType = (worldInfo != nullptr) ? worldInfo->getWorldSizeType() : 0;
+    int_t searchRadius = 64;
+    int_t maxOffset = 48;
+    int_t minChunk = -8;
+    int_t maxChunk = 7;
+
+    if (worldSizeType == 1) // 256x256
+    {
+        searchRadius = 48;
+        maxOffset = 40;
+        minChunk = -5;
+        maxChunk = 4;
+    }
+    else if (worldSizeType == 2) // 864x864
+    {
+        searchRadius = 128;
+        maxOffset = 180;
+        minChunk = -20;
+        maxChunk = 19;
+    }
+    else // Infinite
+    {
+        searchRadius = 256;
+        maxOffset = 192;
+        minChunk = -200;
+        maxChunk = 200;
+    }
+
+    // Seed-based randomized search origin to vary spawn points across worlds
+    int_t centerSearchX = spawnRandom.nextInt(maxOffset * 2 + 1) - maxOffset;
+    int_t centerSearchZ = spawnRandom.nextInt(maxOffset * 2 + 1) - maxOffset;
+
+    ChunkPosition *position = manager->findBiomePosition(centerSearchX, centerSearchZ, searchRadius, spawnBiomes, spawnRandom);
+
+    int_t spawnX = centerSearchX;
     int_t spawnY = worldProvider->getAverageGroundLevel();
-    int_t spawnZ = 0;
+    int_t spawnZ = centerSearchZ;
     if (position != nullptr)
     {
         spawnX = position->x;
@@ -637,97 +695,106 @@ void World::generateSpawnPoint()
         delete position;
     }
 
-    if (isLimitedWorld())
+    // Clamp candidate to safe inner region for limited worlds
+    int_t candidateChunkX = JavaArithmetic::intShr(spawnX, 4);
+    int_t candidateChunkZ = JavaArithmetic::intShr(spawnZ, 4);
+    if (candidateChunkX < minChunk) candidateChunkX = minChunk;
+    else if (candidateChunkX > maxChunk) candidateChunkX = maxChunk;
+    if (candidateChunkZ < minChunk) candidateChunkZ = minChunk;
+    else if (candidateChunkZ > maxChunk) candidateChunkZ = maxChunk;
+
+    WorldLoadTrace::step("scanSafeSpawnChunk");
+
+    // Spiral search across candidate chunks (up to 9 chunks: center + 8 neighbors)
+    // to find safe, dry, non-suffocating ground with chunk-centered coordinates
+    static const int_t spiralOffsets[9][2] = {
+        {0, 0}, {1, 0}, {0, 1}, {-1, 0}, {0, -1},
+        {1, 1}, {-1, 1}, {-1, -1}, {1, -1}
+    };
+
+    bool foundSafeSpawn = false;
+    int_t bestGrassX = 0, bestGrassY = -1, bestGrassZ = 0;
+    int_t bestSolidX = 0, bestSolidY = -1, bestSolidZ = 0;
+
+    for (int_t chunkStep = 0; chunkStep < 9 && !foundSafeSpawn; ++chunkStep)
     {
-        if (spawnX < -64) spawnX = -64;
-        else if (spawnX > 64) spawnX = 64;
-        if (spawnZ < -64) spawnZ = -64;
-        else if (spawnZ > 64) spawnZ = 64;
-    }
+        const int_t curChunkX = candidateChunkX + spiralOffsets[chunkStep][0];
+        const int_t curChunkZ = candidateChunkZ + spiralOffsets[chunkStep][1];
 
-#if defined(PS2_PLATFORM)
-    // Hardware PS2 cannot afford vanilla's synchronous spawn probing here.
-    // Every canCoordinateBeSpawn() can force another complete chunk generation
-    // before the loading screen is visible. Generate only the biome-guided
-    // candidate chunk and find the best spawn column inside that same 16x16.
-    WorldLoadTrace::step("spawnCandidateChunk");
-    const int_t spawnChunkX = JavaArithmetic::intShr(spawnX, 4);
-    const int_t spawnChunkZ = JavaArithmetic::intShr(spawnZ, 4);
-    const int_t chunkWorldX = JavaArithmetic::intShl(spawnChunkX, 4);
-    const int_t chunkWorldZ = JavaArithmetic::intShl(spawnChunkZ, 4);
-    const int_t startLocalX = spawnX & 15;
-    const int_t startLocalZ = spawnZ & 15;
+        if (curChunkX < minChunk || curChunkX > maxChunk ||
+            curChunkZ < minChunk || curChunkZ > maxChunk)
+            continue;
 
-    platformHardwareCheckpoint("before spawn candidate chunk");
-    Chunk *spawnChunk = getChunkFromChunkCoords(spawnChunkX, spawnChunkZ);
-    platformHardwareCheckpoint("after spawn candidate chunk");
-    if (spawnChunk != nullptr)
-    {
-        bool foundGrass = false;
-        int_t fallbackLocalX = startLocalX;
-        int_t fallbackLocalZ = startLocalZ;
-        int_t fallbackY = -1;
+        Chunk *chunk = getChunkFromChunkCoords(curChunkX, curChunkZ);
+        if (chunk == nullptr)
+            continue;
 
-        WorldLoadTrace::step("scanSpawnChunk");
-        for (int_t dz = 0; dz < 16 && !foundGrass; ++dz)
+        const int_t chunkWorldX = JavaArithmetic::intShl(curChunkX, 4);
+        const int_t chunkWorldZ = JavaArithmetic::intShl(curChunkZ, 4);
+
+        // Scan interior columns centered in the chunk (local 4 to 12)
+        // Starting at (8, 8) to avoid chunk seams and dirty cascades
+        static const int_t interiorCoords[9] = {8, 7, 9, 6, 10, 5, 11, 4, 12};
+
+        for (int_t zi = 0; zi < 9 && !foundSafeSpawn; ++zi)
         {
-            const int_t localZ = (startLocalZ + dz) & 15;
-            for (int_t dx = 0; dx < 16; ++dx)
+            const int_t localZ = interiorCoords[zi];
+            for (int_t xi = 0; xi < 9; ++xi)
             {
-                const int_t localX = (startLocalX + dx) & 15;
-                const int_t surfaceY = spawnChunk->getHeightValue(localX, localZ) - 1;
-                if (surfaceY < 0 || surfaceY >= WorldHeight::HEIGHT)
+                const int_t localX = interiorCoords[xi];
+                const int_t surfaceY = chunk->getHeightValue(localX, localZ) - 1;
+                if (surfaceY < 60 || surfaceY >= WorldHeight::HEIGHT - 2)
                     continue;
 
-                const int_t blockId = spawnChunk->getBlockID(localX, surfaceY, localZ);
-                if (blockId <= 0 || blockId >= Block::BLOCK_REGISTRY_SIZE)
+                const int_t blockId = chunk->getBlockID(localX, surfaceY, localZ);
+                if (!isSafeSpawnBlock(blockId))
                     continue;
 
-                Block *block = Block::blocksList[blockId];
-                if (fallbackY < 0 && block != nullptr && block->blockMaterial != nullptr &&
-                    block->blockMaterial->getIsSolid())
-                {
-                    fallbackLocalX = localX;
-                    fallbackLocalZ = localZ;
-                    fallbackY = surfaceY;
-                }
+                const int_t feetId = chunk->getBlockID(localX, surfaceY + 1, localZ);
+                const int_t headId = chunk->getBlockID(localX, surfaceY + 2, localZ);
+                if (!isPassableAir(feetId) || !isPassableAir(headId))
+                    continue;
 
-                if (blockId == Block::grass->blockID)
+                const int_t worldX = chunkWorldX + localX;
+                const int_t worldZ = chunkWorldZ + localZ;
+
+                if (blockId == Block::grass->blockID && surfaceY >= 63)
                 {
-                    spawnX = JavaArithmetic::intAdd(chunkWorldX, localX);
-                    spawnZ = JavaArithmetic::intAdd(chunkWorldZ, localZ);
-                    spawnY = surfaceY;
-                    foundGrass = true;
+                    bestGrassX = worldX;
+                    bestGrassY = surfaceY;
+                    bestGrassZ = worldZ;
+                    foundSafeSpawn = true;
                     break;
+                }
+                else if (bestSolidY < 0 && surfaceY >= 63)
+                {
+                    bestSolidX = worldX;
+                    bestSolidY = surfaceY;
+                    bestSolidZ = worldZ;
                 }
             }
         }
+    }
 
-        if (!foundGrass && fallbackY >= 0)
-        {
-            spawnX = JavaArithmetic::intAdd(chunkWorldX, fallbackLocalX);
-            spawnZ = JavaArithmetic::intAdd(chunkWorldZ, fallbackLocalZ);
-            spawnY = fallbackY;
-        }
-    }
-#elif PLATFORM_BOUNDED_WORLD
-    WorldLoadTrace::step("canCoordinateBeSpawn");
-    for (int_t attempts = 0; attempts < 8 && !worldProvider->canCoordinateBeSpawn(spawnX, spawnZ); ++attempts)
+    if (foundSafeSpawn)
     {
-		MC_LOG_DEBUG("world", "spawn probe %d at %d,%d\n", (int)attempts, (int)spawnX, (int)spawnZ);
-		spawnX = JavaArithmetic::intAdd(spawnX, spawnRandom.nextIntDifference(64));
-		spawnZ = JavaArithmetic::intAdd(spawnZ, spawnRandom.nextIntDifference(64));
+        spawnX = bestGrassX;
+        spawnY = bestGrassY;
+        spawnZ = bestGrassZ;
     }
-    WorldLoadTrace::step("findTopSpawnBlockY");
-    spawnY = platformFindTopSpawnBlockY(this, spawnX, spawnZ);
-#else
-    WorldLoadTrace::step("canCoordinateBeSpawn");
-    for (int_t attempts = 0; attempts < 1000 && !worldProvider->canCoordinateBeSpawn(spawnX, spawnZ); ++attempts)
+    else if (bestSolidY >= 0)
     {
-		spawnX = JavaArithmetic::intAdd(spawnX, spawnRandom.nextIntDifference(64));
-		spawnZ = JavaArithmetic::intAdd(spawnZ, spawnRandom.nextIntDifference(64));
+        spawnX = bestSolidX;
+        spawnY = bestSolidY;
+        spawnZ = bestSolidZ;
     }
-#endif
+    else
+    {
+        // Ultimate fallback: center of candidate chunk at ground level
+        spawnX = JavaArithmetic::intShl(candidateChunkX, 4) + 8;
+        spawnZ = JavaArithmetic::intShl(candidateChunkZ, 4) + 8;
+        spawnY = platformFindTopSpawnBlockY(this, spawnX, spawnZ);
+    }
 
     worldInfo->setSpawn(spawnX, spawnY, spawnZ);
     findingSpawnPoint = false;
@@ -762,9 +829,7 @@ void World::setSpawnLocation()
             break;
     }
 
-#if PLATFORM_BOUNDED_WORLD
     worldInfo->setSpawnY(platformFindTopSpawnBlockY(this, x, z));
-#endif
     
     worldInfo->setSpawnX(x);
     worldInfo->setSpawnZ(z);

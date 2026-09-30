@@ -78,12 +78,12 @@ struct RecipeCategory
     int_t iconItemId = 0;
     int_t iconDamage = 0;
     int_t groupCount = 0;
-    RecipeGroup groups[20];
+    RecipeGroup groups[32];
     ItemStack *iconStack = nullptr;
 };
 
-static RecipeCategory s_categories[4];
-static RecipeCategory s_categories2x2[4];
+static RecipeCategory s_categories[LegacyCraftingScreen::kCategoryCount];
+static RecipeCategory s_categories2x2[LegacyCraftingScreen::kCategoryCount];
 static bool s_recipesInitialized = false;
 
 inline const RecipeCategory *getCategoriesTable(bool is2x2)
@@ -249,14 +249,13 @@ void initStaticRecipes()
     const int_t ID_GOLD_NUGGET   = iId(Item::goldNugget, 371);
 
     // ==========================================
-    // TAB 0: Structures / Blocks
+    // TAB 0: Structures
     // ==========================================
     RecipeCategory &cat0 = s_categories[0];
     cat0.name = "Structures";
     cat0.iconItemId = ID_PLANKS;
     cat0.iconDamage = 0;
-    cat0.groupCount = 15;
-
+    cat0.groupCount = 8;
     // G0: Planks (4 variants)
     {
         RecipeGroup &g = cat0.groups[0];
@@ -292,55 +291,52 @@ void initStaticRecipes()
         v.ingredients[0] = {ID_PLANKS, 2, -1};
     }
 
-    // G2: Crafting Table (1 variant)
+    // G2: Sandstone & Stone Bricks (3 variants)
     {
         RecipeGroup &g = cat0.groups[2];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Crafting Table";
-        v.resultId = ID_WORKBENCH;
-        v.resultCount = 1;
-        v.requiresWorkbench = false;
-        v.gridWidth = 2; v.gridHeight = 2;
-        v.gridItemIds[0] = ID_PLANKS; v.gridItemIds[1] = ID_PLANKS;
-        v.gridItemIds[2] = ID_PLANKS; v.gridItemIds[3] = ID_PLANKS;
-        v.ingredientCount = 1;
-        v.ingredients[0] = {ID_PLANKS, 4, -1};
+        g.variantCount = 3;
+        // Sandstone
+        {
+            RecipeVariant &v = g.variants[0];
+            v.name = "Sandstone";
+            v.resultId = ID_SANDSTONE;
+            v.resultCount = 1;
+            v.requiresWorkbench = false;
+            v.gridWidth = 2; v.gridHeight = 2;
+            for (int i = 0; i < 4; ++i) v.gridItemIds[i] = ID_SAND;
+            v.ingredientCount = 1;
+            v.ingredients[0] = {ID_SAND, 4, -1};
+        }
+        // Smooth Sandstone
+        {
+            RecipeVariant &v = g.variants[1];
+            v.name = "Smooth Sandstone";
+            v.resultId = ID_SANDSTONE;
+            v.resultCount = 4;
+            v.resultDamage = 2;
+            v.requiresWorkbench = false;
+            v.gridWidth = 2; v.gridHeight = 2;
+            for (int i = 0; i < 4; ++i) v.gridItemIds[i] = ID_SANDSTONE;
+            v.ingredientCount = 1;
+            v.ingredients[0] = {ID_SANDSTONE, 4, 0};
+        }
+        // Stone Bricks
+        {
+            RecipeVariant &v = g.variants[2];
+            v.name = "Stone Bricks";
+            v.resultId = ID_STONE_BRICK;
+            v.resultCount = 4;
+            v.requiresWorkbench = false;
+            v.gridWidth = 2; v.gridHeight = 2;
+            for (int i = 0; i < 4; ++i) v.gridItemIds[i] = ID_STONE;
+            v.ingredientCount = 1;
+            v.ingredients[0] = {ID_STONE, 4, -1};
+        }
     }
 
-    // G3: Chest (1 variant)
+    // G3: Slabs (6 variants)
     {
         RecipeGroup &g = cat0.groups[3];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Chest";
-        v.resultId = ID_CHEST;
-        v.resultCount = 1;
-        v.requiresWorkbench = true;
-        v.gridWidth = 3; v.gridHeight = 3;
-        for (int i = 0; i < 9; ++i) v.gridItemIds[i] = (i == 4) ? 0 : ID_PLANKS;
-        v.ingredientCount = 1;
-        v.ingredients[0] = {ID_PLANKS, 8, -1};
-    }
-
-    // G4: Furnace (1 variant)
-    {
-        RecipeGroup &g = cat0.groups[4];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Furnace";
-        v.resultId = ID_FURNACE;
-        v.resultCount = 1;
-        v.requiresWorkbench = true;
-        v.gridWidth = 3; v.gridHeight = 3;
-        for (int i = 0; i < 9; ++i) v.gridItemIds[i] = (i == 4) ? 0 : ID_COBBLE;
-        v.ingredientCount = 1;
-        v.ingredients[0] = {ID_COBBLE, 8, -1};
-    }
-
-    // G5: Slabs (6 variants)
-    {
-        RecipeGroup &g = cat0.groups[5];
         g.variantCount = 6;
         const char *names[6] = {"Stone Slab", "Sandstone Slab", "Wooden Slab", "Cobblestone Slab", "Brick Slab", "Stone Brick Slab"};
         const int_t mats[6] = {ID_STONE, ID_SANDSTONE, ID_PLANKS, ID_COBBLE, ID_BRICK_BLOCK, ID_STONE_BRICK};
@@ -359,9 +355,9 @@ void initStaticRecipes()
         }
     }
 
-    // G6: Stairs (4 variants)
+    // G4: Stairs (4 variants)
     {
-        RecipeGroup &g = cat0.groups[6];
+        RecipeGroup &g = cat0.groups[4];
         g.variantCount = 4;
         const char *names[4] = {"Wooden Stairs", "Cobblestone Stairs", "Brick Stairs", "Stone Brick Stairs"};
         const int_t res[4] = {ID_STAIR_WOOD, ID_STAIR_COBBLE, ID_STAIR_BRICK, ID_STAIR_SBRICK};
@@ -382,55 +378,9 @@ void initStaticRecipes()
         }
     }
 
-    // G7: Doors & Trapdoors (3 variants)
+    // G5: Fences (3 variants)
     {
-        RecipeGroup &g = cat0.groups[7];
-        g.variantCount = 3;
-        // Wooden Door
-        {
-            RecipeVariant &v = g.variants[0];
-            v.name = "Wooden Door";
-            v.resultId = ID_WOOD_DOOR;
-            v.resultCount = 1;
-            v.requiresWorkbench = true;
-            v.gridWidth = 2; v.gridHeight = 3;
-            v.gridItemIds[0] = ID_PLANKS; v.gridItemIds[1] = ID_PLANKS;
-            v.gridItemIds[3] = ID_PLANKS; v.gridItemIds[4] = ID_PLANKS;
-            v.gridItemIds[6] = ID_PLANKS; v.gridItemIds[7] = ID_PLANKS;
-            v.ingredientCount = 1;
-            v.ingredients[0] = {ID_PLANKS, 6, -1};
-        }
-        // Iron Door
-        {
-            RecipeVariant &v = g.variants[1];
-            v.name = "Iron Door";
-            v.resultId = ID_IRON_DOOR;
-            v.resultCount = 1;
-            v.requiresWorkbench = true;
-            v.gridWidth = 2; v.gridHeight = 3;
-            v.gridItemIds[0] = ID_IRON_INGOT; v.gridItemIds[1] = ID_IRON_INGOT;
-            v.gridItemIds[3] = ID_IRON_INGOT; v.gridItemIds[4] = ID_IRON_INGOT;
-            v.gridItemIds[6] = ID_IRON_INGOT; v.gridItemIds[7] = ID_IRON_INGOT;
-            v.ingredientCount = 1;
-            v.ingredients[0] = {ID_IRON_INGOT, 6, -1};
-        }
-        // Trapdoor
-        {
-            RecipeVariant &v = g.variants[2];
-            v.name = "Trapdoor";
-            v.resultId = ID_TRAPDOOR;
-            v.resultCount = 2;
-            v.requiresWorkbench = true;
-            v.gridWidth = 3; v.gridHeight = 2;
-            for (int i = 0; i < 6; ++i) v.gridItemIds[i] = ID_PLANKS;
-            v.ingredientCount = 1;
-            v.ingredients[0] = {ID_PLANKS, 6, -1};
-        }
-    }
-
-    // G8: Fences (3 variants)
-    {
-        RecipeGroup &g = cat0.groups[8];
+        RecipeGroup &g = cat0.groups[5];
         g.variantCount = 3;
         // Wood Fence
         {
@@ -472,47 +422,9 @@ void initStaticRecipes()
         }
     }
 
-    // G9: Torches (2 variants)
+    // G6: Glass Pane & Iron Bars (2 variants)
     {
-        RecipeGroup &g = cat0.groups[9];
-        g.variantCount = 2;
-        const char *names[2] = {"Torch (Coal)", "Torch (Charcoal)"};
-        for (int i = 0; i < 2; ++i)
-        {
-            RecipeVariant &v = g.variants[i];
-            v.name = names[i];
-            v.resultId = ID_TORCH;
-            v.resultCount = 4;
-            v.requiresWorkbench = false;
-            v.gridWidth = 1; v.gridHeight = 2;
-            v.gridItemIds[0] = ID_COAL; v.gridItemDamage[0] = i;
-            v.gridItemIds[1] = ID_STICK;
-            v.ingredientCount = 2;
-            v.ingredients[0] = {ID_COAL, 1, i};
-            v.ingredients[1] = {ID_STICK, 1, -1};
-        }
-    }
-
-    // G10: Ladder (1 variant)
-    {
-        RecipeGroup &g = cat0.groups[10];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Ladder";
-        v.resultId = ID_LADDER;
-        v.resultCount = 3;
-        v.requiresWorkbench = true;
-        v.gridWidth = 3; v.gridHeight = 3;
-        v.gridItemIds[0] = ID_STICK; v.gridItemIds[2] = ID_STICK;
-        v.gridItemIds[3] = ID_STICK; v.gridItemIds[4] = ID_STICK; v.gridItemIds[5] = ID_STICK;
-        v.gridItemIds[6] = ID_STICK; v.gridItemIds[8] = ID_STICK;
-        v.ingredientCount = 1;
-        v.ingredients[0] = {ID_STICK, 7, -1};
-    }
-
-    // G11: Glass Pane & Iron Bars (2 variants)
-    {
-        RecipeGroup &g = cat0.groups[11];
+        RecipeGroup &g = cat0.groups[6];
         g.variantCount = 2;
         // Glass Pane
         {
@@ -540,825 +452,9 @@ void initStaticRecipes()
         }
     }
 
-    // G12: Bookshelf (1 variant)
+    // G7: Mineral Blocks & Ingot Unpacking (8 variants)
     {
-        RecipeGroup &g = cat0.groups[12];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Bookshelf";
-        v.resultId = ID_BOOKSHELF;
-        v.resultCount = 1;
-        v.requiresWorkbench = true;
-        v.gridWidth = 3; v.gridHeight = 3;
-        for (int i = 0; i < 3; ++i) v.gridItemIds[i] = ID_PLANKS;
-        for (int i = 3; i < 6; ++i) v.gridItemIds[i] = ID_BOOK;
-        for (int i = 6; i < 9; ++i) v.gridItemIds[i] = ID_PLANKS;
-        v.ingredientCount = 2;
-        v.ingredients[0] = {ID_PLANKS, 6, -1};
-        v.ingredients[1] = {ID_BOOK, 3, -1};
-    }
-
-    // G13: Sandstone & Stone Bricks (3 variants)
-    {
-        RecipeGroup &g = cat0.groups[13];
-        g.variantCount = 3;
-        // Sandstone
-        {
-            RecipeVariant &v = g.variants[0];
-            v.name = "Sandstone";
-            v.resultId = ID_SANDSTONE;
-            v.resultCount = 1;
-            v.requiresWorkbench = false;
-            v.gridWidth = 2; v.gridHeight = 2;
-            for (int i = 0; i < 4; ++i) v.gridItemIds[i] = ID_SAND;
-            v.ingredientCount = 1;
-            v.ingredients[0] = {ID_SAND, 4, -1};
-        }
-        // Smooth Sandstone
-        {
-            RecipeVariant &v = g.variants[1];
-            v.name = "Smooth Sandstone";
-            v.resultId = ID_SANDSTONE;
-            v.resultCount = 4;
-            v.resultDamage = 2;
-            v.requiresWorkbench = false;
-            v.gridWidth = 2; v.gridHeight = 2;
-            for (int i = 0; i < 4; ++i) v.gridItemIds[i] = ID_SANDSTONE;
-            v.ingredientCount = 1;
-            v.ingredients[0] = {ID_SANDSTONE, 4, 0};
-        }
-        // Stone Bricks
-        {
-            RecipeVariant &v = g.variants[2];
-            v.name = "Stone Bricks";
-            v.resultId = ID_STONE_BRICK;
-            v.resultCount = 4;
-            v.requiresWorkbench = false;
-            v.gridWidth = 2; v.gridHeight = 2;
-            for (int i = 0; i < 4; ++i) v.gridItemIds[i] = ID_STONE;
-            v.ingredientCount = 1;
-            v.ingredients[0] = {ID_STONE, 4, -1};
-        }
-    }
-
-    // G14: Wool (1 variant)
-    {
-        RecipeGroup &g = cat0.groups[14];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Wool";
-        v.resultId = ID_WOOL;
-        v.resultCount = 1;
-        v.requiresWorkbench = false;
-        v.gridWidth = 2; v.gridHeight = 2;
-        for (int i = 0; i < 4; ++i) v.gridItemIds[i] = ID_STRING;
-        v.ingredientCount = 1;
-        v.ingredients[0] = {ID_STRING, 4, -1};
-    }
-
-    // ==========================================
-    // TAB 1: Tools, Weapons & Armor
-    // ==========================================
-    RecipeCategory &cat1 = s_categories[1];
-    cat1.name = "Tools & Weapons";
-    cat1.iconItemId = ID_IRON_PICKAXE;
-    cat1.iconDamage = 0;
-    cat1.groupCount = 13;
-
-    auto setup5TierTool = [&](RecipeGroup &g, const char *toolNames[5], const int_t resIds[5],
-                              int_t s0, int_t s1, int_t s2, int_t s3, int_t s4, int_t s5, int_t s6, int_t s7, int_t s8,
-                              int_t matCount)
-    {
-        g.variantCount = 5;
-        const int_t mats[5] = {ID_PLANKS, ID_COBBLE, ID_IRON_INGOT, ID_DIAMOND, ID_GOLD_INGOT};
-        for (int i = 0; i < 5; ++i)
-        {
-            RecipeVariant &v = g.variants[i];
-            v.name = toolNames[i];
-            v.resultId = resIds[i];
-            v.resultCount = 1;
-            v.requiresWorkbench = true;
-            v.gridWidth = 3; v.gridHeight = 3;
-            const int_t templateGrid[9] = {s0, s1, s2, s3, s4, s5, s6, s7, s8};
-            for (int k = 0; k < 9; ++k)
-            {
-                if (templateGrid[k] == 1) v.gridItemIds[k] = mats[i];
-                else if (templateGrid[k] == 2) v.gridItemIds[k] = ID_STICK;
-                else v.gridItemIds[k] = 0;
-            }
-            v.ingredientCount = 2;
-            v.ingredients[0] = {mats[i], matCount, -1};
-            v.ingredients[1] = {ID_STICK, (s7 == 2 && s4 == 2) ? 2 : 1, -1};
-        }
-    };
-
-    // G0: Pickaxes
-    {
-        const char *names[5] = {"Wooden Pickaxe", "Stone Pickaxe", "Iron Pickaxe", "Diamond Pickaxe", "Golden Pickaxe"};
-        const int_t res[5] = {ID_WOOD_PICKAXE, ID_STONE_PICKAXE, ID_IRON_PICKAXE, ID_DIAM_PICKAXE, ID_GOLD_PICKAXE};
-        setup5TierTool(cat1.groups[0], names, res, 1, 1, 1, 0, 2, 0, 0, 2, 0, 3);
-    }
-    // G1: Shovels
-    {
-        const char *names[5] = {"Wooden Shovel", "Stone Shovel", "Iron Shovel", "Diamond Shovel", "Golden Shovel"};
-        const int_t res[5] = {ID_WOOD_SHOVEL, ID_STONE_SHOVEL, ID_IRON_SHOVEL, ID_DIAM_SHOVEL, ID_GOLD_SHOVEL};
-        setup5TierTool(cat1.groups[1], names, res, 0, 1, 0, 0, 2, 0, 0, 2, 0, 1);
-    }
-    // G2: Axes
-    {
-        const char *names[5] = {"Wooden Axe", "Stone Axe", "Iron Axe", "Diamond Axe", "Golden Axe"};
-        const int_t res[5] = {ID_WOOD_AXE, ID_STONE_AXE, ID_IRON_AXE, ID_DIAM_AXE, ID_GOLD_AXE};
-        setup5TierTool(cat1.groups[2], names, res, 1, 1, 0, 1, 2, 0, 0, 2, 0, 3);
-    }
-    // G3: Hoes
-    {
-        const char *names[5] = {"Wooden Hoe", "Stone Hoe", "Iron Hoe", "Diamond Hoe", "Golden Hoe"};
-        const int_t res[5] = {ID_WOOD_HOE, ID_STONE_HOE, ID_IRON_HOE, ID_DIAM_HOE, ID_GOLD_HOE};
-        setup5TierTool(cat1.groups[3], names, res, 1, 1, 0, 0, 2, 0, 0, 2, 0, 2);
-    }
-    // G4: Swords
-    {
-        const char *names[5] = {"Wooden Sword", "Stone Sword", "Iron Sword", "Diamond Sword", "Golden Sword"};
-        const int_t res[5] = {ID_WOOD_SWORD, ID_STONE_SWORD, ID_IRON_SWORD, ID_DIAM_SWORD, ID_GOLD_SWORD};
-        setup5TierTool(cat1.groups[4], names, res, 0, 1, 0, 0, 1, 0, 0, 2, 0, 2);
-    }
-
-    // G5: Bow & Arrows (2 variants)
-    {
-        RecipeGroup &g = cat1.groups[5];
-        g.variantCount = 2;
-        // Bow
-        {
-            RecipeVariant &v = g.variants[0];
-            v.name = "Bow";
-            v.resultId = ID_BOW;
-            v.resultCount = 1;
-            v.requiresWorkbench = true;
-            v.gridWidth = 3; v.gridHeight = 3;
-            v.gridItemIds[0] = 0;        v.gridItemIds[1] = ID_STICK; v.gridItemIds[2] = ID_STRING;
-            v.gridItemIds[3] = ID_STICK; v.gridItemIds[4] = 0;        v.gridItemIds[5] = ID_STRING;
-            v.gridItemIds[6] = 0;        v.gridItemIds[7] = ID_STICK; v.gridItemIds[8] = ID_STRING;
-            v.ingredientCount = 2;
-            v.ingredients[0] = {ID_STICK, 3, -1};
-            v.ingredients[1] = {ID_STRING, 3, -1};
-        }
-        // Arrows
-        {
-            RecipeVariant &v = g.variants[1];
-            v.name = "Arrows";
-            v.resultId = ID_ARROW;
-            v.resultCount = 4;
-            v.requiresWorkbench = true;
-            v.gridWidth = 1; v.gridHeight = 3;
-            v.gridItemIds[0] = ID_FLINT;
-            v.gridItemIds[1] = ID_STICK;
-            v.gridItemIds[2] = ID_FEATHER;
-            v.ingredientCount = 3;
-            v.ingredients[0] = {ID_FLINT, 1, -1};
-            v.ingredients[1] = {ID_STICK, 1, -1};
-            v.ingredients[2] = {ID_FEATHER, 1, -1};
-        }
-    }
-
-    auto setupArmor = [&](RecipeGroup &g, const char *names[4], const int_t resIds[4],
-                          int_t s0, int_t s1, int_t s2, int_t s3, int_t s4, int_t s5, int_t s6, int_t s7, int_t s8,
-                          int_t matCount)
-    {
-        g.variantCount = 4;
-        const int_t mats[4] = {ID_LEATHER, ID_IRON_INGOT, ID_DIAMOND, ID_GOLD_INGOT};
-        for (int i = 0; i < 4; ++i)
-        {
-            RecipeVariant &v = g.variants[i];
-            v.name = names[i];
-            v.resultId = resIds[i];
-            v.resultCount = 1;
-            v.requiresWorkbench = true;
-            v.gridWidth = 3; v.gridHeight = 3;
-            const int_t templateGrid[9] = {s0, s1, s2, s3, s4, s5, s6, s7, s8};
-            for (int k = 0; k < 9; ++k)
-                v.gridItemIds[k] = (templateGrid[k] == 1) ? mats[i] : 0;
-            v.ingredientCount = 1;
-            v.ingredients[0] = {mats[i], matCount, -1};
-        }
-    };
-
-    // G6: Helmets
-    {
-        const char *names[4] = {"Leather Cap", "Iron Helmet", "Diamond Helmet", "Golden Helmet"};
-        const int_t res[4] = {ID_LEATH_HELMET, ID_IRON_HELMET, ID_DIAM_HELMET, ID_GOLD_HELMET};
-        setupArmor(cat1.groups[6], names, res, 1, 1, 1, 1, 0, 1, 0, 0, 0, 5);
-    }
-    // G7: Chestplates
-    {
-        const char *names[4] = {"Leather Tunic", "Iron Chestplate", "Diamond Chestplate", "Golden Chestplate"};
-        const int_t res[4] = {ID_LEATH_CHEST, ID_IRON_CHEST, ID_DIAM_CHEST, ID_GOLD_CHEST};
-        setupArmor(cat1.groups[7], names, res, 1, 0, 1, 1, 1, 1, 1, 1, 1, 8);
-    }
-    // G8: Leggings
-    {
-        const char *names[4] = {"Leather Pants", "Iron Leggings", "Diamond Leggings", "Golden Leggings"};
-        const int_t res[4] = {ID_LEATH_LEGS, ID_IRON_LEGS, ID_DIAM_LEGS, ID_GOLD_LEGS};
-        setupArmor(cat1.groups[8], names, res, 1, 1, 1, 1, 0, 1, 1, 0, 1, 7);
-    }
-    // G9: Boots
-    {
-        const char *names[4] = {"Leather Boots", "Iron Boots", "Diamond Boots", "Golden Boots"};
-        const int_t res[4] = {ID_LEATH_BOOTS, ID_IRON_BOOTS, ID_DIAM_BOOTS, ID_GOLD_BOOTS};
-        setupArmor(cat1.groups[9], names, res, 0, 0, 0, 1, 0, 1, 1, 0, 1, 4);
-    }
-
-    // G10: Flint and Steel (1 variant)
-    {
-        RecipeGroup &g = cat1.groups[10];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Flint and Steel";
-        v.resultId = ID_FLINT_STEEL;
-        v.resultCount = 1;
-        v.requiresWorkbench = false;
-        v.gridWidth = 2; v.gridHeight = 2;
-        v.gridItemIds[0] = ID_IRON_INGOT; v.gridItemIds[3] = ID_FLINT;
-        v.ingredientCount = 2;
-        v.ingredients[0] = {ID_IRON_INGOT, 1, -1};
-        v.ingredients[1] = {ID_FLINT, 1, -1};
-    }
-
-    // G11: Shears (1 variant)
-    {
-        RecipeGroup &g = cat1.groups[11];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Shears";
-        v.resultId = ID_SHEARS;
-        v.resultCount = 1;
-        v.requiresWorkbench = false;
-        v.gridWidth = 2; v.gridHeight = 2;
-        v.gridItemIds[0] = ID_IRON_INGOT; v.gridItemIds[3] = ID_IRON_INGOT;
-        v.ingredientCount = 1;
-        v.ingredients[0] = {ID_IRON_INGOT, 2, -1};
-    }
-
-    // G12: Fishing Rod (1 variant)
-    {
-        RecipeGroup &g = cat1.groups[12];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Fishing Rod";
-        v.resultId = ID_FISHING_ROD;
-        v.resultCount = 1;
-        v.requiresWorkbench = true;
-        v.gridWidth = 3; v.gridHeight = 3;
-        v.gridItemIds[2] = ID_STICK;
-        v.gridItemIds[4] = ID_STICK; v.gridItemIds[5] = ID_STRING;
-        v.gridItemIds[6] = ID_STICK; v.gridItemIds[8] = ID_STRING;
-        v.ingredientCount = 2;
-        v.ingredients[0] = {ID_STICK, 3, -1};
-        v.ingredients[1] = {ID_STRING, 2, -1};
-    }
-
-    // ==========================================
-    // TAB 2: Food & Mechanism
-    // ==========================================
-    RecipeCategory &cat2 = s_categories[2];
-    cat2.name = "Food & Mechanisms";
-    cat2.iconItemId = ID_BREAD;
-    cat2.iconDamage = 0;
-    cat2.groupCount = 14;
-
-    // G0: Bread
-    {
-        RecipeGroup &g = cat2.groups[0];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Bread";
-        v.resultId = ID_BREAD;
-        v.resultCount = 1;
-        v.requiresWorkbench = true;
-        v.gridWidth = 3; v.gridHeight = 1;
-        v.gridItemIds[0] = ID_WHEAT; v.gridItemIds[1] = ID_WHEAT; v.gridItemIds[2] = ID_WHEAT;
-        v.ingredientCount = 1;
-        v.ingredients[0] = {ID_WHEAT, 3, -1};
-    }
-    // G1: Cake
-    {
-        RecipeGroup &g = cat2.groups[1];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Cake";
-        v.resultId = ID_CAKE;
-        v.resultCount = 1;
-        v.requiresWorkbench = true;
-        v.gridWidth = 3; v.gridHeight = 3;
-        v.gridItemIds[0] = ID_MILK;  v.gridItemIds[1] = ID_MILK;  v.gridItemIds[2] = ID_MILK;
-        v.gridItemIds[3] = ID_SUGAR; v.gridItemIds[4] = ID_EGG;   v.gridItemIds[5] = ID_SUGAR;
-        v.gridItemIds[6] = ID_WHEAT; v.gridItemIds[7] = ID_WHEAT; v.gridItemIds[8] = ID_WHEAT;
-        v.ingredientCount = 4;
-        v.ingredients[0] = {ID_MILK, 3, -1};
-        v.ingredients[1] = {ID_SUGAR, 2, -1};
-        v.ingredients[2] = {ID_EGG, 1, -1};
-        v.ingredients[3] = {ID_WHEAT, 3, -1};
-    }
-    // G2: Golden Apple
-    {
-        RecipeGroup &g = cat2.groups[2];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Golden Apple";
-        v.resultId = ID_GOLD_APPLE;
-        v.resultCount = 1;
-        v.requiresWorkbench = true;
-        v.gridWidth = 3; v.gridHeight = 3;
-        for (int i = 0; i < 9; ++i) v.gridItemIds[i] = (i == 4) ? ID_APPLE_RED : ID_GOLD_NUGGET;
-        v.ingredientCount = 2;
-        v.ingredients[0] = {ID_APPLE_RED, 1, -1};
-        v.ingredients[1] = {ID_GOLD_NUGGET, 8, -1};
-    }
-    // G3: Bowl & Mushroom Stew
-    {
-        RecipeGroup &g = cat2.groups[3];
-        g.variantCount = 2;
-        // Bowl
-        {
-            RecipeVariant &v = g.variants[0];
-            v.name = "Bowl";
-            v.resultId = ID_BOWL;
-            v.resultCount = 4;
-            v.requiresWorkbench = false;
-            v.gridWidth = 3; v.gridHeight = 2;
-            v.gridItemIds[0] = ID_PLANKS; v.gridItemIds[2] = ID_PLANKS;
-            v.gridItemIds[4] = ID_PLANKS;
-            v.ingredientCount = 1;
-            v.ingredients[0] = {ID_PLANKS, 3, -1};
-        }
-        // Stew
-        {
-            RecipeVariant &v = g.variants[1];
-            v.name = "Mushroom Stew";
-            v.resultId = ID_STEW;
-            v.resultCount = 1;
-            v.requiresWorkbench = false;
-            v.gridWidth = 2; v.gridHeight = 2;
-            v.gridItemIds[0] = ID_RED_MUSH;   v.gridItemIds[1] = ID_BROWN_MUSH;
-            v.gridItemIds[2] = ID_BOWL;
-            v.ingredientCount = 3;
-            v.ingredients[0] = {ID_BOWL, 1, -1};
-            v.ingredients[1] = {ID_RED_MUSH, 1, -1};
-            v.ingredients[2] = {ID_BROWN_MUSH, 1, -1};
-        }
-    }
-    // G4: Sugar
-    {
-        RecipeGroup &g = cat2.groups[4];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Sugar";
-        v.resultId = ID_SUGAR;
-        v.resultCount = 1;
-        v.requiresWorkbench = false;
-        v.gridWidth = 1; v.gridHeight = 1;
-        v.gridItemIds[0] = ID_REED;
-        v.ingredientCount = 1;
-        v.ingredients[0] = {ID_REED, 1, -1};
-    }
-    // G5: Pressure Plates (2 variants)
-    {
-        RecipeGroup &g = cat2.groups[5];
-        g.variantCount = 2;
-        // Stone Plate
-        {
-            RecipeVariant &v = g.variants[0];
-            v.name = "Stone Pressure Plate";
-            v.resultId = ID_PLATE_STONE;
-            v.resultCount = 1;
-            v.requiresWorkbench = false;
-            v.gridWidth = 2; v.gridHeight = 1;
-            v.gridItemIds[0] = ID_STONE; v.gridItemIds[1] = ID_STONE;
-            v.ingredientCount = 1;
-            v.ingredients[0] = {ID_STONE, 2, -1};
-        }
-        // Wood Plate
-        {
-            RecipeVariant &v = g.variants[1];
-            v.name = "Wooden Pressure Plate";
-            v.resultId = ID_PLATE_WOOD;
-            v.resultCount = 1;
-            v.requiresWorkbench = false;
-            v.gridWidth = 2; v.gridHeight = 1;
-            v.gridItemIds[0] = ID_PLANKS; v.gridItemIds[1] = ID_PLANKS;
-            v.ingredientCount = 1;
-            v.ingredients[0] = {ID_PLANKS, 2, -1};
-        }
-    }
-    // G6: Button
-    {
-        RecipeGroup &g = cat2.groups[6];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Button";
-        v.resultId = ID_BUTTON;
-        v.resultCount = 1;
-        v.requiresWorkbench = false;
-        v.gridWidth = 1; v.gridHeight = 2;
-        v.gridItemIds[0] = ID_STONE; v.gridItemIds[1] = ID_STONE;
-        v.ingredientCount = 1;
-        v.ingredients[0] = {ID_STONE, 2, -1};
-    }
-    // G7: Lever
-    {
-        RecipeGroup &g = cat2.groups[7];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Lever";
-        v.resultId = ID_LEVER;
-        v.resultCount = 1;
-        v.requiresWorkbench = false;
-        v.gridWidth = 1; v.gridHeight = 2;
-        v.gridItemIds[0] = ID_STICK; v.gridItemIds[1] = ID_COBBLE;
-        v.ingredientCount = 2;
-        v.ingredients[0] = {ID_STICK, 1, -1};
-        v.ingredients[1] = {ID_COBBLE, 1, -1};
-    }
-    // G8: Redstone Torch
-    {
-        RecipeGroup &g = cat2.groups[8];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Redstone Torch";
-        v.resultId = ID_RED_TORCH;
-        v.resultCount = 1;
-        v.requiresWorkbench = false;
-        v.gridWidth = 1; v.gridHeight = 2;
-        v.gridItemIds[0] = ID_REDSTONE; v.gridItemIds[1] = ID_STICK;
-        v.ingredientCount = 2;
-        v.ingredients[0] = {ID_REDSTONE, 1, -1};
-        v.ingredients[1] = {ID_STICK, 1, -1};
-    }
-    // G9: Redstone Repeater
-    {
-        RecipeGroup &g = cat2.groups[9];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Redstone Repeater";
-        v.resultId = ID_REPEATER;
-        v.resultCount = 1;
-        v.requiresWorkbench = true;
-        v.gridWidth = 3; v.gridHeight = 2;
-        v.gridItemIds[0] = ID_RED_TORCH; v.gridItemIds[1] = ID_REDSTONE; v.gridItemIds[2] = ID_RED_TORCH;
-        v.gridItemIds[3] = ID_STONE;     v.gridItemIds[4] = ID_STONE;    v.gridItemIds[5] = ID_STONE;
-        v.ingredientCount = 3;
-        v.ingredients[0] = {ID_RED_TORCH, 2, -1};
-        v.ingredients[1] = {ID_REDSTONE, 1, -1};
-        v.ingredients[2] = {ID_STONE, 3, -1};
-    }
-    // G10: Pistons (2 variants)
-    {
-        RecipeGroup &g = cat2.groups[10];
-        g.variantCount = 2;
-        // Piston
-        {
-            RecipeVariant &v = g.variants[0];
-            v.name = "Piston";
-            v.resultId = ID_PISTON;
-            v.resultCount = 1;
-            v.requiresWorkbench = true;
-            v.gridWidth = 3; v.gridHeight = 3;
-            v.gridItemIds[0] = ID_PLANKS; v.gridItemIds[1] = ID_PLANKS;     v.gridItemIds[2] = ID_PLANKS;
-            v.gridItemIds[3] = ID_COBBLE; v.gridItemIds[4] = ID_IRON_INGOT; v.gridItemIds[5] = ID_COBBLE;
-            v.gridItemIds[6] = ID_COBBLE; v.gridItemIds[7] = ID_REDSTONE;   v.gridItemIds[8] = ID_COBBLE;
-            v.ingredientCount = 4;
-            v.ingredients[0] = {ID_PLANKS, 3, -1};
-            v.ingredients[1] = {ID_COBBLE, 4, -1};
-            v.ingredients[2] = {ID_IRON_INGOT, 1, -1};
-            v.ingredients[3] = {ID_REDSTONE, 1, -1};
-        }
-        // Sticky Piston
-        {
-            RecipeVariant &v = g.variants[1];
-            v.name = "Sticky Piston";
-            v.resultId = ID_STICKY_PISTON;
-            v.resultCount = 1;
-            v.requiresWorkbench = false;
-            v.gridWidth = 1; v.gridHeight = 2;
-            v.gridItemIds[0] = ID_SLIMEBALL; v.gridItemIds[1] = ID_PISTON;
-            v.ingredientCount = 2;
-            v.ingredients[0] = {ID_SLIMEBALL, 1, -1};
-            v.ingredients[1] = {ID_PISTON, 1, -1};
-        }
-    }
-    // G11: Dispenser
-    {
-        RecipeGroup &g = cat2.groups[11];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Dispenser";
-        v.resultId = ID_DISPENSER;
-        v.resultCount = 1;
-        v.requiresWorkbench = true;
-        v.gridWidth = 3; v.gridHeight = 3;
-        v.gridItemIds[0] = ID_COBBLE; v.gridItemIds[1] = ID_COBBLE; v.gridItemIds[2] = ID_COBBLE;
-        v.gridItemIds[3] = ID_COBBLE; v.gridItemIds[4] = ID_BOW;    v.gridItemIds[5] = ID_COBBLE;
-        v.gridItemIds[6] = ID_COBBLE; v.gridItemIds[7] = ID_REDSTONE; v.gridItemIds[8] = ID_COBBLE;
-        v.ingredientCount = 3;
-        v.ingredients[0] = {ID_COBBLE, 7, -1};
-        v.ingredients[1] = {ID_BOW, 1, -1};
-        v.ingredients[2] = {ID_REDSTONE, 1, -1};
-    }
-    // G12: TNT
-    {
-        RecipeGroup &g = cat2.groups[12];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "TNT";
-        v.resultId = ID_TNT;
-        v.resultCount = 1;
-        v.requiresWorkbench = true;
-        v.gridWidth = 3; v.gridHeight = 3;
-        v.gridItemIds[0] = ID_GUNPOWDER; v.gridItemIds[1] = ID_SAND;      v.gridItemIds[2] = ID_GUNPOWDER;
-        v.gridItemIds[3] = ID_SAND;      v.gridItemIds[4] = ID_GUNPOWDER; v.gridItemIds[5] = ID_SAND;
-        v.gridItemIds[6] = ID_GUNPOWDER; v.gridItemIds[7] = ID_SAND;      v.gridItemIds[8] = ID_GUNPOWDER;
-        v.ingredientCount = 2;
-        v.ingredients[0] = {ID_GUNPOWDER, 5, -1};
-        v.ingredients[1] = {ID_SAND, 4, -1};
-    }
-    // G13: Note Block & Jukebox (2 variants)
-    {
-        RecipeGroup &g = cat2.groups[13];
-        g.variantCount = 2;
-        // Note Block
-        {
-            RecipeVariant &v = g.variants[0];
-            v.name = "Note Block";
-            v.resultId = ID_NOTEBLOCK;
-            v.resultCount = 1;
-            v.requiresWorkbench = true;
-            v.gridWidth = 3; v.gridHeight = 3;
-            for (int i = 0; i < 9; ++i) v.gridItemIds[i] = (i == 4) ? ID_REDSTONE : ID_PLANKS;
-            v.ingredientCount = 2;
-            v.ingredients[0] = {ID_PLANKS, 8, -1};
-            v.ingredients[1] = {ID_REDSTONE, 1, -1};
-        }
-        // Jukebox
-        {
-            RecipeVariant &v = g.variants[1];
-            v.name = "Jukebox";
-            v.resultId = ID_JUKEBOX;
-            v.resultCount = 1;
-            v.requiresWorkbench = true;
-            v.gridWidth = 3; v.gridHeight = 3;
-            for (int i = 0; i < 9; ++i) v.gridItemIds[i] = (i == 4) ? ID_DIAMOND : ID_PLANKS;
-            v.ingredientCount = 2;
-            v.ingredients[0] = {ID_PLANKS, 8, -1};
-            v.ingredients[1] = {ID_DIAMOND, 1, -1};
-        }
-    }
-
-    // ==========================================
-    // TAB 3: Transport & Misc
-    // ==========================================
-    RecipeCategory &cat3 = s_categories[3];
-    cat3.name = "Transport & Misc";
-    cat3.iconItemId = ID_MINECART;
-    cat3.iconDamage = 0;
-    cat3.groupCount = 11;
-
-    // G0: Minecarts (3 variants)
-    {
-        RecipeGroup &g = cat3.groups[0];
-        g.variantCount = 3;
-        // Minecart
-        {
-            RecipeVariant &v = g.variants[0];
-            v.name = "Minecart";
-            v.resultId = ID_MINECART;
-            v.resultCount = 1;
-            v.requiresWorkbench = true;
-            v.gridWidth = 3; v.gridHeight = 2;
-            v.gridItemIds[0] = ID_IRON_INGOT; v.gridItemIds[2] = ID_IRON_INGOT;
-            v.gridItemIds[3] = ID_IRON_INGOT; v.gridItemIds[4] = ID_IRON_INGOT; v.gridItemIds[5] = ID_IRON_INGOT;
-            v.ingredientCount = 1;
-            v.ingredients[0] = {ID_IRON_INGOT, 5, -1};
-        }
-        // Powered Minecart
-        {
-            RecipeVariant &v = g.variants[1];
-            v.name = "Powered Minecart";
-            v.resultId = ID_CART_FURNACE;
-            v.resultCount = 1;
-            v.requiresWorkbench = false;
-            v.gridWidth = 1; v.gridHeight = 2;
-            v.gridItemIds[0] = ID_FURNACE; v.gridItemIds[1] = ID_MINECART;
-            v.ingredientCount = 2;
-            v.ingredients[0] = {ID_FURNACE, 1, -1};
-            v.ingredients[1] = {ID_MINECART, 1, -1};
-        }
-        // Storage Minecart
-        {
-            RecipeVariant &v = g.variants[2];
-            v.name = "Storage Minecart";
-            v.resultId = ID_CART_CHEST;
-            v.resultCount = 1;
-            v.requiresWorkbench = false;
-            v.gridWidth = 1; v.gridHeight = 2;
-            v.gridItemIds[0] = ID_CHEST; v.gridItemIds[1] = ID_MINECART;
-            v.ingredientCount = 2;
-            v.ingredients[0] = {ID_CHEST, 1, -1};
-            v.ingredients[1] = {ID_MINECART, 1, -1};
-        }
-    }
-    // G1: Rails (3 variants)
-    {
-        RecipeGroup &g = cat3.groups[1];
-        g.variantCount = 3;
-        // Standard Rail
-        {
-            RecipeVariant &v = g.variants[0];
-            v.name = "Rail";
-            v.resultId = ID_RAIL;
-            v.resultCount = 16;
-            v.requiresWorkbench = true;
-            v.gridWidth = 3; v.gridHeight = 3;
-            v.gridItemIds[0] = ID_IRON_INGOT; v.gridItemIds[2] = ID_IRON_INGOT;
-            v.gridItemIds[3] = ID_IRON_INGOT; v.gridItemIds[4] = ID_STICK; v.gridItemIds[5] = ID_IRON_INGOT;
-            v.gridItemIds[6] = ID_IRON_INGOT; v.gridItemIds[8] = ID_IRON_INGOT;
-            v.ingredientCount = 2;
-            v.ingredients[0] = {ID_IRON_INGOT, 6, -1};
-            v.ingredients[1] = {ID_STICK, 1, -1};
-        }
-        // Powered Rail
-        {
-            RecipeVariant &v = g.variants[1];
-            v.name = "Powered Rail";
-            v.resultId = ID_RAIL_POWERED;
-            v.resultCount = 6;
-            v.requiresWorkbench = true;
-            v.gridWidth = 3; v.gridHeight = 3;
-            v.gridItemIds[0] = ID_GOLD_INGOT; v.gridItemIds[2] = ID_GOLD_INGOT;
-            v.gridItemIds[3] = ID_GOLD_INGOT; v.gridItemIds[4] = ID_STICK; v.gridItemIds[5] = ID_GOLD_INGOT;
-            v.gridItemIds[6] = ID_GOLD_INGOT; v.gridItemIds[7] = ID_REDSTONE; v.gridItemIds[8] = ID_GOLD_INGOT;
-            v.ingredientCount = 3;
-            v.ingredients[0] = {ID_GOLD_INGOT, 6, -1};
-            v.ingredients[1] = {ID_STICK, 1, -1};
-            v.ingredients[2] = {ID_REDSTONE, 1, -1};
-        }
-        // Detector Rail
-        {
-            RecipeVariant &v = g.variants[2];
-            v.name = "Detector Rail";
-            v.resultId = ID_RAIL_DETECTOR;
-            v.resultCount = 6;
-            v.requiresWorkbench = true;
-            v.gridWidth = 3; v.gridHeight = 3;
-            v.gridItemIds[0] = ID_IRON_INGOT; v.gridItemIds[2] = ID_IRON_INGOT;
-            v.gridItemIds[3] = ID_IRON_INGOT; v.gridItemIds[4] = ID_PLATE_STONE; v.gridItemIds[5] = ID_IRON_INGOT;
-            v.gridItemIds[6] = ID_IRON_INGOT; v.gridItemIds[7] = ID_REDSTONE; v.gridItemIds[8] = ID_IRON_INGOT;
-            v.ingredientCount = 3;
-            v.ingredients[0] = {ID_IRON_INGOT, 6, -1};
-            v.ingredients[1] = {ID_PLATE_STONE, 1, -1};
-            v.ingredients[2] = {ID_REDSTONE, 1, -1};
-        }
-    }
-    // G2: Boat
-    {
-        RecipeGroup &g = cat3.groups[2];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Boat";
-        v.resultId = ID_BOAT;
-        v.resultCount = 1;
-        v.requiresWorkbench = true;
-        v.gridWidth = 3; v.gridHeight = 2;
-        v.gridItemIds[0] = ID_PLANKS; v.gridItemIds[2] = ID_PLANKS;
-        v.gridItemIds[3] = ID_PLANKS; v.gridItemIds[4] = ID_PLANKS; v.gridItemIds[5] = ID_PLANKS;
-        v.ingredientCount = 1;
-        v.ingredients[0] = {ID_PLANKS, 5, -1};
-    }
-    // G3: Bucket
-    {
-        RecipeGroup &g = cat3.groups[3];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Bucket";
-        v.resultId = ID_BUCKET;
-        v.resultCount = 1;
-        v.requiresWorkbench = true;
-        v.gridWidth = 3; v.gridHeight = 2;
-        v.gridItemIds[0] = ID_IRON_INGOT; v.gridItemIds[2] = ID_IRON_INGOT;
-        v.gridItemIds[4] = ID_IRON_INGOT;
-        v.ingredientCount = 1;
-        v.ingredients[0] = {ID_IRON_INGOT, 3, -1};
-    }
-    // G4: Compass
-    {
-        RecipeGroup &g = cat3.groups[4];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Compass";
-        v.resultId = ID_COMPASS;
-        v.resultCount = 1;
-        v.requiresWorkbench = true;
-        v.gridWidth = 3; v.gridHeight = 3;
-        v.gridItemIds[1] = ID_IRON_INGOT;
-        v.gridItemIds[3] = ID_IRON_INGOT; v.gridItemIds[4] = ID_REDSTONE; v.gridItemIds[5] = ID_IRON_INGOT;
-        v.gridItemIds[7] = ID_IRON_INGOT;
-        v.ingredientCount = 2;
-        v.ingredients[0] = {ID_IRON_INGOT, 4, -1};
-        v.ingredients[1] = {ID_REDSTONE, 1, -1};
-    }
-    // G5: Clock
-    {
-        RecipeGroup &g = cat3.groups[5];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Clock";
-        v.resultId = ID_CLOCK;
-        v.resultCount = 1;
-        v.requiresWorkbench = true;
-        v.gridWidth = 3; v.gridHeight = 3;
-        v.gridItemIds[1] = ID_GOLD_INGOT;
-        v.gridItemIds[3] = ID_GOLD_INGOT; v.gridItemIds[4] = ID_REDSTONE; v.gridItemIds[5] = ID_GOLD_INGOT;
-        v.gridItemIds[7] = ID_GOLD_INGOT;
-        v.ingredientCount = 2;
-        v.ingredients[0] = {ID_GOLD_INGOT, 4, -1};
-        v.ingredients[1] = {ID_REDSTONE, 1, -1};
-    }
-    // G6: Map
-    {
-        RecipeGroup &g = cat3.groups[6];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Map";
-        v.resultId = ID_MAP;
-        v.resultCount = 1;
-        v.requiresWorkbench = true;
-        v.gridWidth = 3; v.gridHeight = 3;
-        for (int i = 0; i < 9; ++i) v.gridItemIds[i] = (i == 4) ? ID_COMPASS : ID_PAPER;
-        v.ingredientCount = 2;
-        v.ingredients[0] = {ID_PAPER, 8, -1};
-        v.ingredients[1] = {ID_COMPASS, 1, -1};
-    }
-    // G7: Paper & Book (2 variants)
-    {
-        RecipeGroup &g = cat3.groups[7];
-        g.variantCount = 2;
-        // Paper
-        {
-            RecipeVariant &v = g.variants[0];
-            v.name = "Paper";
-            v.resultId = ID_PAPER;
-            v.resultCount = 3;
-            v.requiresWorkbench = true;
-            v.gridWidth = 3; v.gridHeight = 1;
-            v.gridItemIds[0] = ID_REED; v.gridItemIds[1] = ID_REED; v.gridItemIds[2] = ID_REED;
-            v.ingredientCount = 1;
-            v.ingredients[0] = {ID_REED, 3, -1};
-        }
-        // Book
-        {
-            RecipeVariant &v = g.variants[1];
-            v.name = "Book";
-            v.resultId = ID_BOOK;
-            v.resultCount = 1;
-            v.requiresWorkbench = true;
-            v.gridWidth = 1; v.gridHeight = 3;
-            v.gridItemIds[0] = ID_PAPER; v.gridItemIds[1] = ID_PAPER; v.gridItemIds[2] = ID_PAPER;
-            v.ingredientCount = 1;
-            v.ingredients[0] = {ID_PAPER, 3, -1};
-        }
-    }
-    // G8: Painting
-    {
-        RecipeGroup &g = cat3.groups[8];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Painting";
-        v.resultId = ID_PAINTING;
-        v.resultCount = 1;
-        v.requiresWorkbench = true;
-        v.gridWidth = 3; v.gridHeight = 3;
-        for (int i = 0; i < 9; ++i) v.gridItemIds[i] = (i == 4) ? ID_WOOL : ID_STICK;
-        v.ingredientCount = 2;
-        v.ingredients[0] = {ID_STICK, 8, -1};
-        v.ingredients[1] = {ID_WOOL, 1, -1};
-    }
-    // G9: Bed
-    {
-        RecipeGroup &g = cat3.groups[9];
-        g.variantCount = 1;
-        RecipeVariant &v = g.variants[0];
-        v.name = "Bed";
-        v.resultId = ID_BED;
-        v.resultCount = 1;
-        v.requiresWorkbench = true;
-        v.gridWidth = 3; v.gridHeight = 2;
-        v.gridItemIds[0] = ID_WOOL;   v.gridItemIds[1] = ID_WOOL;   v.gridItemIds[2] = ID_WOOL;
-        v.gridItemIds[3] = ID_PLANKS; v.gridItemIds[4] = ID_PLANKS; v.gridItemIds[5] = ID_PLANKS;
-        v.ingredientCount = 2;
-        v.ingredients[0] = {ID_WOOL, 3, -1};
-        v.ingredients[1] = {ID_PLANKS, 3, -1};
-    }
-    // G10: Mineral Blocks & Ingot Unpacking (8 variants)
-    {
-        RecipeGroup &g = cat3.groups[10];
+        RecipeGroup &g = cat0.groups[7];
         g.variantCount = 8;
         // 0: Iron Block
         {
@@ -1458,8 +554,919 @@ void initStaticRecipes()
         }
     }
 
-    // Allocate persistent ItemStack objects for zero-allocation rendering
-    for (int c = 0; c < 4; ++c)
+
+    // ==========================================
+    // TAB 1: Decoration
+    // ==========================================
+    RecipeCategory &cat1 = s_categories[1];
+    cat1.name = "Decoration";
+    cat1.iconItemId = ID_PAINTING;
+    cat1.iconDamage = 0;
+    cat1.groupCount = 8;
+    // G0: Crafting Table (1 variant)
+    {
+        RecipeGroup &g = cat1.groups[0];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Crafting Table";
+        v.resultId = ID_WORKBENCH;
+        v.resultCount = 1;
+        v.requiresWorkbench = false;
+        v.gridWidth = 2; v.gridHeight = 2;
+        v.gridItemIds[0] = ID_PLANKS; v.gridItemIds[1] = ID_PLANKS;
+        v.gridItemIds[2] = ID_PLANKS; v.gridItemIds[3] = ID_PLANKS;
+        v.ingredientCount = 1;
+        v.ingredients[0] = {ID_PLANKS, 4, -1};
+    }
+
+    // G1: Chest (1 variant)
+    {
+        RecipeGroup &g = cat1.groups[1];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Chest";
+        v.resultId = ID_CHEST;
+        v.resultCount = 1;
+        v.requiresWorkbench = true;
+        v.gridWidth = 3; v.gridHeight = 3;
+        for (int i = 0; i < 9; ++i) v.gridItemIds[i] = (i == 4) ? 0 : ID_PLANKS;
+        v.ingredientCount = 1;
+        v.ingredients[0] = {ID_PLANKS, 8, -1};
+    }
+
+    // G2: Furnace (1 variant)
+    {
+        RecipeGroup &g = cat1.groups[2];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Furnace";
+        v.resultId = ID_FURNACE;
+        v.resultCount = 1;
+        v.requiresWorkbench = true;
+        v.gridWidth = 3; v.gridHeight = 3;
+        for (int i = 0; i < 9; ++i) v.gridItemIds[i] = (i == 4) ? 0 : ID_COBBLE;
+        v.ingredientCount = 1;
+        v.ingredients[0] = {ID_COBBLE, 8, -1};
+    }
+
+    // G3: Bed
+    {
+        RecipeGroup &g = cat1.groups[3];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Bed";
+        v.resultId = ID_BED;
+        v.resultCount = 1;
+        v.requiresWorkbench = true;
+        v.gridWidth = 3; v.gridHeight = 2;
+        v.gridItemIds[0] = ID_WOOL;   v.gridItemIds[1] = ID_WOOL;   v.gridItemIds[2] = ID_WOOL;
+        v.gridItemIds[3] = ID_PLANKS; v.gridItemIds[4] = ID_PLANKS; v.gridItemIds[5] = ID_PLANKS;
+        v.ingredientCount = 2;
+        v.ingredients[0] = {ID_WOOL, 3, -1};
+        v.ingredients[1] = {ID_PLANKS, 3, -1};
+    }
+    // G4: Torches (2 variants)
+    {
+        RecipeGroup &g = cat1.groups[4];
+        g.variantCount = 2;
+        const char *names[2] = {"Torch (Coal)", "Torch (Charcoal)"};
+        for (int i = 0; i < 2; ++i)
+        {
+            RecipeVariant &v = g.variants[i];
+            v.name = names[i];
+            v.resultId = ID_TORCH;
+            v.resultCount = 4;
+            v.requiresWorkbench = false;
+            v.gridWidth = 1; v.gridHeight = 2;
+            v.gridItemIds[0] = ID_COAL; v.gridItemDamage[0] = i;
+            v.gridItemIds[1] = ID_STICK;
+            v.ingredientCount = 2;
+            v.ingredients[0] = {ID_COAL, 1, i};
+            v.ingredients[1] = {ID_STICK, 1, -1};
+        }
+    }
+
+    // G5: Ladder (1 variant)
+    {
+        RecipeGroup &g = cat1.groups[5];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Ladder";
+        v.resultId = ID_LADDER;
+        v.resultCount = 3;
+        v.requiresWorkbench = true;
+        v.gridWidth = 3; v.gridHeight = 3;
+        v.gridItemIds[0] = ID_STICK; v.gridItemIds[2] = ID_STICK;
+        v.gridItemIds[3] = ID_STICK; v.gridItemIds[4] = ID_STICK; v.gridItemIds[5] = ID_STICK;
+        v.gridItemIds[6] = ID_STICK; v.gridItemIds[8] = ID_STICK;
+        v.ingredientCount = 1;
+        v.ingredients[0] = {ID_STICK, 7, -1};
+    }
+
+    // G6: Bookshelf (1 variant)
+    {
+        RecipeGroup &g = cat1.groups[6];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Bookshelf";
+        v.resultId = ID_BOOKSHELF;
+        v.resultCount = 1;
+        v.requiresWorkbench = true;
+        v.gridWidth = 3; v.gridHeight = 3;
+        for (int i = 0; i < 3; ++i) v.gridItemIds[i] = ID_PLANKS;
+        for (int i = 3; i < 6; ++i) v.gridItemIds[i] = ID_BOOK;
+        for (int i = 6; i < 9; ++i) v.gridItemIds[i] = ID_PLANKS;
+        v.ingredientCount = 2;
+        v.ingredients[0] = {ID_PLANKS, 6, -1};
+        v.ingredients[1] = {ID_BOOK, 3, -1};
+    }
+
+    // G7: Painting
+    {
+        RecipeGroup &g = cat1.groups[7];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Painting";
+        v.resultId = ID_PAINTING;
+        v.resultCount = 1;
+        v.requiresWorkbench = true;
+        v.gridWidth = 3; v.gridHeight = 3;
+        for (int i = 0; i < 9; ++i) v.gridItemIds[i] = (i == 4) ? ID_WOOL : ID_STICK;
+        v.ingredientCount = 2;
+        v.ingredients[0] = {ID_STICK, 8, -1};
+        v.ingredients[1] = {ID_WOOL, 1, -1};
+    }
+
+    // ==========================================
+    // TAB 2: Tools & Armor
+    // ==========================================
+    RecipeCategory &cat2 = s_categories[2];
+    cat2.name = "Tools & Armor";
+    cat2.iconItemId = ID_IRON_PICKAXE;
+    cat2.iconDamage = 0;
+    cat2.groupCount = 10;
+    auto setup5TierTool = [&](RecipeGroup &g, const char *toolNames[5], const int_t resIds[5],
+                              int_t s0, int_t s1, int_t s2, int_t s3, int_t s4, int_t s5, int_t s6, int_t s7, int_t s8,
+                              int_t matCount)
+    {
+        g.variantCount = 5;
+        const int_t mats[5] = {ID_PLANKS, ID_COBBLE, ID_IRON_INGOT, ID_DIAMOND, ID_GOLD_INGOT};
+        for (int i = 0; i < 5; ++i)
+        {
+            RecipeVariant &v = g.variants[i];
+            v.name = toolNames[i];
+            v.resultId = resIds[i];
+            v.resultCount = 1;
+            v.requiresWorkbench = true;
+            v.gridWidth = 3; v.gridHeight = 3;
+            const int_t templateGrid[9] = {s0, s1, s2, s3, s4, s5, s6, s7, s8};
+            for (int k = 0; k < 9; ++k)
+            {
+                if (templateGrid[k] == 1) v.gridItemIds[k] = mats[i];
+                else if (templateGrid[k] == 2) v.gridItemIds[k] = ID_STICK;
+                else v.gridItemIds[k] = 0;
+            }
+            v.ingredientCount = 2;
+            v.ingredients[0] = {mats[i], matCount, -1};
+            v.ingredients[1] = {ID_STICK, (s7 == 2 && s4 == 2) ? 2 : 1, -1};
+        }
+    };
+    auto setupArmor = [&](RecipeGroup &g, const char *names[4], const int_t resIds[4],
+                          int_t s0, int_t s1, int_t s2, int_t s3, int_t s4, int_t s5, int_t s6, int_t s7, int_t s8,
+                          int_t matCount)
+    {
+        g.variantCount = 4;
+        const int_t mats[4] = {ID_LEATHER, ID_IRON_INGOT, ID_DIAMOND, ID_GOLD_INGOT};
+        for (int i = 0; i < 4; ++i)
+        {
+            RecipeVariant &v = g.variants[i];
+            v.name = names[i];
+            v.resultId = resIds[i];
+            v.resultCount = 1;
+            v.requiresWorkbench = true;
+            v.gridWidth = 3; v.gridHeight = 3;
+            const int_t templateGrid[9] = {s0, s1, s2, s3, s4, s5, s6, s7, s8};
+            for (int k = 0; k < 9; ++k)
+                v.gridItemIds[k] = (templateGrid[k] == 1) ? mats[i] : 0;
+            v.ingredientCount = 1;
+            v.ingredients[0] = {mats[i], matCount, -1};
+        }
+    };
+    // G0: Pickaxes
+    {
+        const char *names[5] = {"Wooden Pickaxe", "Stone Pickaxe", "Iron Pickaxe", "Diamond Pickaxe", "Golden Pickaxe"};
+        const int_t res[5] = {ID_WOOD_PICKAXE, ID_STONE_PICKAXE, ID_IRON_PICKAXE, ID_DIAM_PICKAXE, ID_GOLD_PICKAXE};
+        setup5TierTool(cat2.groups[0], names, res, 1, 1, 1, 0, 2, 0, 0, 2, 0, 3);
+    }
+    // G1: Shovels
+    {
+        const char *names[5] = {"Wooden Shovel", "Stone Shovel", "Iron Shovel", "Diamond Shovel", "Golden Shovel"};
+        const int_t res[5] = {ID_WOOD_SHOVEL, ID_STONE_SHOVEL, ID_IRON_SHOVEL, ID_DIAM_SHOVEL, ID_GOLD_SHOVEL};
+        setup5TierTool(cat2.groups[1], names, res, 0, 1, 0, 0, 2, 0, 0, 2, 0, 1);
+    }
+    // G2: Axes
+    {
+        const char *names[5] = {"Wooden Axe", "Stone Axe", "Iron Axe", "Diamond Axe", "Golden Axe"};
+        const int_t res[5] = {ID_WOOD_AXE, ID_STONE_AXE, ID_IRON_AXE, ID_DIAM_AXE, ID_GOLD_AXE};
+        setup5TierTool(cat2.groups[2], names, res, 1, 1, 0, 1, 2, 0, 0, 2, 0, 3);
+    }
+    // G3: Hoes
+    {
+        const char *names[5] = {"Wooden Hoe", "Stone Hoe", "Iron Hoe", "Diamond Hoe", "Golden Hoe"};
+        const int_t res[5] = {ID_WOOD_HOE, ID_STONE_HOE, ID_IRON_HOE, ID_DIAM_HOE, ID_GOLD_HOE};
+        setup5TierTool(cat2.groups[3], names, res, 1, 1, 0, 0, 2, 0, 0, 2, 0, 2);
+    }
+    // G4: Swords
+    {
+        const char *names[5] = {"Wooden Sword", "Stone Sword", "Iron Sword", "Diamond Sword", "Golden Sword"};
+        const int_t res[5] = {ID_WOOD_SWORD, ID_STONE_SWORD, ID_IRON_SWORD, ID_DIAM_SWORD, ID_GOLD_SWORD};
+        setup5TierTool(cat2.groups[4], names, res, 0, 1, 0, 0, 1, 0, 0, 2, 0, 2);
+    }
+
+    // G5: Bow & Arrows (2 variants)
+    {
+        RecipeGroup &g = cat2.groups[5];
+        g.variantCount = 2;
+        // Bow
+        {
+            RecipeVariant &v = g.variants[0];
+            v.name = "Bow";
+            v.resultId = ID_BOW;
+            v.resultCount = 1;
+            v.requiresWorkbench = true;
+            v.gridWidth = 3; v.gridHeight = 3;
+            v.gridItemIds[0] = 0;        v.gridItemIds[1] = ID_STICK; v.gridItemIds[2] = ID_STRING;
+            v.gridItemIds[3] = ID_STICK; v.gridItemIds[4] = 0;        v.gridItemIds[5] = ID_STRING;
+            v.gridItemIds[6] = 0;        v.gridItemIds[7] = ID_STICK; v.gridItemIds[8] = ID_STRING;
+            v.ingredientCount = 2;
+            v.ingredients[0] = {ID_STICK, 3, -1};
+            v.ingredients[1] = {ID_STRING, 3, -1};
+        }
+        // Arrows
+        {
+            RecipeVariant &v = g.variants[1];
+            v.name = "Arrows";
+            v.resultId = ID_ARROW;
+            v.resultCount = 4;
+            v.requiresWorkbench = true;
+            v.gridWidth = 1; v.gridHeight = 3;
+            v.gridItemIds[0] = ID_FLINT;
+            v.gridItemIds[1] = ID_STICK;
+            v.gridItemIds[2] = ID_FEATHER;
+            v.ingredientCount = 3;
+            v.ingredients[0] = {ID_FLINT, 1, -1};
+            v.ingredients[1] = {ID_STICK, 1, -1};
+            v.ingredients[2] = {ID_FEATHER, 1, -1};
+        }
+    }
+
+
+    // G6: Helmets
+    {
+        const char *names[4] = {"Leather Cap", "Iron Helmet", "Diamond Helmet", "Golden Helmet"};
+        const int_t res[4] = {ID_LEATH_HELMET, ID_IRON_HELMET, ID_DIAM_HELMET, ID_GOLD_HELMET};
+        setupArmor(cat2.groups[6], names, res, 1, 1, 1, 1, 0, 1, 0, 0, 0, 5);
+    }
+    // G7: Chestplates
+    {
+        const char *names[4] = {"Leather Tunic", "Iron Chestplate", "Diamond Chestplate", "Golden Chestplate"};
+        const int_t res[4] = {ID_LEATH_CHEST, ID_IRON_CHEST, ID_DIAM_CHEST, ID_GOLD_CHEST};
+        setupArmor(cat2.groups[7], names, res, 1, 0, 1, 1, 1, 1, 1, 1, 1, 8);
+    }
+    // G8: Leggings
+    {
+        const char *names[4] = {"Leather Pants", "Iron Leggings", "Diamond Leggings", "Golden Leggings"};
+        const int_t res[4] = {ID_LEATH_LEGS, ID_IRON_LEGS, ID_DIAM_LEGS, ID_GOLD_LEGS};
+        setupArmor(cat2.groups[8], names, res, 1, 1, 1, 1, 0, 1, 1, 0, 1, 7);
+    }
+    // G9: Boots
+    {
+        const char *names[4] = {"Leather Boots", "Iron Boots", "Diamond Boots", "Golden Boots"};
+        const int_t res[4] = {ID_LEATH_BOOTS, ID_IRON_BOOTS, ID_DIAM_BOOTS, ID_GOLD_BOOTS};
+        setupArmor(cat2.groups[9], names, res, 0, 0, 0, 1, 0, 1, 1, 0, 1, 4);
+    }
+
+
+    // ==========================================
+    // TAB 3: Mechanisms
+    // ==========================================
+    RecipeCategory &cat3 = s_categories[3];
+    cat3.name = "Mechanisms";
+    cat3.iconItemId = ID_MINECART;
+    cat3.iconDamage = 0;
+    cat3.groupCount = 12;
+    // G0: Doors & Trapdoors (3 variants)
+    {
+        RecipeGroup &g = cat3.groups[0];
+        g.variantCount = 3;
+        // Wooden Door
+        {
+            RecipeVariant &v = g.variants[0];
+            v.name = "Wooden Door";
+            v.resultId = ID_WOOD_DOOR;
+            v.resultCount = 1;
+            v.requiresWorkbench = true;
+            v.gridWidth = 2; v.gridHeight = 3;
+            v.gridItemIds[0] = ID_PLANKS; v.gridItemIds[1] = ID_PLANKS;
+            v.gridItemIds[3] = ID_PLANKS; v.gridItemIds[4] = ID_PLANKS;
+            v.gridItemIds[6] = ID_PLANKS; v.gridItemIds[7] = ID_PLANKS;
+            v.ingredientCount = 1;
+            v.ingredients[0] = {ID_PLANKS, 6, -1};
+        }
+        // Iron Door
+        {
+            RecipeVariant &v = g.variants[1];
+            v.name = "Iron Door";
+            v.resultId = ID_IRON_DOOR;
+            v.resultCount = 1;
+            v.requiresWorkbench = true;
+            v.gridWidth = 2; v.gridHeight = 3;
+            v.gridItemIds[0] = ID_IRON_INGOT; v.gridItemIds[1] = ID_IRON_INGOT;
+            v.gridItemIds[3] = ID_IRON_INGOT; v.gridItemIds[4] = ID_IRON_INGOT;
+            v.gridItemIds[6] = ID_IRON_INGOT; v.gridItemIds[7] = ID_IRON_INGOT;
+            v.ingredientCount = 1;
+            v.ingredients[0] = {ID_IRON_INGOT, 6, -1};
+        }
+        // Trapdoor
+        {
+            RecipeVariant &v = g.variants[2];
+            v.name = "Trapdoor";
+            v.resultId = ID_TRAPDOOR;
+            v.resultCount = 2;
+            v.requiresWorkbench = true;
+            v.gridWidth = 3; v.gridHeight = 2;
+            for (int i = 0; i < 6; ++i) v.gridItemIds[i] = ID_PLANKS;
+            v.ingredientCount = 1;
+            v.ingredients[0] = {ID_PLANKS, 6, -1};
+        }
+    }
+
+    // G1: Pressure Plates (2 variants)
+    {
+        RecipeGroup &g = cat3.groups[1];
+        g.variantCount = 2;
+        // Stone Plate
+        {
+            RecipeVariant &v = g.variants[0];
+            v.name = "Stone Pressure Plate";
+            v.resultId = ID_PLATE_STONE;
+            v.resultCount = 1;
+            v.requiresWorkbench = false;
+            v.gridWidth = 2; v.gridHeight = 1;
+            v.gridItemIds[0] = ID_STONE; v.gridItemIds[1] = ID_STONE;
+            v.ingredientCount = 1;
+            v.ingredients[0] = {ID_STONE, 2, -1};
+        }
+        // Wood Plate
+        {
+            RecipeVariant &v = g.variants[1];
+            v.name = "Wooden Pressure Plate";
+            v.resultId = ID_PLATE_WOOD;
+            v.resultCount = 1;
+            v.requiresWorkbench = false;
+            v.gridWidth = 2; v.gridHeight = 1;
+            v.gridItemIds[0] = ID_PLANKS; v.gridItemIds[1] = ID_PLANKS;
+            v.ingredientCount = 1;
+            v.ingredients[0] = {ID_PLANKS, 2, -1};
+        }
+    }
+    // G2: Button
+    {
+        RecipeGroup &g = cat3.groups[2];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Button";
+        v.resultId = ID_BUTTON;
+        v.resultCount = 1;
+        v.requiresWorkbench = false;
+        v.gridWidth = 1; v.gridHeight = 2;
+        v.gridItemIds[0] = ID_STONE; v.gridItemIds[1] = ID_STONE;
+        v.ingredientCount = 1;
+        v.ingredients[0] = {ID_STONE, 2, -1};
+    }
+    // G3: Lever
+    {
+        RecipeGroup &g = cat3.groups[3];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Lever";
+        v.resultId = ID_LEVER;
+        v.resultCount = 1;
+        v.requiresWorkbench = false;
+        v.gridWidth = 1; v.gridHeight = 2;
+        v.gridItemIds[0] = ID_STICK; v.gridItemIds[1] = ID_COBBLE;
+        v.ingredientCount = 2;
+        v.ingredients[0] = {ID_STICK, 1, -1};
+        v.ingredients[1] = {ID_COBBLE, 1, -1};
+    }
+    // G4: Redstone Torch
+    {
+        RecipeGroup &g = cat3.groups[4];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Redstone Torch";
+        v.resultId = ID_RED_TORCH;
+        v.resultCount = 1;
+        v.requiresWorkbench = false;
+        v.gridWidth = 1; v.gridHeight = 2;
+        v.gridItemIds[0] = ID_REDSTONE; v.gridItemIds[1] = ID_STICK;
+        v.ingredientCount = 2;
+        v.ingredients[0] = {ID_REDSTONE, 1, -1};
+        v.ingredients[1] = {ID_STICK, 1, -1};
+    }
+    // G5: Redstone Repeater
+    {
+        RecipeGroup &g = cat3.groups[5];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Redstone Repeater";
+        v.resultId = ID_REPEATER;
+        v.resultCount = 1;
+        v.requiresWorkbench = true;
+        v.gridWidth = 3; v.gridHeight = 2;
+        v.gridItemIds[0] = ID_RED_TORCH; v.gridItemIds[1] = ID_REDSTONE; v.gridItemIds[2] = ID_RED_TORCH;
+        v.gridItemIds[3] = ID_STONE;     v.gridItemIds[4] = ID_STONE;    v.gridItemIds[5] = ID_STONE;
+        v.ingredientCount = 3;
+        v.ingredients[0] = {ID_RED_TORCH, 2, -1};
+        v.ingredients[1] = {ID_REDSTONE, 1, -1};
+        v.ingredients[2] = {ID_STONE, 3, -1};
+    }
+    // G6: Pistons (2 variants)
+    {
+        RecipeGroup &g = cat3.groups[6];
+        g.variantCount = 2;
+        // Piston
+        {
+            RecipeVariant &v = g.variants[0];
+            v.name = "Piston";
+            v.resultId = ID_PISTON;
+            v.resultCount = 1;
+            v.requiresWorkbench = true;
+            v.gridWidth = 3; v.gridHeight = 3;
+            v.gridItemIds[0] = ID_PLANKS; v.gridItemIds[1] = ID_PLANKS;     v.gridItemIds[2] = ID_PLANKS;
+            v.gridItemIds[3] = ID_COBBLE; v.gridItemIds[4] = ID_IRON_INGOT; v.gridItemIds[5] = ID_COBBLE;
+            v.gridItemIds[6] = ID_COBBLE; v.gridItemIds[7] = ID_REDSTONE;   v.gridItemIds[8] = ID_COBBLE;
+            v.ingredientCount = 4;
+            v.ingredients[0] = {ID_PLANKS, 3, -1};
+            v.ingredients[1] = {ID_COBBLE, 4, -1};
+            v.ingredients[2] = {ID_IRON_INGOT, 1, -1};
+            v.ingredients[3] = {ID_REDSTONE, 1, -1};
+        }
+        // Sticky Piston
+        {
+            RecipeVariant &v = g.variants[1];
+            v.name = "Sticky Piston";
+            v.resultId = ID_STICKY_PISTON;
+            v.resultCount = 1;
+            v.requiresWorkbench = false;
+            v.gridWidth = 1; v.gridHeight = 2;
+            v.gridItemIds[0] = ID_SLIMEBALL; v.gridItemIds[1] = ID_PISTON;
+            v.ingredientCount = 2;
+            v.ingredients[0] = {ID_SLIMEBALL, 1, -1};
+            v.ingredients[1] = {ID_PISTON, 1, -1};
+        }
+    }
+    // G7: Dispenser
+    {
+        RecipeGroup &g = cat3.groups[7];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Dispenser";
+        v.resultId = ID_DISPENSER;
+        v.resultCount = 1;
+        v.requiresWorkbench = true;
+        v.gridWidth = 3; v.gridHeight = 3;
+        v.gridItemIds[0] = ID_COBBLE; v.gridItemIds[1] = ID_COBBLE; v.gridItemIds[2] = ID_COBBLE;
+        v.gridItemIds[3] = ID_COBBLE; v.gridItemIds[4] = ID_BOW;    v.gridItemIds[5] = ID_COBBLE;
+        v.gridItemIds[6] = ID_COBBLE; v.gridItemIds[7] = ID_REDSTONE; v.gridItemIds[8] = ID_COBBLE;
+        v.ingredientCount = 3;
+        v.ingredients[0] = {ID_COBBLE, 7, -1};
+        v.ingredients[1] = {ID_BOW, 1, -1};
+        v.ingredients[2] = {ID_REDSTONE, 1, -1};
+    }
+    // G8: TNT
+    {
+        RecipeGroup &g = cat3.groups[8];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "TNT";
+        v.resultId = ID_TNT;
+        v.resultCount = 1;
+        v.requiresWorkbench = true;
+        v.gridWidth = 3; v.gridHeight = 3;
+        v.gridItemIds[0] = ID_GUNPOWDER; v.gridItemIds[1] = ID_SAND;      v.gridItemIds[2] = ID_GUNPOWDER;
+        v.gridItemIds[3] = ID_SAND;      v.gridItemIds[4] = ID_GUNPOWDER; v.gridItemIds[5] = ID_SAND;
+        v.gridItemIds[6] = ID_GUNPOWDER; v.gridItemIds[7] = ID_SAND;      v.gridItemIds[8] = ID_GUNPOWDER;
+        v.ingredientCount = 2;
+        v.ingredients[0] = {ID_GUNPOWDER, 5, -1};
+        v.ingredients[1] = {ID_SAND, 4, -1};
+    }
+    // G9: Note Block & Jukebox (2 variants)
+    {
+        RecipeGroup &g = cat3.groups[9];
+        g.variantCount = 2;
+        // Note Block
+        {
+            RecipeVariant &v = g.variants[0];
+            v.name = "Note Block";
+            v.resultId = ID_NOTEBLOCK;
+            v.resultCount = 1;
+            v.requiresWorkbench = true;
+            v.gridWidth = 3; v.gridHeight = 3;
+            for (int i = 0; i < 9; ++i) v.gridItemIds[i] = (i == 4) ? ID_REDSTONE : ID_PLANKS;
+            v.ingredientCount = 2;
+            v.ingredients[0] = {ID_PLANKS, 8, -1};
+            v.ingredients[1] = {ID_REDSTONE, 1, -1};
+        }
+        // Jukebox
+        {
+            RecipeVariant &v = g.variants[1];
+            v.name = "Jukebox";
+            v.resultId = ID_JUKEBOX;
+            v.resultCount = 1;
+            v.requiresWorkbench = true;
+            v.gridWidth = 3; v.gridHeight = 3;
+            for (int i = 0; i < 9; ++i) v.gridItemIds[i] = (i == 4) ? ID_DIAMOND : ID_PLANKS;
+            v.ingredientCount = 2;
+            v.ingredients[0] = {ID_PLANKS, 8, -1};
+            v.ingredients[1] = {ID_DIAMOND, 1, -1};
+        }
+    }
+
+        // G10: Rails (3 variants)
+    {
+        RecipeGroup &g = cat3.groups[10];
+        g.variantCount = 3;
+        // Standard Rail
+        {
+            RecipeVariant &v = g.variants[0];
+            v.name = "Rail";
+            v.resultId = ID_RAIL;
+            v.resultCount = 16;
+            v.requiresWorkbench = true;
+            v.gridWidth = 3; v.gridHeight = 3;
+            v.gridItemIds[0] = ID_IRON_INGOT; v.gridItemIds[2] = ID_IRON_INGOT;
+            v.gridItemIds[3] = ID_IRON_INGOT; v.gridItemIds[4] = ID_STICK; v.gridItemIds[5] = ID_IRON_INGOT;
+            v.gridItemIds[6] = ID_IRON_INGOT; v.gridItemIds[8] = ID_IRON_INGOT;
+            v.ingredientCount = 2;
+            v.ingredients[0] = {ID_IRON_INGOT, 6, -1};
+            v.ingredients[1] = {ID_STICK, 1, -1};
+        }
+        // Powered Rail
+        {
+            RecipeVariant &v = g.variants[1];
+            v.name = "Powered Rail";
+            v.resultId = ID_RAIL_POWERED;
+            v.resultCount = 6;
+            v.requiresWorkbench = true;
+            v.gridWidth = 3; v.gridHeight = 3;
+            v.gridItemIds[0] = ID_GOLD_INGOT; v.gridItemIds[2] = ID_GOLD_INGOT;
+            v.gridItemIds[3] = ID_GOLD_INGOT; v.gridItemIds[4] = ID_STICK; v.gridItemIds[5] = ID_GOLD_INGOT;
+            v.gridItemIds[6] = ID_GOLD_INGOT; v.gridItemIds[7] = ID_REDSTONE; v.gridItemIds[8] = ID_GOLD_INGOT;
+            v.ingredientCount = 3;
+            v.ingredients[0] = {ID_GOLD_INGOT, 6, -1};
+            v.ingredients[1] = {ID_STICK, 1, -1};
+            v.ingredients[2] = {ID_REDSTONE, 1, -1};
+        }
+        // Detector Rail
+        {
+            RecipeVariant &v = g.variants[2];
+            v.name = "Detector Rail";
+            v.resultId = ID_RAIL_DETECTOR;
+            v.resultCount = 6;
+            v.requiresWorkbench = true;
+            v.gridWidth = 3; v.gridHeight = 3;
+            v.gridItemIds[0] = ID_IRON_INGOT; v.gridItemIds[2] = ID_IRON_INGOT;
+            v.gridItemIds[3] = ID_IRON_INGOT; v.gridItemIds[4] = ID_PLATE_STONE; v.gridItemIds[5] = ID_IRON_INGOT;
+            v.gridItemIds[6] = ID_IRON_INGOT; v.gridItemIds[7] = ID_REDSTONE; v.gridItemIds[8] = ID_IRON_INGOT;
+            v.ingredientCount = 3;
+            v.ingredients[0] = {ID_IRON_INGOT, 6, -1};
+            v.ingredients[1] = {ID_PLATE_STONE, 1, -1};
+            v.ingredients[2] = {ID_REDSTONE, 1, -1};
+        }
+    }
+    // G11: Minecarts (3 variants)
+    {
+        RecipeGroup &g = cat3.groups[11];
+        g.variantCount = 3;
+        // Minecart
+        {
+            RecipeVariant &v = g.variants[0];
+            v.name = "Minecart";
+            v.resultId = ID_MINECART;
+            v.resultCount = 1;
+            v.requiresWorkbench = true;
+            v.gridWidth = 3; v.gridHeight = 2;
+            v.gridItemIds[0] = ID_IRON_INGOT; v.gridItemIds[2] = ID_IRON_INGOT;
+            v.gridItemIds[3] = ID_IRON_INGOT; v.gridItemIds[4] = ID_IRON_INGOT; v.gridItemIds[5] = ID_IRON_INGOT;
+            v.ingredientCount = 1;
+            v.ingredients[0] = {ID_IRON_INGOT, 5, -1};
+        }
+        // Powered Minecart
+        {
+            RecipeVariant &v = g.variants[1];
+            v.name = "Powered Minecart";
+            v.resultId = ID_CART_FURNACE;
+            v.resultCount = 1;
+            v.requiresWorkbench = false;
+            v.gridWidth = 1; v.gridHeight = 2;
+            v.gridItemIds[0] = ID_FURNACE; v.gridItemIds[1] = ID_MINECART;
+            v.ingredientCount = 2;
+            v.ingredients[0] = {ID_FURNACE, 1, -1};
+            v.ingredients[1] = {ID_MINECART, 1, -1};
+        }
+        // Storage Minecart
+        {
+            RecipeVariant &v = g.variants[2];
+            v.name = "Storage Minecart";
+            v.resultId = ID_CART_CHEST;
+            v.resultCount = 1;
+            v.requiresWorkbench = false;
+            v.gridWidth = 1; v.gridHeight = 2;
+            v.gridItemIds[0] = ID_CHEST; v.gridItemIds[1] = ID_MINECART;
+            v.ingredientCount = 2;
+            v.ingredients[0] = {ID_CHEST, 1, -1};
+            v.ingredients[1] = {ID_MINECART, 1, -1};
+        }
+    }
+
+    // ==========================================
+    // TAB 4: Food & Misc
+    // ==========================================
+    RecipeCategory &cat4 = s_categories[4];
+    cat4.name = "Food & Misc";
+    cat4.iconItemId = ID_APPLE_RED;
+    cat4.iconDamage = 0;
+    cat4.groupCount = 15;
+    // G0: Bread
+    {
+        RecipeGroup &g = cat4.groups[0];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Bread";
+        v.resultId = ID_BREAD;
+        v.resultCount = 1;
+        v.requiresWorkbench = true;
+        v.gridWidth = 3; v.gridHeight = 1;
+        v.gridItemIds[0] = ID_WHEAT; v.gridItemIds[1] = ID_WHEAT; v.gridItemIds[2] = ID_WHEAT;
+        v.ingredientCount = 1;
+        v.ingredients[0] = {ID_WHEAT, 3, -1};
+    }
+    // G1: Cake
+    {
+        RecipeGroup &g = cat4.groups[1];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Cake";
+        v.resultId = ID_CAKE;
+        v.resultCount = 1;
+        v.requiresWorkbench = true;
+        v.gridWidth = 3; v.gridHeight = 3;
+        v.gridItemIds[0] = ID_MILK;  v.gridItemIds[1] = ID_MILK;  v.gridItemIds[2] = ID_MILK;
+        v.gridItemIds[3] = ID_SUGAR; v.gridItemIds[4] = ID_EGG;   v.gridItemIds[5] = ID_SUGAR;
+        v.gridItemIds[6] = ID_WHEAT; v.gridItemIds[7] = ID_WHEAT; v.gridItemIds[8] = ID_WHEAT;
+        v.ingredientCount = 4;
+        v.ingredients[0] = {ID_MILK, 3, -1};
+        v.ingredients[1] = {ID_SUGAR, 2, -1};
+        v.ingredients[2] = {ID_EGG, 1, -1};
+        v.ingredients[3] = {ID_WHEAT, 3, -1};
+    }
+    // G2: Golden Apple
+    {
+        RecipeGroup &g = cat4.groups[2];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Golden Apple";
+        v.resultId = ID_GOLD_APPLE;
+        v.resultCount = 1;
+        v.requiresWorkbench = true;
+        v.gridWidth = 3; v.gridHeight = 3;
+        for (int i = 0; i < 9; ++i) v.gridItemIds[i] = (i == 4) ? ID_APPLE_RED : ID_GOLD_NUGGET;
+        v.ingredientCount = 2;
+        v.ingredients[0] = {ID_APPLE_RED, 1, -1};
+        v.ingredients[1] = {ID_GOLD_NUGGET, 8, -1};
+    }
+    // G3: Bowl & Mushroom Stew
+    {
+        RecipeGroup &g = cat4.groups[3];
+        g.variantCount = 2;
+        // Bowl
+        {
+            RecipeVariant &v = g.variants[0];
+            v.name = "Bowl";
+            v.resultId = ID_BOWL;
+            v.resultCount = 4;
+            v.requiresWorkbench = false;
+            v.gridWidth = 3; v.gridHeight = 2;
+            v.gridItemIds[0] = ID_PLANKS; v.gridItemIds[2] = ID_PLANKS;
+            v.gridItemIds[4] = ID_PLANKS;
+            v.ingredientCount = 1;
+            v.ingredients[0] = {ID_PLANKS, 3, -1};
+        }
+        // Stew
+        {
+            RecipeVariant &v = g.variants[1];
+            v.name = "Mushroom Stew";
+            v.resultId = ID_STEW;
+            v.resultCount = 1;
+            v.requiresWorkbench = false;
+            v.gridWidth = 2; v.gridHeight = 2;
+            v.gridItemIds[0] = ID_RED_MUSH;   v.gridItemIds[1] = ID_BROWN_MUSH;
+            v.gridItemIds[2] = ID_BOWL;
+            v.ingredientCount = 3;
+            v.ingredients[0] = {ID_BOWL, 1, -1};
+            v.ingredients[1] = {ID_RED_MUSH, 1, -1};
+            v.ingredients[2] = {ID_BROWN_MUSH, 1, -1};
+        }
+    }
+    // G4: Sugar
+    {
+        RecipeGroup &g = cat4.groups[4];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Sugar";
+        v.resultId = ID_SUGAR;
+        v.resultCount = 1;
+        v.requiresWorkbench = false;
+        v.gridWidth = 1; v.gridHeight = 1;
+        v.gridItemIds[0] = ID_REED;
+        v.ingredientCount = 1;
+        v.ingredients[0] = {ID_REED, 1, -1};
+    }
+    // G5: Flint and Steel (1 variant)
+    {
+        RecipeGroup &g = cat4.groups[5];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Flint and Steel";
+        v.resultId = ID_FLINT_STEEL;
+        v.resultCount = 1;
+        v.requiresWorkbench = false;
+        v.gridWidth = 2; v.gridHeight = 2;
+        v.gridItemIds[0] = ID_IRON_INGOT; v.gridItemIds[3] = ID_FLINT;
+        v.ingredientCount = 2;
+        v.ingredients[0] = {ID_IRON_INGOT, 1, -1};
+        v.ingredients[1] = {ID_FLINT, 1, -1};
+    }
+
+    // G6: Shears (1 variant)
+    {
+        RecipeGroup &g = cat4.groups[6];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Shears";
+        v.resultId = ID_SHEARS;
+        v.resultCount = 1;
+        v.requiresWorkbench = false;
+        v.gridWidth = 2; v.gridHeight = 2;
+        v.gridItemIds[0] = ID_IRON_INGOT; v.gridItemIds[3] = ID_IRON_INGOT;
+        v.ingredientCount = 1;
+        v.ingredients[0] = {ID_IRON_INGOT, 2, -1};
+    }
+
+    // G7: Fishing Rod (1 variant)
+    {
+        RecipeGroup &g = cat4.groups[7];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Fishing Rod";
+        v.resultId = ID_FISHING_ROD;
+        v.resultCount = 1;
+        v.requiresWorkbench = true;
+        v.gridWidth = 3; v.gridHeight = 3;
+        v.gridItemIds[2] = ID_STICK;
+        v.gridItemIds[4] = ID_STICK; v.gridItemIds[5] = ID_STRING;
+        v.gridItemIds[6] = ID_STICK; v.gridItemIds[8] = ID_STRING;
+        v.ingredientCount = 2;
+        v.ingredients[0] = {ID_STICK, 3, -1};
+        v.ingredients[1] = {ID_STRING, 2, -1};
+    }
+
+        // G8: Bucket
+    {
+        RecipeGroup &g = cat4.groups[8];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Bucket";
+        v.resultId = ID_BUCKET;
+        v.resultCount = 1;
+        v.requiresWorkbench = true;
+        v.gridWidth = 3; v.gridHeight = 2;
+        v.gridItemIds[0] = ID_IRON_INGOT; v.gridItemIds[2] = ID_IRON_INGOT;
+        v.gridItemIds[4] = ID_IRON_INGOT;
+        v.ingredientCount = 1;
+        v.ingredients[0] = {ID_IRON_INGOT, 3, -1};
+    }
+    // G9: Compass
+    {
+        RecipeGroup &g = cat4.groups[9];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Compass";
+        v.resultId = ID_COMPASS;
+        v.resultCount = 1;
+        v.requiresWorkbench = true;
+        v.gridWidth = 3; v.gridHeight = 3;
+        v.gridItemIds[1] = ID_IRON_INGOT;
+        v.gridItemIds[3] = ID_IRON_INGOT; v.gridItemIds[4] = ID_REDSTONE; v.gridItemIds[5] = ID_IRON_INGOT;
+        v.gridItemIds[7] = ID_IRON_INGOT;
+        v.ingredientCount = 2;
+        v.ingredients[0] = {ID_IRON_INGOT, 4, -1};
+        v.ingredients[1] = {ID_REDSTONE, 1, -1};
+    }
+    // G10: Clock
+    {
+        RecipeGroup &g = cat4.groups[10];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Clock";
+        v.resultId = ID_CLOCK;
+        v.resultCount = 1;
+        v.requiresWorkbench = true;
+        v.gridWidth = 3; v.gridHeight = 3;
+        v.gridItemIds[1] = ID_GOLD_INGOT;
+        v.gridItemIds[3] = ID_GOLD_INGOT; v.gridItemIds[4] = ID_REDSTONE; v.gridItemIds[5] = ID_GOLD_INGOT;
+        v.gridItemIds[7] = ID_GOLD_INGOT;
+        v.ingredientCount = 2;
+        v.ingredients[0] = {ID_GOLD_INGOT, 4, -1};
+        v.ingredients[1] = {ID_REDSTONE, 1, -1};
+    }
+    // G11: Map
+    {
+        RecipeGroup &g = cat4.groups[11];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Map";
+        v.resultId = ID_MAP;
+        v.resultCount = 1;
+        v.requiresWorkbench = true;
+        v.gridWidth = 3; v.gridHeight = 3;
+        for (int i = 0; i < 9; ++i) v.gridItemIds[i] = (i == 4) ? ID_COMPASS : ID_PAPER;
+        v.ingredientCount = 2;
+        v.ingredients[0] = {ID_PAPER, 8, -1};
+        v.ingredients[1] = {ID_COMPASS, 1, -1};
+    }
+    // G12: Paper & Book (2 variants)
+    {
+        RecipeGroup &g = cat4.groups[12];
+        g.variantCount = 2;
+        // Paper
+        {
+            RecipeVariant &v = g.variants[0];
+            v.name = "Paper";
+            v.resultId = ID_PAPER;
+            v.resultCount = 3;
+            v.requiresWorkbench = true;
+            v.gridWidth = 3; v.gridHeight = 1;
+            v.gridItemIds[0] = ID_REED; v.gridItemIds[1] = ID_REED; v.gridItemIds[2] = ID_REED;
+            v.ingredientCount = 1;
+            v.ingredients[0] = {ID_REED, 3, -1};
+        }
+        // Book
+        {
+            RecipeVariant &v = g.variants[1];
+            v.name = "Book";
+            v.resultId = ID_BOOK;
+            v.resultCount = 1;
+            v.requiresWorkbench = true;
+            v.gridWidth = 1; v.gridHeight = 3;
+            v.gridItemIds[0] = ID_PAPER; v.gridItemIds[1] = ID_PAPER; v.gridItemIds[2] = ID_PAPER;
+            v.ingredientCount = 1;
+            v.ingredients[0] = {ID_PAPER, 3, -1};
+        }
+    }
+    // G13: Boat
+    {
+        RecipeGroup &g = cat4.groups[13];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Boat";
+        v.resultId = ID_BOAT;
+        v.resultCount = 1;
+        v.requiresWorkbench = true;
+        v.gridWidth = 3; v.gridHeight = 2;
+        v.gridItemIds[0] = ID_PLANKS; v.gridItemIds[2] = ID_PLANKS;
+        v.gridItemIds[3] = ID_PLANKS; v.gridItemIds[4] = ID_PLANKS; v.gridItemIds[5] = ID_PLANKS;
+        v.ingredientCount = 1;
+        v.ingredients[0] = {ID_PLANKS, 5, -1};
+    }
+    // G14: Wool (1 variant)
+    {
+        RecipeGroup &g = cat4.groups[14];
+        g.variantCount = 1;
+        RecipeVariant &v = g.variants[0];
+        v.name = "Wool";
+        v.resultId = ID_WOOL;
+        v.resultCount = 1;
+        v.requiresWorkbench = false;
+        v.gridWidth = 2; v.gridHeight = 2;
+        for (int i = 0; i < 4; ++i) v.gridItemIds[i] = ID_STRING;
+        v.ingredientCount = 1;
+        v.ingredients[0] = {ID_STRING, 4, -1};
+    }
+
+        // Allocate persistent ItemStack objects for zero-allocation rendering
+    for (int c = 0; c < LegacyCraftingScreen::kCategoryCount; ++c)
     {
         RecipeCategory &cat = s_categories[c];
         if (cat.iconItemId > 0)
@@ -1482,7 +1489,7 @@ void initStaticRecipes()
     }
 
     // Precalculate s_categories2x2 with strict 2x2 non-workbench recipes
-    for (int c = 0; c < 4; ++c)
+    for (int c = 0; c < LegacyCraftingScreen::kCategoryCount; ++c)
     {
         RecipeCategory &srcCat = s_categories[c];
         RecipeCategory &dstCat = s_categories2x2[c];
@@ -1544,7 +1551,7 @@ LegacyCraftingScreen::LegacyCraftingScreen(InventoryPlayer *playerInventory, Wor
 {
     initStaticRecipes();
 
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < kCategoryCount; ++i)
     {
         selectedGroup[i] = 0;
         scrollOffset[i] = 0;
@@ -1610,7 +1617,7 @@ void LegacyCraftingScreen::ensureSelectionVisible()
 
 void LegacyCraftingScreen::changeCategory(int dir)
 {
-    selectedCategory = (selectedCategory + dir + 4) % 4;
+    selectedCategory = (selectedCategory + dir + kCategoryCount) % kCategoryCount;
     ensureSelectionVisible();
     if (mc != nullptr && mc->sndManager != nullptr)
         mc->sndManager->playSoundFX("random.click", 1.0f, 1.0f);
@@ -1859,10 +1866,10 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
     const RecipeCategory *cats = getCategoriesTable(is2x2Mode);
 
     // -------------------------------------------------------------
-    // Draw 4 Top Tabs
+    // Draw Top Tabs
     // -------------------------------------------------------------
     renderDisable(RenderCapability::Lighting);
-    for (int t = 0; t < 4; ++t)
+    for (int t = 0; t < kCategoryCount; ++t)
     {
         const int_t tabX = guiLeft + 16 + t * 32;
         const bool active = (t == selectedCategory);
@@ -1890,13 +1897,13 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
     // Shoulder button tab hints
 #if PLATFORM_PS2
     fontRenderer->drawStringWithShadow("L1", guiLeft + 4, guiTop + 9, 0xffe0e0e0);
-    fontRenderer->drawStringWithShadow("R1", guiLeft + 148, guiTop + 9, 0xffe0e0e0);
+    fontRenderer->drawStringWithShadow("R1", guiLeft + 180, guiTop + 9, 0xffe0e0e0);
 #elif PLATFORM_WII
     fontRenderer->drawStringWithShadow("L", guiLeft + 6, guiTop + 9, 0xffe0e0e0);
-    fontRenderer->drawStringWithShadow("R", guiLeft + 148, guiTop + 9, 0xffe0e0e0);
+    fontRenderer->drawStringWithShadow("R", guiLeft + 180, guiTop + 9, 0xffe0e0e0);
 #else
     fontRenderer->drawStringWithShadow("Q", guiLeft + 6, guiTop + 9, 0xffe0e0e0);
-    fontRenderer->drawStringWithShadow("E", guiLeft + 148, guiTop + 9, 0xffe0e0e0);
+    fontRenderer->drawStringWithShadow("E", guiLeft + 180, guiTop + 9, 0xffe0e0e0);
 #endif
 
     // Category title
@@ -2374,7 +2381,7 @@ void LegacyCraftingScreen::mouseClicked(int_t mouseX, int_t mouseY, int_t button
     GuiScreen::mouseClicked(mouseX, mouseY, button);
 
     // 1. Click on Category Tabs
-    for (int t = 0; t < 4; ++t)
+    for (int t = 0; t < kCategoryCount; ++t)
     {
         const int_t tabX = guiLeft + 16 + t * 32;
         const int_t tabY = guiTop + 4;

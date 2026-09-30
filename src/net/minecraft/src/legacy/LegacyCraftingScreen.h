@@ -11,6 +11,8 @@ class ItemStack;
 class LegacyCraftingScreen : public GuiScreen
 {
 public:
+    static const int_t kCategoryCount = 5;
+
     LegacyCraftingScreen(InventoryPlayer *playerInventory, World *world, int_t x, int_t y, int_t z,
                          bool is2x2 = false, EntityPlayer *player = nullptr);
     virtual ~LegacyCraftingScreen();
@@ -45,9 +47,9 @@ private:
     EntityPlayer *entityPlayer;
 
     int_t selectedCategory;
-    int_t selectedGroup[4];
-    int_t selectedVariant[4][32];
-    int_t scrollOffset[4];
+    int_t selectedGroup[kCategoryCount];
+    int_t selectedVariant[kCategoryCount][32];
+    int_t scrollOffset[kCategoryCount];
 
     int_t craftHoldTicks;
     bool ps2ActionReleaseLatch;

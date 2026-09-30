@@ -44,8 +44,8 @@ static const char *s_creativeTabNames[6] = {
     "Decoration",
     "Redstone & Transport",
     "Materials & Misc",
-    "Tools & Combat",
-    "All Items"
+    "Food & Alchemy",
+    "Tools, Weapons & Armor"
 };
 
 GuiContainerCreative::GuiContainerCreative(EntityPlayer *player)
@@ -268,12 +268,12 @@ void GuiContainerCreative::initGui()
         s_tabIcons[1] = new ItemStack(Block::plantRed);
     if (s_tabIcons[2] == nullptr && Item::redstone != nullptr)
         s_tabIcons[2] = new ItemStack(Item::redstone);
-    if (s_tabIcons[3] == nullptr && Item::bucketLava != nullptr)
-        s_tabIcons[3] = new ItemStack(Item::bucketLava);
-    if (s_tabIcons[4] == nullptr && Item::swordDiamond != nullptr)
-        s_tabIcons[4] = new ItemStack(Item::swordDiamond);
-    if (s_tabIcons[5] == nullptr && Block::chest != nullptr)
-        s_tabIcons[5] = new ItemStack(Block::chest);
+    if (s_tabIcons[3] == nullptr && Item::ingotIron != nullptr)
+        s_tabIcons[3] = new ItemStack(Item::ingotIron);
+    if (s_tabIcons[4] == nullptr && Item::appleRed != nullptr)
+        s_tabIcons[4] = new ItemStack(Item::appleRed);
+    if (s_tabIcons[5] == nullptr && Item::swordDiamond != nullptr)
+        s_tabIcons[5] = new ItemStack(Item::swordDiamond);
 }
 
 void GuiContainerCreative::setCategory(int_t tabIndex)
