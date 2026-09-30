@@ -3037,7 +3037,8 @@ void RenderGlobal::markRenderersInRange(int_t i, int_t j, int_t k, int_t l, int_
 				int_t k4 = (j4 * renderChunksTall + l3) * renderChunksWide + j3;
 				WorldRenderer *worldrenderer = worldRenderers[k4];
 
-				const bool isPrimarySection = (i3 == centerSectionX && k3 == centerSectionY && i4 == centerSectionZ);
+				const int sectionDiff = (i3 != centerSectionX ? 1 : 0) + (k3 != centerSectionY ? 1 : 0) + (i4 != centerSectionZ ? 1 : 0);
+				const bool isDirectFaceNeighbor = (sectionDiff <= 1);
 
 #if PLATFORM_PS2 || PLATFORM_WII
 				// Active builds must observe every mutation so deferred population
@@ -3062,9 +3063,10 @@ void RenderGlobal::markRenderersInRange(int_t i, int_t j, int_t k, int_t l, int_
 					// See the urgent lane in updateRenderers(). The edit scope is
 					// what separates it from a spring or a gravel vein settling at
 					// the same distance while terrain streams in.
-					// Only the primary section containing the player edit is marked urgent;
-					// neighbor sections are marked dirty for time-sliced streaming rebuild.
-					if (isPrimarySection &&
+					// Primary and direct face-adjacent neighbor sections are marked urgent
+					// so revealed neighbor faces update immediately without a 1-second delay,
+					// while edge/corner diagonal sections remain in the streaming queue.
+					if (isDirectFaceNeighbor &&
 					    PLATFORM_URGENT_MESH_DISTANCE_SQ > 0.0f && mc != nullptr &&
 					    mc->renderViewEntity != nullptr &&
 					    playerEdit &&
