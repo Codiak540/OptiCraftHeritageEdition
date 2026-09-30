@@ -47,6 +47,9 @@ private:
     EntityPlayer *entityPlayer;
 
     int_t selectedCategory;
+    int_t visibleCategoryIndices[kCategoryCount];
+    int_t visibleCategoryCount;
+    int_t selectedVisibleTab;
     int_t selectedGroup[kCategoryCount];
     int_t selectedVariant[kCategoryCount][32];
     int_t scrollOffset[kCategoryCount];
