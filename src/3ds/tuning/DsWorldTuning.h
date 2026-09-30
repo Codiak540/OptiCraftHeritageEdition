@@ -179,13 +179,15 @@
 #undef  PLATFORM_PLAYER_UPDATE_CHUNK_RANGE_BLOCKS
 #define PLATFORM_PLAYER_UPDATE_CHUNK_RANGE_BLOCKS  16
 
-// Touch-look scale, +10% over vanilla's mouse curve (owner call, 2026-09-28):
-// the bottom panel is this console's only camera control, so a slightly
-// hotter cube beats dragging long arcs across the 240-px panel height. The
-// alias slot is PlatformInputTuning.h (8.0f vanilla), next to the PS2's
-// direct-camera scale.
+// Touch-look scale (owner call): +10% (2026-09-28), then +30%
+// (2026-09-30, "aumenta la sensibilidad del panel tactil un 30%"), then
+// another +30% in the same sitting ("un 30% mas") -- the bottom panel is
+// this console's only camera control, so a hotter cube beats dragging long
+// arcs across the 240-px panel height. The alias slot is
+// PlatformInputTuning.h (8.0f vanilla), next to the PS2's direct-camera
+// scale.
 #undef  PLATFORM_MOUSE_CAMERA_SCALE
-#define PLATFORM_MOUSE_CAMERA_SCALE              8.8f
+#define PLATFORM_MOUSE_CAMERA_SCALE              14.87f
 
 // Lighting, the Wii values: the desktop queue is effectively unbounded
 // (1,000,000 jobs, 5-entry merge scan) and the flood fill is what makes a

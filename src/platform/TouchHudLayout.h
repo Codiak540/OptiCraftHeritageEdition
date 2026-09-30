@@ -34,16 +34,17 @@ constexpr int_t COORDS_BAR_TOP = 46;
 constexpr int_t COORDS_BAR_BOTTOM = 64;
 constexpr int_t COORDS_TEXT_Y = 48;
 
-// Map slot: the HELD MAP when one is equipped, otherwise the first filled
-// map in the inventory. 128 px is the map renderer's native frame.
-constexpr int_t MINIMAP_X = 4;
-constexpr int_t MINIMAP_Y = 50;
-constexpr int_t MINIMAP_SIZE = 128;
+// Map slot: the HELD MAP when one is equipped, otherwise ReiMinimap's
+// native renderer. Centred in the space between the panel's left edge and
+// the action buttons' column.
+constexpr int_t MINIMAP_X = 34;
+constexpr int_t MINIMAP_Y = 68;
+constexpr int_t MINIMAP_SIZE = 168;
 
 // Action buttons down the right edge, below the hotbar and the coordinates
 // strip: inventory (chest), crafting, pause.
-constexpr int_t BUTTON_X = 268;
-constexpr int_t BUTTON_W = 48;
+constexpr int_t BUTTON_X = 236;
+constexpr int_t BUTTON_W = 80;
 constexpr int_t BUTTON_H = 48;
 constexpr int_t BUTTON_INVENTORY_Y = 72;
 constexpr int_t BUTTON_CRAFTING_Y = 128;

@@ -5,9 +5,10 @@
 #include "platform/Profiler.h"
 #if defined(CTR_PLATFORM)
 #include "platform/TouchHudLayout.h"
-#include "MapItemRenderer.h"
-#include "ItemMap.h"
-#include "Item.h"
+#include "mods/reiminimap/ReiMinimap.h"
+#include "MovingObjectPosition.h"
+#include "pc/lwjgl/Mouse.h"
+#include "legacy/LegacyCraftingScreen.h"
 #endif
 #include "java/String.h"
 #include "java/Arithmetic.h"
@@ -994,18 +995,29 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 	{
 		const std::string level = std::to_string(mc->thePlayer->experienceLevel);
 		const int_t color = 0x80ff20;
-		const int_t x = (sw - fr->getStringWidth(level)) / 2;
 #if defined(CTR_PLATFORM)
-		// In the middle of the icon row under the XP strip.
-		const int_t y = 13;
+		// The level number rides the icon row at 2x the font -- the same
+		// size class as the coordinates strip -- keeping vanilla's outline
+		// (the +/-1 local units scale to +/-2 world pixels).
+		renderPushMatrix();
+		renderTranslate(static_cast<float_t>(sw) * 0.5f, 0.0f, 0.0f);
+		renderScale(2.0f, 2.0f, 1.0f);
+		const int_t lx = -fr->getStringWidth(level) / 2;
+		fr->drawString(level, lx + 1, 6, 0);
+		fr->drawString(level, lx - 1, 6, 0);
+		fr->drawString(level, lx, 6 + 1, 0);
+		fr->drawString(level, lx, 6 - 1, 0);
+		fr->drawString(level, lx, 6, color);
+		renderPopMatrix();
 #else
+		const int_t x = (sw - fr->getStringWidth(level)) / 2;
 		const int_t y = hudHeight - 35;
-#endif
 		fr->drawString(level, x + 1, y, 0);
 		fr->drawString(level, x - 1, y, 0);
 		fr->drawString(level, x, y + 1, 0);
 		fr->drawString(level, x, y - 1, 0);
 		fr->drawString(level, x, y, color);
+#endif
 	}
 
 	if (mc->gameSettings->showFps && !mc->gameSettings->showDebugInfo)
@@ -1142,6 +1154,20 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 #if defined(CTR_PLATFORM)
 void GuiIngame::renderGameplayBottomPanel(float_t partialTick)
 {
+	// The crafting button's request lands here (DsInput only flags it --
+	// a fixed key code reached OptiFine's zoom on real settings, and the
+	// crafting binding itself may be anything): open the Legacy crafting
+	// screen directly, in its 2x2 inventory mode, under exactly the
+	// conditions Minecraft's own key handler uses.
+	if (platformConsumeTouchCraftRequest() && mc->gameSettings != nullptr &&
+	    mc->gameSettings->legacyCrafting && mc->gameSettings->legacyUI &&
+	    mc->playerController != nullptr && !mc->playerController->isInCreativeMode())
+	{
+		mc->displayGuiScreen(new LegacyCraftingScreen(mc->thePlayer->inventory,
+			mc->theWorld, 0, 0, 0, true, mc->thePlayer));
+		return;
+	}
+
 	// Called inside renderBottomPanelBegin/End, whose projection is this
 	// panel's own 320x240 canvas -- every constant below is a panel pixel
 	// from TouchHudLayout.h. The rest of the panel stays the camera pad.
@@ -1153,6 +1179,24 @@ void GuiIngame::renderGameplayBottomPanel(float_t partialTick)
 	// quad -- only the z=0 rects showed, which is exactly how the bug
 	// looked on hardware.
 	zLevel = 0.0f;
+
+	// Pocket-Edition-style pad tap (see DsInput): a short touch on the
+	// camera pad. On a block it places/interacts (button 1); on air it
+	// swings/hits (button 0). The USE path (eat food, draw bow, block)
+	// is the HOLD gesture, not the tap — Pocket Edition's split.
+	if (platformConsumeTouchPadTap())
+	{
+		const bool targetsBlock = mc->objectMouseOver != nullptr &&
+			mc->objectMouseOver->entityHit == nullptr;
+		const int_t tapButton = targetsBlock ? 1 : 0;
+		lwjgl::Mouse::detail::pushButton(tapButton, true, 0, 0);
+		lwjgl::Mouse::detail::pushButton(tapButton, false, 0, 0);
+	}
+
+	// Tell DsInput what the crosshair targets so the pad-hold gesture can
+	// route break (button 0, on a block) vs use-item (button 1, on air —
+	// eat food, draw bow, block with sword).
+	platformSetCrosshairTargetsBlock(mc->objectMouseOver != nullptr);
 
 	// The classic menu backdrop: the dirt texture tiled at 32 px and
 	// darkened, the same surface GuiScreen::drawBackground lays under the
@@ -1206,7 +1250,9 @@ void GuiIngame::renderGameplayBottomPanel(float_t partialTick)
 
 	// Player coordinates, centred on a translucent black strip a little
 	// below the hotbar (the same strip style the title's "A Select" row
-	// uses), at 2x the UI font (owner call: +200%).
+	// uses), at 2x the UI font (owner call: +200%). The OptiCraft Options
+	// "Touch Coords" toggle hides the strip entirely.
+	if (mc->gameSettings == nullptr || mc->gameSettings->touchCoords)
 	{
 		const std::string coords = "X:"
 			+ std::to_string(MathHelper::floor_double(mc->thePlayer->posX)) + " Y:"
@@ -1222,61 +1268,27 @@ void GuiIngame::renderGameplayBottomPanel(float_t partialTick)
 		renderPopMatrix();
 	}
 
-	// Map slot: Minecraft's own map rendering (MapItemRenderer) -- the
-	// HELD map first, otherwise the first filled map anywhere in the
-	// inventory. The panel does not depend on the minimap mod, which is
-	// not registered on this setup (owner call).
+	// Map slot: ReiMinimap's renderer, driven natively (no mod registration,
+	// no mod menu — the class is compiled into the binary and called
+	// directly). The OptiCraft Options "Touch Map" toggle hides the slot.
+	if (mc->gameSettings == nullptr || mc->gameSettings->touchMap)
 	{
-		ItemStack *mapStack = nullptr;
-		ItemStack *held = inv->getStackInSlot(inv->currentItem);
-		if (held != nullptr && held->getItem() != nullptr && held->getItem() == Item::mapItem)
-			mapStack = held;
-		if (mapStack == nullptr)
-		{
-			for (int_t slot = 0; slot < inv->getSizeInventory() && mapStack == nullptr; ++slot)
-			{
-				ItemStack *stack = inv->getStackInSlot(slot);
-				if (stack != nullptr && stack->getItem() != nullptr && stack->getItem() == Item::mapItem)
-					mapStack = stack;
-			}
-		}
-		MapData *mapData = mapStack != nullptr && Item::mapItem != nullptr
-			? static_cast<ItemMap *>(Item::mapItem)->getMapData(mapStack, mc->theWorld)
-			: nullptr;
-
-		if (mapData != nullptr)
-		{
-			// MapItemRenderer draws its 128x128 frame at (0,0); lift it
-			// into the slot. The instance owns a texture and a colour
-			// buffer, so it is built once and kept.
-			static MapItemRenderer *heldMapRenderer = nullptr;
-			if (heldMapRenderer == nullptr)
-				heldMapRenderer = new MapItemRenderer(mc->fontRenderer, mc->gameSettings, mc->renderEngine);
-			renderPushMatrix();
-			renderTranslate(static_cast<float_t>(touchHud::MINIMAP_X), static_cast<float_t>(touchHud::MINIMAP_Y), 0.0f);
-			heldMapRenderer->renderMap(mc->thePlayer, mc->renderEngine, mapData);
-			renderPopMatrix();
-		}
-		else
-		{
-			// No map anywhere: an empty framed slot, so the layout reads
-			// the same as with one.
-			drawRect(touchHud::MINIMAP_X - 1, touchHud::MINIMAP_Y - 1,
-				touchHud::MINIMAP_X + touchHud::MINIMAP_SIZE + 1,
-				touchHud::MINIMAP_Y + touchHud::MINIMAP_SIZE + 1,
-				static_cast<int_t>(0xA0000000u));
-			drawRect(touchHud::MINIMAP_X - 1, touchHud::MINIMAP_Y - 1,
-				touchHud::MINIMAP_X + touchHud::MINIMAP_SIZE + 1, touchHud::MINIMAP_Y,
-				0xFF555555);
-			drawRect(touchHud::MINIMAP_X - 1, touchHud::MINIMAP_Y + touchHud::MINIMAP_SIZE,
-				touchHud::MINIMAP_X + touchHud::MINIMAP_SIZE + 1,
-				touchHud::MINIMAP_Y + touchHud::MINIMAP_SIZE + 1, 0xFF555555);
-			drawRect(touchHud::MINIMAP_X - 1, touchHud::MINIMAP_Y - 1, touchHud::MINIMAP_X,
-				touchHud::MINIMAP_Y + touchHud::MINIMAP_SIZE + 1, 0xFF555555);
-			drawRect(touchHud::MINIMAP_X + touchHud::MINIMAP_SIZE, touchHud::MINIMAP_Y - 1,
-				touchHud::MINIMAP_X + touchHud::MINIMAP_SIZE + 1,
-				touchHud::MINIMAP_Y + touchHud::MINIMAP_SIZE + 1, 0xFF555555);
-		}
+		ReiMinimap &minimap = ReiMinimap::getInstance();
+		minimap.init(mc);
+		minimap.setEnabled(true);
+		minimap.update();
+		// ReiMinimap anchors its render at (screenWidth-64-6, 6). Pass a
+		// fake screenWidth of 70 so the map lands at (0, 6) in local
+		// space, then translate + scale into the slot. The 64 px map
+		// stretches to the slot's full size; the cardinal-direction
+		// labels and the border scale with it.
+		const float_t mapScale = static_cast<float_t>(touchHud::MINIMAP_SIZE) / 64.0f;
+		renderPushMatrix();
+		renderTranslate(static_cast<float_t>(touchHud::MINIMAP_X),
+			static_cast<float_t>(touchHud::MINIMAP_Y) - 6.0f * mapScale, 0.0f);
+		renderScale(mapScale, mapScale, 1.0f);
+		minimap.render(this, 70, touchHud::PANEL_HEIGHT, partialTick);
+		renderPopMatrix();
 	}
 
 	// The hotbar's item icons: the same path the containers use, centred
@@ -1293,7 +1305,10 @@ void GuiIngame::renderGameplayBottomPanel(float_t partialTick)
 	// Action buttons down the right edge: inventory (chest front), crafting
 	// (workbench top), pause (procedural bars).
 	drawTouchHudButton(touchHud::BUTTON_INVENTORY_Y, "/terrain.png", 27);
-	drawTouchHudButton(touchHud::BUTTON_CRAFTING_Y, "/terrain.png", 43);
+	// Creative cannot craft (Minecraft's own key handler refuses the
+	// screen there), so the button hides with the mode.
+	if (mc->playerController == nullptr || !mc->playerController->isInCreativeMode())
+		drawTouchHudButton(touchHud::BUTTON_CRAFTING_Y, "/terrain.png", 43);
 	drawTouchHudButton(touchHud::BUTTON_PAUSE_Y, nullptr, 0);
 }
 

@@ -362,10 +362,6 @@ GPU_CULLMODE picaCullMode(RenderFace face)
 
 // CPU-side start of the current frame, for endFrame()'s 60 fps VBlank hold.
 static s64 s_frameStartMs = 0;
-// How long the last C3D_FrameBegin(C3D_FRAME_SYNCDRAW) blocked waiting for
-// the GPU's previous queue. Non-trivial here means the GPU is the pacer
-// and endFrame()'s VBlank hold must stand down (see there).
-static s64 s_lastSyncWaitMs = 0;
 
 void endFrame()
 {
@@ -390,15 +386,18 @@ void endFrame()
 	C3D_FrameEnd(0);
 	// 60 fps cap: nothing else paces the loop on the LCD refresh. A frame
 	// whose CPU side finished early is held until the next VBlank --
-	// without it the light scenes (the menus) submit far past 60 fps.
-	// A frame that already overran the refresh is NOT delayed further, so
-	// a dip to e.g. 45 fps is not forced onto the 30 fps ladder.
-	// The hold also stands down whenever the last SYNCDRAW had to wait for
-	// the GPU: when the GPU is the pacer, a VBlank wait here stacks with
-	// the next FrameBegin's queue wait and halves the rate -- the 30 fps
-	// regression the emulator showed. Only a CPU that out-ran an idle GPU
-	// gets held.
-	if (s_lastSyncWaitMs <= 2 && s_frameStartMs != 0 && osGetTime() - s_frameStartMs < 15)
+	// without it the light scenes (the menus) submit far past 60 fps, and
+	// gameplay free-ran at the serialized CPU+GPU rate instead of settling
+	// on the refresh. Edge-aligned submits are what make the steady state
+	// work: after a hold, the next SYNCDRAW only ever waits for the GPU
+	// tail that crossed the edge, so holding is exactly what KEEPS the
+	// pipeline at 60 whenever the per-frame budget fits one refresh --
+	// standing the hold down when SYNCDRAW had waited (the old guard)
+	// disabled the cap precisely where the work was heaviest. A frame
+	// whose CPU side already overran the refresh is NOT delayed further
+	// (no forced ladder); one whose total work genuinely exceeds a refresh
+	// simply presents on every other VBlank.
+	if (s_frameStartMs != 0 && osGetTime() - s_frameStartMs < 15)
 		gspWaitForVBlank();
 	s_inFrame = false;
 	s_boundTarget = nullptr;
@@ -412,10 +411,8 @@ void frameBegin()
 {
 	if (s_inFrame || s_target == nullptr)
 		return;
-	const s64 syncStart = osGetTime();
 	if (!C3D_FrameBegin(C3D_FRAME_SYNCDRAW))
 		return;
-	s_lastSyncWaitMs = osGetTime() - syncStart;
 	s_frameStartMs = osGetTime();
 	if (!C3D_FrameDrawOn(s_target))
 	{

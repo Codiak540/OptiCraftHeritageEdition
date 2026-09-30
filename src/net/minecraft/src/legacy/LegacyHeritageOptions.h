@@ -36,5 +36,7 @@ private:
     LegacyOptionCheckbox *alternativeControlsCheckbox;
 #if defined(CTR_PLATFORM)
     LegacyOptionCheckbox *faceCameraCheckbox;
+    LegacyOptionCheckbox *touchMapCheckbox;
+    LegacyOptionCheckbox *touchCoordsCheckbox;
 #endif
 };

@@ -80,6 +80,20 @@
 #include <cmath>
 #include <cstdio>
 
+// The gameplay touch-HUD crafting button's open-request (consumed via
+// platformConsumeTouchCraftRequest by the game side): the action opens a
+// screen, so no key code is involved at all -- a fixed code hit OptiFine's
+// zoom, and the user's crafting binding may be anything. File scope on
+// purpose: InputBackend_3DS externs it from outside the anonymous namespace
+// below.
+bool g_touchCraftRequested = false;
+
+// The gameplay pad's Pocket-Edition tap request (consumed via
+// platformConsumeTouchPadTap by the game side, which turns it into place or
+// swing by what the crosshair targets). File scope like the craft flag:
+// InputBackend_3DS externs it.
+bool g_touchPadTapRequested = false;
+
 namespace
 {
 // Top-screen geometry remembered by dsInputInit(): touch arrives in panel
@@ -128,12 +142,18 @@ void pressTouchHudWidget(touchHud::WidgetHit hit)
 		key = lwjgl::Keyboard::KEY_1 + hit.slot;
 		break;
 	case touchHud::Widget::Inventory:
-	case touchHud::Widget::Crafting:
 		// The 3DS inventory binding rides the pad's Y-button code (the
 		// same code the physical Y pushes through the gameplay channel);
 		// KEY_E only reached a desktop binding nobody re-set.
 		key = DS_KEY_Y;
 		break;
+	case touchHud::Widget::Crafting:
+		// Handled on the game side (GuiIngame opens the legacy crafting
+		// screen directly through platformConsumeTouchCraftRequest): a
+		// fixed key code reached OptiFine's zoom on real settings, and the
+		// crafting binding itself may be anything.
+		g_touchCraftRequested = true;
+		return;
 	case touchHud::Widget::Pause:
 		key = lwjgl::Keyboard::KEY_ESCAPE;
 		break;
@@ -163,6 +183,20 @@ bool g_prevTouchDown = false;
 // restart the pointer publish as a fresh contact rather than difference
 // against the stale pre-widget sample.
 bool g_prevTouchOnWidget = false;
+// True while the CURRENT contact began on a gameplay touch-HUD widget:
+// that contact is what opens the widget's screen (craft, inventory,
+// pause), and while it stays down it must not also become the new menu's
+// first phantom click at the button position.
+bool g_contactStartedOnWidget = false;
+// Pocket-Edition-style pad gestures (gameplay, non-widget contacts only):
+// a short stationary touch taps (see g_touchPadTapRequested), a longer
+// stationary hold breaks (button 0 held while g_padBreakActive), and
+// moving the contact turns it back into the camera drag it always was.
+s64 g_padContactStartMs = 0;
+int g_padStartX = 0;
+int g_padStartY = 0;
+bool g_padTapArmed = false;
+bool g_padBreakActive = false;
 int g_prevTouchX = 0;
 int g_prevTouchY = 0;
 
@@ -531,10 +565,16 @@ void updateGameplay(u32 keys, bool touchDown)
 
 	// Mouse buttons are a level. `touchDown` here is the MENU pointer click
 	// (see dsInputPoll): gameplay never passes it, so button 0 in game is
-	// the trigger channel alone and any hold order between L and a finger
-	// on the panel cannot release one with the other.
-	const bool want0 = touchDown || (active & GP_ATTACK) != 0;
-	const bool want1 = (active & GP_USE) != 0;
+	// the trigger channel and the pad's Pocket-Edition hold alone, and any
+	// hold order between L and a finger on the panel cannot release one
+	// with the other. The pad hold routes by what the crosshair targets
+	// (platformCrosshairTargetsBlock, updated by GuiIngame each frame):
+	// a block breaks (button 0), air uses the held item (button 1 -- eat
+	// food, draw bow, block with sword).
+	const bool padHoldOnBlock = g_padBreakActive && platformCrosshairTargetsBlock();
+	const bool padHoldOnAir = g_padBreakActive && !platformCrosshairTargetsBlock();
+	const bool want0 = touchDown || (active & GP_ATTACK) != 0 || padHoldOnBlock;
+	const bool want1 = (active & GP_USE) != 0 || padHoldOnAir;
 	if (want0 != g_prevBtn0)
 	{
 		lwjgl::Mouse::detail::pushButton(0, want0, x, y);
@@ -872,6 +912,39 @@ void dsInputPoll(bool inMenu)
 			// Sliding off a widget (or never touching one): any latched
 			// widget key comes up so the camera pad can take over.
 			releaseTouchHudWidget();
+
+			// Pocket-Edition-style pad gestures (gameplay, non-widget
+			// contacts only): a stationary hold starts breaking (button 0
+			// held until lift; the aim can keep adjusting while it runs),
+			// a drag before that threshold is the camera alone, and a
+			// short stationary contact stays armed as a tap whose verdict
+			// the lift decides (the game side turns it into place or
+			// swing from the crosshair target).
+			if (!g_inMenu && !typing)
+			{
+				if (!g_prevTouchDown || g_prevTextExclusive)
+				{
+					g_padContactStartMs = osGetTime();
+					g_padStartX = static_cast<int>(touch.px);
+					g_padStartY = static_cast<int>(touch.py);
+					g_padTapArmed = true;
+					g_padBreakActive = false;
+				}
+				const int moveX = static_cast<int>(touch.px) - g_padStartX;
+				const int moveY = static_cast<int>(touch.py) - g_padStartY;
+				if (g_padTapArmed &&
+				    (moveX > 12 || -moveX > 12 || moveY > 12 || -moveY > 12))
+				{
+					g_padTapArmed = false;
+					g_padBreakActive = false;
+				}
+				if (g_padTapArmed && !g_padBreakActive &&
+				    osGetTime() - g_padContactStartMs >= 180)
+				{
+					g_padBreakActive = true;
+				}
+			}
+
 			// X: 320-wide panel -> top-screen width. Y: both screens are 240
 			// tall, so it needs no scaling; clamp against the stored height
 			// anyway so the pointer can never land outside the GUI regardless
@@ -913,9 +986,25 @@ void dsInputPoll(bool inMenu)
 		// The finger lifting off a widget ends its action: the latched key
 		// comes up here -- a hold on the hotbar selects once, not forever.
 		releaseTouchHudWidget();
+		// The pad gesture's verdict on lift: a short stationary contact
+		// taps (the game side decides place vs swing); anything longer or
+		// dragged already acted, or was the camera all along.
+		if (!g_inMenu && !typing && g_padTapArmed &&
+		    osGetTime() - g_padContactStartMs < 180)
+			g_touchPadTapRequested = true;
+		g_padTapArmed = false;
+		g_padBreakActive = false;
 	}
+	const bool newContact = !g_prevTouchDown || g_prevTextExclusive;
 	g_prevTouchDown = touchDown;
 	g_prevTouchOnWidget = widgetContact;
+	// A fresh contact remembers whether it began on a touch-HUD widget:
+	// that contact is what opens the widget's screen, and its held finger
+	// must not double as the new menu's first click -- the crafting screen
+	// entered with a phantom grab at the button position that way, and
+	// every item move after it fought the invisible grabbed stack.
+	if (newContact)
+		g_contactStartedOnWidget = widgetContact;
 	g_prevTouchX = g_state.pointerX;
 	g_prevTouchY = g_state.pointerY;
 
@@ -958,8 +1047,11 @@ void dsInputPoll(bool inMenu)
 	// finger is a click only where there is something to click: in menus it
 	// IS the pointer, but in gameplay the triggers own both buttons and
 	// touch is the camera alone -- dragging the panel must not swing the
-	// pickaxe. Text entry keeps its own exclusion either way.
-	updateGameplay(keys, g_inMenu && touchDown && !typing);
+	// pickaxe. Text entry keeps its own exclusion either way. And the
+	// contact that OPENED a menu through a touch-HUD widget never clicks
+	// inside it: the held finger lands where the button was, not where the
+	// user meant to act.
+	updateGameplay(keys, g_inMenu && touchDown && !typing && !g_contactStartedOnWidget);
 
 	// Container navigation still runs its transition detector: an escape
 	// key that was already down when a container opened (pressed in the menu

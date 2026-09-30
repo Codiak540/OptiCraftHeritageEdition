@@ -33,6 +33,10 @@ constexpr int_t BUTTON_LEGACY_CREATIVE = 208;
 // on the 3DS, where it remaps gameplay controls; on the other platforms the
 // diamond already has dedicated actions and the field is meaningless.
 constexpr int_t BUTTON_FACE_CAMERA = 209;
+// The 3DS dual-screen HUD options below it: the touch map slot and the
+// coordinates strip.
+constexpr int_t BUTTON_TOUCH_MAP = 210;
+constexpr int_t BUTTON_TOUCH_COORDS = 211;
 #endif
 }
 
@@ -77,8 +81,13 @@ void GuiOptiCraftOptions::initGui()
 	by += 24;
 
 #if defined(CTR_PLATFORM)
-	controlList.push_back(new GuiButton(BUTTON_FACE_CAMERA, width / 2 - 100, by,
+	controlList.push_back(new GuiSmallButton(BUTTON_FACE_CAMERA, width / 2 - 155, by,
 		uiText("Face-Button Camera: ") + std::string(settings->faceButtonCamera ? uiText("ON") : uiText("OFF"))));
+	by += 24;
+	controlList.push_back(new GuiSmallButton(BUTTON_TOUCH_MAP, width / 2 - 155, by,
+		uiText("Touch Map: ") + std::string(settings->touchMap ? uiText("ON") : uiText("OFF"))));
+	controlList.push_back(new GuiSmallButton(BUTTON_TOUCH_COORDS, width / 2 + 5, by,
+		uiText("Touch Coords: ") + std::string(settings->touchCoords ? uiText("ON") : uiText("OFF"))));
 	by += 24;
 #endif
 
@@ -239,6 +248,22 @@ void GuiOptiCraftOptions::actionPerformed(GuiButton *button)
 		settings->setFaceButtonCamera(!settings->faceButtonCamera);
 		button->displayString = uiText("Face-Button Camera: ") +
 			std::string(settings->faceButtonCamera ? uiText("ON") : uiText("OFF"));
+		return;
+	}
+	if (button->id == BUTTON_TOUCH_MAP)
+	{
+		settings->touchMap = !settings->touchMap;
+		button->displayString = uiText("Touch Map: ") +
+			std::string(settings->touchMap ? uiText("ON") : uiText("OFF"));
+		settings->saveOptions();
+		return;
+	}
+	if (button->id == BUTTON_TOUCH_COORDS)
+	{
+		settings->touchCoords = !settings->touchCoords;
+		button->displayString = uiText("Touch Coords: ") +
+			std::string(settings->touchCoords ? uiText("ON") : uiText("OFF"));
+		settings->saveOptions();
 		return;
 	}
 #endif

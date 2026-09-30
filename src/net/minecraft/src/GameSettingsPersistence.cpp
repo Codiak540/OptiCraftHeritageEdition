@@ -202,6 +202,10 @@ void GameSettings::loadOptions()
 					alternativeControllerLayout = value == "true";
 				if (key == "faceButtonCamera")
 					faceButtonCamera = value == "true";
+				if (key == "touchMap")
+					touchMap = value == "true";
+				if (key == "touchCoords")
+					touchCoords = value == "true";
 				if (key == "controllerDeadzone" || key == "wiiStickDeadzone")
 					controllerDeadzone = Config::limit(parseFloat(value), 0.05f, 0.35f);
 				platformGameSettingsLoadOption(*this, key, value);
@@ -417,7 +421,7 @@ void GameSettings::saveOptions()
 		"legacyLook", "legacyCrafting", "legacyCreative", "legacyGuiScaleRestore",
 		"alternativeControllerLayout", "wiiAlternativeControls", "controllerDeadzone", "wiiStickDeadzone",
 #if defined(CTR_PLATFORM)
-		"faceButtonCamera",
+		"faceButtonCamera", "touchMap", "touchCoords",
 #endif
 		"ofFogFancy", "ofFogOff", "ofFogStart", "ofLoadFar", "ofPreloadedChunks", "ofOcclusionFancy",
 		"ofSmoothFps", "ofSmoothInput", "ofBrightness", "ofAoLevel", "ofClouds",
@@ -502,6 +506,8 @@ void GameSettings::saveOptions()
 	printwriter << "controllerDeadzone:" << controllerDeadzone << "\n";
 #if defined(CTR_PLATFORM)
 	printwriter << "faceButtonCamera:" << (faceButtonCamera ? "true" : "false") << "\n";
+	printwriter << "touchMap:" << (touchMap ? "true" : "false") << "\n";
+	printwriter << "touchCoords:" << (touchCoords ? "true" : "false") << "\n";
 #endif
 #ifndef PS2_PLATFORM
 	platformGameSettingsWriteOptions(*this, printwriter);

@@ -147,7 +147,13 @@ void GameSettings::setDefaults()
     legacyCrafting = true;
     legacyCreative = true;
     alternativeControllerLayout = false;
-    faceButtonCamera = false;
+    // On by default (owner call, 2026-09-30): the face-button camera is the
+    // 3DS's second camera control and the dual-screen HUD assumes it. An
+    // options.txt that already persists "faceButtonCamera:false" keeps the
+    // old value until the toggle flips it once.
+    faceButtonCamera = true;
+    touchMap = true;
+    touchCoords = true;
     controllerDeadzone = 0.20f;
     wiiDeflicker = true;
     widescreen = ConsoleAspectRatio::getDefaultWidescreen();

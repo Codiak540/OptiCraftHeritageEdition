@@ -190,10 +190,17 @@ void GuiSkinSelector::initGui()
 
     if (!isPlayer2Skin)
     {
+#if defined(CTR_PLATFORM)
+        // The dual-screen setup is one player at a time: the 2nd-player skin
+        // picker is a splitscreen concept and hides here (owner call). The
+        // null pointer keeps the screen's P2 paths on their dead branch.
+        buttonPlayer2Skin = nullptr;
+#else
         std::string p2BtnText = isEs ? "Skin 2do Jugador" : "Choose 2nd Player Skin";
         buttonPlayer2Skin = new GuiButton(BUTTON_ID_PLAYER2, p2BtnX, btnY, p2BtnWidth, p2BtnHeight, p2BtnText);
         buttonPlayer2Skin->enabled = true;
         controlList.push_back(buttonPlayer2Skin);
+#endif
     }
     else
     {

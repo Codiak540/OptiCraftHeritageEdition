@@ -36,8 +36,10 @@ constexpr int_t BUTTON_LEGACY_CREATIVE = 609;
 #if defined(CTR_PLATFORM)
 // The face-button camera toggle lives in both options screens (this legacy
 // one is the screen the 3DS actually shows; GuiOptiCraftOptions is the
-// non-legacy twin).
+// non-legacy twin). The three dual-screen HUD toggles below it too.
 constexpr int_t BUTTON_FACE_CAMERA = 610;
+constexpr int_t BUTTON_TOUCH_MAP = 611;
+constexpr int_t BUTTON_TOUCH_COORDS = 612;
 #endif
 
 }
@@ -48,7 +50,7 @@ LegacyHeritageOptions::LegacyHeritageOptions(GuiScreen *parent, GameSettings *se
       legacyLookCheckbox(nullptr), legacyCraftingCheckbox(nullptr), legacyCreativeCheckbox(nullptr),
       alternativeControlsCheckbox(nullptr)
 #if defined(CTR_PLATFORM)
-      , faceCameraCheckbox(nullptr)
+      , faceCameraCheckbox(nullptr), touchMapCheckbox(nullptr), touchCoordsCheckbox(nullptr)
 #endif
 {
 }
@@ -72,6 +74,8 @@ void LegacyHeritageOptions::initGui()
     ++rowCount;
 #endif
 #if defined(CTR_PLATFORM)
+    // Face-Button Camera at the bottom (full width, one extra row). Touch
+    // Map and Touch Coords share rows with the legacy options above.
     ++rowCount;
 #endif
 #if PLATFORM_HAS_CONTROLLER_CALIBRATION
@@ -96,6 +100,14 @@ void LegacyHeritageOptions::initGui()
         std::max<int_t>(1, w - nameFieldInset * 2), h));
     row += 2;
 
+#if defined(CTR_PLATFORM)
+    // Touch Map and Touch Coords share rows with the legacy options in the
+    // first column (no gap): Touch Map pairs with Legacy UI, Touch Coords
+    // with Legacy Look. Face-Button Camera goes at the bottom, full width.
+    constexpr int_t PAIR_GAP = 16;
+    const int_t colW = std::max<int_t>(48, (w - PAIR_GAP) / 2);
+#endif
+
 #if PLATFORM_HAS_ASPECT_RATIO_OPTION
     controlList.push_back(new LegacyGuiButton(BUTTON_ASPECT_RATIO, x, legacyLayout.rowY(row++), w, h,
         settings->getKeyBinding(EnumOptions::ASPECT_RATIO)));
@@ -106,13 +118,25 @@ void LegacyHeritageOptions::initGui()
         settings->getKeyBinding(EnumOptions::SPLITSCREEN_LAYOUT)));
 #endif
 
-    legacyUiCheckbox = new LegacyOptionCheckbox(BUTTON_LEGACY_UI, x, legacyLayout.rowY(row++), w, h,
+    legacyUiCheckbox = new LegacyOptionCheckbox(BUTTON_LEGACY_UI, x, legacyLayout.rowY(row), colW, h,
         uiText("Legacy UI"), settings->legacyUI);
     controlList.push_back(legacyUiCheckbox);
+#if defined(CTR_PLATFORM)
+    touchMapCheckbox = new LegacyOptionCheckbox(BUTTON_TOUCH_MAP, x + colW + PAIR_GAP,
+        legacyLayout.rowY(row), colW, h, uiText("Touch Map"), settings->touchMap);
+    controlList.push_back(touchMapCheckbox);
+#endif
+    ++row;
 
-    legacyLookCheckbox = new LegacyOptionCheckbox(BUTTON_LEGACY_LOOK, x, legacyLayout.rowY(row++), w, h,
+    legacyLookCheckbox = new LegacyOptionCheckbox(BUTTON_LEGACY_LOOK, x, legacyLayout.rowY(row), colW, h,
         uiText("Legacy Look"), settings->legacyLook);
     controlList.push_back(legacyLookCheckbox);
+#if defined(CTR_PLATFORM)
+    touchCoordsCheckbox = new LegacyOptionCheckbox(BUTTON_TOUCH_COORDS, x + colW + PAIR_GAP,
+        legacyLayout.rowY(row), colW, h, uiText("Touch Coords"), settings->touchCoords);
+    controlList.push_back(touchCoordsCheckbox);
+#endif
+    ++row;
 
     legacyCraftingCheckbox = new LegacyOptionCheckbox(BUTTON_LEGACY_CRAFTING, x, legacyLayout.rowY(row++), w, h,
         uiText("Legacy Crafting"), settings->legacyCrafting);
@@ -282,6 +306,22 @@ void LegacyHeritageOptions::actionPerformed(GuiButton *button)
         settings->setFaceButtonCamera(!settings->faceButtonCamera);
         if (faceCameraCheckbox != nullptr)
             faceCameraCheckbox->setChecked(settings->faceButtonCamera);
+        return;
+    }
+    if (button->id == BUTTON_TOUCH_MAP)
+    {
+        settings->touchMap = !settings->touchMap;
+        if (touchMapCheckbox != nullptr)
+            touchMapCheckbox->setChecked(settings->touchMap);
+        settings->saveOptions();
+        return;
+    }
+    if (button->id == BUTTON_TOUCH_COORDS)
+    {
+        settings->touchCoords = !settings->touchCoords;
+        if (touchCoordsCheckbox != nullptr)
+            touchCoordsCheckbox->setChecked(settings->touchCoords);
+        settings->saveOptions();
         return;
     }
 #endif

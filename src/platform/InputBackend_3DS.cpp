@@ -144,6 +144,44 @@ bool platformMenuCursorVisible()
     return false;
 }
 
+// The gameplay touch-HUD crafting button's open-request. DsInput only
+// raises the flag (the game side decides which screen to open and under
+// which conditions); consume-once.
+extern bool g_touchCraftRequested;
+
+bool platformConsumeTouchCraftRequest()
+{
+    if (!g_touchCraftRequested)
+        return false;
+    g_touchCraftRequested = false;
+    return true;
+}
+
+// The gameplay pad's Pocket-Edition tap request, same consume-once shape.
+extern bool g_touchPadTapRequested;
+
+bool platformConsumeTouchPadTap()
+{
+    if (!g_touchPadTapRequested)
+        return false;
+    g_touchPadTapRequested = false;
+    return true;
+}
+
+// The crosshair's current target, updated by GuiIngame each frame and read
+// by DsInput's pad-hold gesture to route break vs use.
+static bool s_crosshairTargetsBlock = false;
+
+void platformSetCrosshairTargetsBlock(bool targetsBlock)
+{
+    s_crosshairTargetsBlock = targetsBlock;
+}
+
+bool platformCrosshairTargetsBlock()
+{
+    return s_crosshairTargetsBlock;
+}
+
 void platformSetMenuCursor(int x, int y)
 {
     // phase 1: container-navigation cursor stepping; the absolute touch

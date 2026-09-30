@@ -4,6 +4,9 @@
 #include "GameSettings.h"
 #include "KeyBinding.h"
 #include "Minecraft.h"
+#include "MathHelper.h"
+#include "World.h"
+#include "EntityPlayer.h"
 
 #include "platform/Input.h"
 #include "platform/PlatformConfig.h"
@@ -14,6 +17,8 @@
 #ifdef PS2_PLATFORM
 #include "ps2/input/Ps2PadState.h"
 #endif
+
+#include <cmath>
 
 namespace
 {
@@ -44,7 +49,6 @@ void MovementInputFromOptions::resetKeyState()
 
 void MovementInputFromOptions::updatePlayerMoveState(EntityPlayer *entityplayer)
 {
-    (void)entityplayer;
     moveStrafe = 0.0f;
     moveForward = 0.0f;
 

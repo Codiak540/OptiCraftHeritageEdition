@@ -125,6 +125,11 @@ public:
 	// here like legacyUI so it survives options.txt round-trips; meaningless
 	// on the other platforms.
 	bool faceButtonCamera;
+	// 3DS dual-screen HUD toggles (GuiIngame's bottom panel): the touch map
+	// slot and the coordinates strip, both on by default. Stored like
+	// faceButtonCamera; meaningless on the other platforms.
+	bool touchMap;
+	bool touchCoords;
 	// Platform-neutral controller settings consumed through PlatformUserSettings.
 	float controllerDeadzone;
 	// Wii only: raw button assigned to Jump/Sneak/Drop/Inventory/Attack/Use/
