@@ -83,15 +83,21 @@ void setClearDepth(double depth);
 // lifecycle note in DsRender.cpp).
 void clear(unsigned mask);
 
-// The bottom LCD as a second render target, for the on-screen keyboard panel
-// (VirtualKeyboard's fallback when the system keyboard is unavailable; see
-// the bottom-panel section in DsRender.cpp). keyboardBottomBegin() creates the
-// 240x320 rotated target lazily, binds it and clears it for this frame's
-// draws; keyboardBottomEnd() binds the top target back so the rest of the
-// frame lands where it did. Begin returns false when the panel cannot be made
-// (VRAM, no renderer) -- the caller then draws on the top screen instead.
+// The bottom LCD as a second render target: the dual-screen GUI lays its
+// menus and gameplay widgets out there (every GuiScreen on this port) and
+// VirtualKeyboard's fallback panel draws on the same surface when the
+// system keyboard is unavailable (see the bottom-panel section in
+// DsRender.cpp). keyboardBottomBegin() creates the 240x320 rotated target
+// lazily, binds it and clears it for this frame's draws; keyboardBottomEnd()
+// binds the top target back so the rest of the frame lands where it did.
+// Begin returns false when the panel cannot be made (VRAM, no renderer) --
+// the caller then draws on the top screen instead.
 bool keyboardBottomBegin();
 void keyboardBottomEnd();
+// True once that target exists, i.e. the panel is the game's surface: the
+// boot console shares its framebuffer, so writes to it would be scribbled
+// over by every frame's transfer (Log.cpp stops sending stdout there).
+bool bottomPanelOwned();
 
 // The logical (panel-space, 400x240) viewport. Recorded for
 // renderGetViewport()/ActiveRenderInfo; the GPU viewport is the whole rotated

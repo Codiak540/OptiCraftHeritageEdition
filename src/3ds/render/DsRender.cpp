@@ -22,22 +22,28 @@
 //     closes the frame: C3D_FrameEnd queues the display transfer and hands
 //     the command list to the GX queue, asynchronously.
 //   * ds::present() (Display::swapBuffers) closes a frame if one is somehow
-//     still open, then reports whether a frame has been *submitted* since the
-//     last time it said yes. Only a swap that submitted nothing waits for a
-//     VBlank itself: a submitted frame is already paced by the next
-//     C3D_FrameBegin(C3D_FRAME_SYNCDRAW), and stacking a second wait on top
-//     would halve the frame rate during normal play.
+//     still open, then reports whether a frame has been *submitted* since
+//     the last time it said yes. Only a swap that submitted nothing waits
+//     for a VBlank itself: submitted frames are held to the LCD refresh by
+//     endFrame()'s early-finish VBlank wait (SYNCDRAW alone does NOT pace
+//     the refresh -- it waits on PSC0, the GPU draining its command list),
+//     and stacking a second wait on top would halve the frame rate during
+//     normal play.
 //
-// == Bottom panel (keyboard fallback) =========================================
+// == Bottom panel (dual-screen GUI + keyboard fallback) ========================
 //
-// Text fields open the system keyboard (swkbd, src/3ds/DsSwkbd.cpp); when the
-// applet cannot be used, VirtualKeyboard falls back to drawing its panel on
-// the BOTTOM LCD, which needs a second render target in this frame's
-// lifecycle. keyboardBottomBegin() creates it lazily (VRAM: colour + depth
-// for a 240x320 rotated storage -- the same quarter turn and RGBA8 -> RGB8
-// transfer flags as the top target, just sized for a 320x240 panel), binds it
-// and clears it; keyboardBottomEnd() binds the top target back so the rest of
-// the frame lands where it did.
+// The dual-screen GUI owns the BOTTOM LCD for its menus and gameplay widgets
+// (title options, touch hotbar, containers -- every GuiScreen on this port),
+// and the on-screen keyboard fallback draws its panel there too. Both need a
+// second render target in this frame's lifecycle. keyboardBottomBegin()
+// (renderBottomPanelBegin()'s ds-level half) creates it lazily (VRAM: colour
+// + depth for a 240x320 rotated storage -- the same quarter turn and
+// RGBA8 -> RGB8 transfer flags as the top target, just sized for a 320x240
+// panel), binds it and clears it; keyboardBottomEnd() binds the top target
+// back so the rest of the frame lands where it did. Passes run strictly one
+// after another -- each Begin splits the frame, then hands out a freshly
+// cleared panel, so a pass replaces (never stacks on) what an earlier pass of
+// the same frame drew.
 //
 // Transfers follow citro3d's used-bit rule: a target is transferred to its
 // LCD at C3D_FrameEnd only when C3D_FrameDrawOn marked it used during that
@@ -48,6 +54,13 @@
 // target used for that one clear -- and afterwards the panel simply is not
 // transferred anymore, which also leaves the console's framebuffer free for
 // the next printf.
+//
+// Taking the panel over also takes the pixel format with it: consoleInit()
+// leaves its screen at RGB565 for the console's text (libctru console.c),
+// which cannot be scanned against this target's RGB8 transfer. The first
+// keyboardBottomBegin() therefore switches the bottom LCD to BGR8, and
+// CrashHandler_3ds.cpp switches it back to RGB565 when a crash report needs
+// the console readable again.
 //
 // == Orientation and depth ====================================================
 //
@@ -203,7 +216,12 @@ constexpr float kPicaTilt[16] = {
 
 bool s_c3dActive = false;
 C3D_RenderTarget* s_target = nullptr;
-// The bottom panel, for the keyboard fallback (keyboardBottomBegin below).
+// The target the current pass draws into: s_target (top screen), or
+// s_bottomTarget while a bottom-panel pass runs. clear() targets this, so a
+// screen's own mid-draw renderClear() hits the surface it is drawing on.
+C3D_RenderTarget* s_boundTarget = nullptr;
+// The bottom panel, for the dual-screen GUI and the keyboard fallback
+// (keyboardBottomBegin below).
 // Created lazily -- most sessions never open a text field, and the target
 // costs ~600 KB of VRAM (colour + depth) for as long as it exists.
 C3D_RenderTarget* s_bottomTarget = nullptr;
@@ -342,6 +360,13 @@ GPU_CULLMODE picaCullMode(RenderFace face)
 	return GPU_CULL_NONE;
 }
 
+// CPU-side start of the current frame, for endFrame()'s 60 fps VBlank hold.
+static s64 s_frameStartMs = 0;
+// How long the last C3D_FrameBegin(C3D_FRAME_SYNCDRAW) blocked waiting for
+// the GPU's previous queue. Non-trivial here means the GPU is the pacer
+// and endFrame()'s VBlank hold must stand down (see there).
+static s64 s_lastSyncWaitMs = 0;
+
 void endFrame()
 {
 	if (!s_inFrame)
@@ -363,7 +388,20 @@ void endFrame()
 	}
 	s_bottomDrawnThisFrame = false;
 	C3D_FrameEnd(0);
+	// 60 fps cap: nothing else paces the loop on the LCD refresh. A frame
+	// whose CPU side finished early is held until the next VBlank --
+	// without it the light scenes (the menus) submit far past 60 fps.
+	// A frame that already overran the refresh is NOT delayed further, so
+	// a dip to e.g. 45 fps is not forced onto the 30 fps ladder.
+	// The hold also stands down whenever the last SYNCDRAW had to wait for
+	// the GPU: when the GPU is the pacer, a VBlank wait here stacks with
+	// the next FrameBegin's queue wait and halves the rate -- the 30 fps
+	// regression the emulator showed. Only a CPU that out-ran an idle GPU
+	// gets held.
+	if (s_lastSyncWaitMs <= 2 && s_frameStartMs != 0 && osGetTime() - s_frameStartMs < 15)
+		gspWaitForVBlank();
 	s_inFrame = false;
+	s_boundTarget = nullptr;
 	++s_framesSubmitted;
 }
 
@@ -374,14 +412,18 @@ void frameBegin()
 {
 	if (s_inFrame || s_target == nullptr)
 		return;
+	const s64 syncStart = osGetTime();
 	if (!C3D_FrameBegin(C3D_FRAME_SYNCDRAW))
 		return;
+	s_lastSyncWaitMs = osGetTime() - syncStart;
+	s_frameStartMs = osGetTime();
 	if (!C3D_FrameDrawOn(s_target))
 	{
 		C3D_FrameEnd(0);
 		return;
 	}
 	s_inFrame = true;
+	s_boundTarget = s_target;
 	s_arenaIndex = 0;
 	s_arenaCursor = 0;
 }
@@ -723,7 +765,11 @@ void setClearDepth(double depth)
 
 void clear(unsigned mask)
 {
-	if (s_target == nullptr)
+	// The *bound* target, not always the top screen: GuiInventory and
+	// friends clear depth mid-draw, and inside a bottom-panel pass that
+	// clear has to land on the panel they are drawing.
+	C3D_RenderTarget* target = s_boundTarget != nullptr ? s_boundTarget : s_target;
+	if (target == nullptr)
 		return;
 	u32 bits = 0;
 	if (mask & RenderClearMask::Color)
@@ -764,12 +810,13 @@ void clear(unsigned mask)
 	// empty buffer makes C3Di_SplitFrame return false, so the frame-start
 	// clear stays a no-op split.
 	C3D_FrameSplit(0);
-	C3D_RenderTargetClear(s_target, static_cast<C3D_ClearBits>(bits), color,
+	C3D_RenderTargetClear(target, static_cast<C3D_ClearBits>(bits), color,
 	                      storedDepth);
 }
 
-// The keyboard panel's own frame pass; see the bottom-panel section in the
-// header of this file. Returns false when there is nothing to draw on, in
+// The bottom panel's own frame pass; see the bottom-panel section in the
+// header of this file. Used by the dual-screen GUI and the on-screen
+// keyboard alike. Returns false when there is nothing to draw on, in
 // which case the caller keeps drawing on the top screen.
 bool keyboardBottomBegin()
 {
@@ -789,17 +836,45 @@ bool keyboardBottomBegin()
 		// The boot console owned this panel (main_3ds.cpp) and its line
 		// buffer still holds the boot log: start it over, so that a printf
 		// after the keyboard closes writes a fresh line from the top instead
-		// of redrawing stale text over the black frame.
+		// of redrawing stale text over the black frame. consoleClear() also
+		// runs gfxFlushBuffers() over this framebuffer, draining the CPU
+		// cache lines the boot text left here -- without that, a later
+		// eviction would write stale glyphs across the image the display
+		// transfer is about to put down (GX writes memory behind the cache).
 		consoleClear();
+		// Take the screen back at the panel's pixel format. consoleInit()
+		// reconfigures its LCD to RGB565 for its own text (libctru's
+		// console.c forces GSP_RGB565_OES on the screen it is given), while
+		// this target transfers RGBA8 -> RGB8: scanning a 3-byte image as
+		// 2-byte pixels squeezes every row by 1.5x and re-packs the
+		// channels -- red and blue interleave, the whole panel goes pink and
+		// noisy, with the interface only faintly recognisable underneath.
+		// BGR8 is the format gfxInitDefault gave this screen and the one the
+		// top LCD keeps, so both panels end up scanned alike. The buffers
+		// were sized 240x320x3 during gfxInit and gfxSetScreenFormat only
+		// ever grows a buffer, so the console's cached pointer stays valid;
+		// its output is suppressed while the panel is owned (Log.cpp), and
+		// Crash() swaps the format back when the crash report needs readable
+		// console text again (CrashHandler_3ds.cpp).
+		gfxSetScreenFormat(GFX_BOTTOM, GSP_BGR8_OES);
 	}
 	frameBegin();
 	if (!s_inFrame)
 		return false;
 	if (!C3D_FrameDrawOn(s_bottomTarget))
 		return false;
+	s_boundTarget = s_bottomTarget;
 	// Colour starts black behind the panel's own rectangles (clear colour 0
 	// is the same value clear() uses for the top screen); depth goes to far,
 	// the same stored 0, so no draw ever reads the previous frame's.
+	// Split first, exactly as clear() does: a fill only appends to the GX
+	// queue while the draws recorded so far only reach it at C3D_FrameEnd,
+	// so without the split this clear would run ahead of every pass already
+	// recorded -- including an earlier bottom-panel pass of this same frame
+	// (title menu, then the keyboard) -- and wipe it after the fact. With
+	// the split the earlier passes land first and this Begin really does
+	// hand out a freshly cleared panel.
+	C3D_FrameSplit(0);
 	u32 bits = C3D_CLEAR_COLOR | C3D_CLEAR_DEPTH;
 	C3D_RenderTargetClear(s_bottomTarget, static_cast<C3D_ClearBits>(bits), 0, 0);
 	s_bottomDrawnThisFrame = true;
@@ -815,6 +890,12 @@ void keyboardBottomEnd()
 	// top target's framebuffer and its full-target viewport, so everything
 	// drawn after the panel lands where it did before.
 	C3D_FrameDrawOn(s_target);
+	s_boundTarget = s_target;
+}
+
+bool bottomPanelOwned()
+{
+	return s_bottomTarget != nullptr;
 }
 
 void setViewport(int x, int y, int width, int height)

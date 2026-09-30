@@ -609,18 +609,18 @@ void renderGetViewport(int* values)
 }
 
 // ---------------------------------------------------------------------------
-// Bottom-screen keyboard pass (see the bottom-panel section of DsRender.cpp)
+// Bottom-screen panel pass (see the bottom-panel section of DsRender.cpp)
 // ---------------------------------------------------------------------------
 
 namespace
 {
-// Pairs renderKeyboardBottomBegin()'s matrix push with End's pop, so End is a
+// Pairs renderBottomPanelBegin()'s matrix push with End's pop, so End is a
 // no-op when Begin refused -- a caller may only run the two as a pair, but
 // there is nothing to unwind when nothing was pushed.
 bool s_bottomPass = false;
 }
 
-bool renderKeyboardBottomBegin()
+bool renderBottomPanelBegin()
 {
 	if (!ds::keyboardBottomBegin())
 		return false;
@@ -639,7 +639,7 @@ bool renderKeyboardBottomBegin()
 	return true;
 }
 
-void renderKeyboardBottomEnd()
+void renderBottomPanelEnd()
 {
 	if (!s_bottomPass)
 		return;
@@ -650,6 +650,22 @@ void renderKeyboardBottomEnd()
 	ds::matrix::pop();
 	ds::matrix::setMode(RenderMatrixMode::ModelView);
 	ds::keyboardBottomEnd();
+}
+
+// The on-screen keyboard's original names: same pair, same contract.
+bool renderKeyboardBottomBegin()
+{
+	return renderBottomPanelBegin();
+}
+
+void renderKeyboardBottomEnd()
+{
+	renderBottomPanelEnd();
+}
+
+bool renderBottomPanelOwned()
+{
+	return ds::bottomPanelOwned();
 }
 
 void renderGetMatrix(RenderMatrixQuery query, float* values)

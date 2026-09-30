@@ -1,4 +1,8 @@
 #include "EntityRenderer.h"
+#if defined(CTR_PLATFORM)
+#include "legacy/LegacyPanorama.h"
+#include "legacy/LegacySceneState.h"
+#endif
 #if PLATFORM_PS2
 #include "ps2/minecraft/Ps2WeatherMath.h"
 #include "ps2/diagnostics/Ps2OptimizationValidation.h"
@@ -1479,19 +1483,71 @@ void EntityRenderer::updateCameraAndRender(float partialTicks)
 #if PLATFORM_PS2
         ps2SetMenuPad(mc->isScreenOwnedByPlayer2() ? 1 : 0);
 #endif
-        mc->currentScreen->drawScreen(scaledMouseX, scaledMouseY, partialTicks);
+        GuiScreen *screen = mc->currentScreen;
+#if PLATFORM_3DS
+        // Hover position in the screen's own canvas. The pointer lives in
+        // top-screen pixels, and the canvas on this port is the bottom
+        // panel's 320x240 (GuiScreen::setWorldAndResolution), so scaling by
+        // the ScaledResolution (400x240) would hand drawScreen a position
+        // 1.25x out of range -- and it would disagree with the click path,
+        // which already divides by mc->displayWidth.
+        const int screenMouseX = (mc->displayWidth > 0)
+            ? (mouseX * screen->width) / mc->displayWidth
+            : scaledMouseX;
+        const int screenMouseY = (mc->displayHeight > 0)
+            ? (mouseY * screen->height) / mc->displayHeight
+            : scaledMouseY;
+        // Dual-screen: the screen draws on the bottom LCD unless it manages
+        // the pass itself (GuiMainMenu draws its top half on the top screen
+        // first). Passes must never nest, so the wrapper stops at End and
+        // the keyboard below opens its own.
+        const bool bottomPanelPass =
+            !screen->managesBottomPanelPass() && renderBottomPanelBegin();
+#if defined(CTR_PLATFORM)
+        if (bottomPanelPass)
+        {
+            // Gameplay sub-screens drew a faint gradient meant to sit over
+            // the paused world; on the panel there is no world behind them
+            // and they read as a bare black void (the options tree showed
+            // exactly that). Every panel screen gets the same panorama
+            // backdrop the title uses; screens that bring their own opaque
+            // background draw over it.
+            legacyDrawPanorama(mc, screen->width, screen->height,
+                legacyScenePanoramaTimer(), partialTicks, 0.0f);
+        }
+#endif
+#else
+        const int screenMouseX = scaledMouseX;
+        const int screenMouseY = scaledMouseY;
+#endif
+        screen->drawScreen(screenMouseX, screenMouseY, partialTicks);
+
+#if PLATFORM_3DS
+        // Particles live in the screen's canvas, so they belong to this
+        // same pass -- a second Begin would clear the screen away first.
+        if (screen->guiParticles != nullptr)
+        {
+            screen->guiParticles->renderParticles(partialTicks);
+        }
+        if (bottomPanelPass)
+        {
+            renderBottomPanelEnd();
+        }
+#endif
 
 #if PLATFORM_HAS_VIRTUAL_KEYBOARD
         // On-screen keyboard overlay (drawn on top of the focused text screen).
         if (VirtualKeyboard::instance().isActive())
             VirtualKeyboard::instance().render(mc->fontRenderer,
-                mc->currentScreen->width, mc->currentScreen->height);
+                screen->width, screen->height);
 #endif
 
-        if (mc->currentScreen != nullptr && mc->currentScreen->guiParticles != nullptr)
+#if !PLATFORM_3DS
+        if (screen != nullptr && screen->guiParticles != nullptr)
         {
-            mc->currentScreen->guiParticles->renderParticles(partialTicks);
+            screen->guiParticles->renderParticles(partialTicks);
         }
+#endif
 #if PLATFORM_PS2
         ps2SetMenuPad(0);
 #endif

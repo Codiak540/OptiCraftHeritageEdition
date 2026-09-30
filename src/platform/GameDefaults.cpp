@@ -82,18 +82,7 @@ const PlatformGameDefaults& platformGameDefaults()
         d.sky = false;
         d.sunMoon = false;
         d.clouds = 3;
-#elif PLATFORM_PS2 || PLATFORM_WII
-        d.clouds = 3;
-#elif PLATFORM_3DS
-        // Clouds OFF by default, the PS2/Wii choice (DsWorldTuning.h takes the
-        // matching knob list but leaves PLATFORM_SKIP_CLOUDS at 0 so this stays
-        // a live ofClouds toggle). renderClouds() builds its layer from scratch
-        // EVERY frame: a 16x16 cell grid over a fixed 512-block square, 256
-        // quads = 1024 vertex writes plus a texture bind, a blend setup and an
-        // alpha-blended layer over the sky -- at TINY's 32-block reach that is
-        // CPU the frame spends on geometry nothing on screen can occlude. The
-        // same reasoning the fancyGraphics/ambientOcclusion defaults above use:
-        // only the profile default changes, the options screen still offers it.
+#elif PLATFORM_PS2 || PLATFORM_WII || PLATFORM_3DS
         d.clouds = 3;
 #else
         d.clouds = 1;

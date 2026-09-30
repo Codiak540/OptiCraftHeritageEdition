@@ -179,9 +179,13 @@ REM no -ignoresign, the flag was hiding whatever it was letting through -- a
 REM real title version in the TMD, the ExeFS boot logo, and a HOME-menu
 REM banner. The previously failing build differed in ALL of those at once;
 REM which single one was lethal was never bisected apart, the posture ships
-REM as a unit. makerom itself tracks the latest release -- v0.19.0 as of
-REM 2026-09-28, and BOTH v0.19.0 and v0.18.3 were verified on hardware under
-REM this posture, so the tool version is not the variable that mattered. The
+REM as a unit. makerom is PINNED to v0.18.3, matching CI -- the 3DS job
+REM runs inside the devkitpro/devkitarm container (Ubuntu 22.04 base,
+REM glibc 2.35) and v0.19.0's linux binary needs GLIBC_2.38; the Windows
+REM build runs either way, but one version everywhere keeps the local and
+REM CI .cia comparable. BOTH v0.18.3 and v0.19.0 were verified on hardware
+REM under this posture, so the tool version is not the variable that
+REM mattered. The
 REM green text banner in resources\3ds_banner.bnr was made from resources\3ds_banner.png (256x128)
 REM with bannertool; replacing the .png and re-running
 REM   bannertool makebanner -i 3ds_banner.png -a <audio.wav> -o 3ds_banner.bnr
@@ -258,11 +262,11 @@ if exist "C:\devkitPro\tools\bin\makerom.exe" set "MAKEROM=C:\devkitPro\tools\bi
 exit /b 0
 
 :fetchmakerom
-echo makerom not found - downloading v0.19.0 ...
+echo makerom not found - downloading v0.18.3 ...
 if not exist "%~dp0.tools\makerom" mkdir "%~dp0.tools\makerom"
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$ErrorActionPreference='Stop'; $z='%~dp0.tools\makerom\makerom.zip';" ^
-  "Invoke-WebRequest -Uri 'https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.19.0/makerom-v0.19.0-win_x86_64.zip' -OutFile $z;" ^
+  "Invoke-WebRequest -Uri 'https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.18.3/makerom-v0.18.3-win_x86_64.zip' -OutFile $z;" ^
   "Expand-Archive -Force -Path $z -DestinationPath '%~dp0.tools\makerom'; Remove-Item $z"
 if exist "%~dp0.tools\makerom\makerom.exe" set "MAKEROM=%~dp0.tools\makerom\makerom.exe"
 if defined MAKEROM echo makerom ready: !MAKEROM!

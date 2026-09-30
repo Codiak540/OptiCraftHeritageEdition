@@ -3,6 +3,12 @@
 #include "mods/ModManager.h"
 #include "platform/PlatformTuning.h"
 #include "platform/Profiler.h"
+#if defined(CTR_PLATFORM)
+#include "platform/TouchHudLayout.h"
+#include "MapItemRenderer.h"
+#include "ItemMap.h"
+#include "Item.h"
+#endif
 #include "java/String.h"
 #include "java/Arithmetic.h"
 #include "ScaledResolution.h"
@@ -451,6 +457,35 @@ void GuiIngame::renderPlayerStatusHudGeometry(int_t sw, int_t sh, Tessellator *c
 		drawTexturedModalRect(x, y, texX, texY, w, h);
 	};
 
+#if defined(CTR_PLATFORM)
+	// The status glyphs draw larger on this platform: the 9 px icons scaled
+	// to 14 px with the vanilla UVs, keeping the capture-aware shape of
+	// emitRect (the uncached path has icons.png bound by the caller).
+	auto emitIcon = [&](int_t x, int_t y, int_t texX, int_t texY)
+	{
+		Tessellator *iconTess = captureTessellator != nullptr ? captureTessellator : &Tessellator::instance;
+		constexpr float INV = 1.0f / 256.0f;
+		const float u0 = static_cast<float_t>(texX) * INV;
+		const float v0 = static_cast<float_t>(texY) * INV;
+		const float u1 = u0 + 9.0f * INV;
+		const float v1 = v0 + 9.0f * INV;
+		iconTess->startDrawingQuads();
+		iconTess->setColorOpaque_I(0xffffff);
+		iconTess->addVertexWithUV(x, y + 14.0f, zLevel, u0, v1);
+		iconTess->addVertexWithUV(x + 14.0f, y + 14.0f, zLevel, u1, v1);
+		iconTess->addVertexWithUV(x + 14.0f, y, zLevel, u1, v0);
+		iconTess->addVertexWithUV(x, y, zLevel, u0, v0);
+		iconTess->draw();
+	};
+	constexpr int_t ICON_PITCH = 14;
+#else
+	auto emitIcon = [&](int_t x, int_t y, int_t texX, int_t texY)
+	{
+		emitRect(x, y, texX, texY, 9, 9);
+	};
+	constexpr int_t ICON_PITCH = 8;
+#endif
+
 	bool flashHearts = (mc->thePlayer->heartsLife / 3) % 2 == 1;
 	if (mc->thePlayer->heartsLife < 10)
 		flashHearts = false;
@@ -460,19 +495,69 @@ void GuiIngame::renderPlayerStatusHudGeometry(int_t sw, int_t sh, Tessellator *c
 	rand->setSeed(static_cast<long_t>(seed));
 	const int_t left = sw / 2 - 91;
 	const int_t right = sw / 2 + 91;
+#if defined(CTR_PLATFORM)
+	// Dual-screen gameplay, take three (owner calls): the XP strip runs
+	// across the very top of the panel at full width; the hearts sit just
+	// under it on the LEFT and the food bar just under it on the RIGHT,
+	// both drawn ~30% larger (12 px glyphs from the 9 px source); armor
+	// rides under the hearts, air bubbles under the food. The XP number
+	// keeps the centre of that icon row. The hotbar lives on the touch
+	// panel.
+	const int_t xpY = 0;
+	const int_t heartsLeft = 4;
+	const int_t foodRight = sw - 4;
+	const int_t healthY = 12;
+	const int_t foodY = 12;
+	const int_t armorLeft = 4;
+	const int_t armorY = healthY + 16;
+	const int_t airLeft = sw - 4;
+	const int_t airY = foodY + 16;
+	(void)left;
+	(void)right;
+#else
+	const int_t heartsLeft = left;
+	const int_t foodRight = right;
+	const int_t armorLeft = left;
+	const int_t airLeft = right;
+	const int_t xpY = sh - 32 + 3;
+	const int_t healthY = sh - 39;
+	const int_t foodY = healthY;
+	const int_t armorY = healthY - 10;
+	const int_t airY = armorY;
+#endif
 	const int_t xpCap = mc->thePlayer->xpBarCap();
 	if (xpCap > 0)
 	{
+#if defined(CTR_PLATFORM)
+		// Full-width strip: the 182 px bar texture stretched across the
+		// whole top edge and thickened to 8 px; the fill keeps its
+		// proportional UVs.
+		Tessellator *xt = captureTessellator != nullptr ? captureTessellator : &Tessellator::instance;
+		constexpr float INV = 1.0f / 256.0f;
+		const int_t fillW = static_cast<int_t>(mc->thePlayer->experience * static_cast<float_t>(sw));
+		const float fillU = mc->thePlayer->experience * 182.0f * INV;
+		xt->startDrawingQuads();
+		xt->setColorOpaque_I(0xffffff);
+		xt->addVertexWithUV(0, xpY + 8, zLevel, 0.0f, 69.0f * INV);
+		xt->addVertexWithUV(sw, xpY + 8, zLevel, 182.0f * INV, 69.0f * INV);
+		xt->addVertexWithUV(sw, xpY, zLevel, 182.0f * INV, 64.0f * INV);
+		xt->addVertexWithUV(0, xpY, zLevel, 0.0f, 64.0f * INV);
+		if (fillW > 0)
+		{
+			xt->addVertexWithUV(0, xpY + 8, zLevel, 0.0f, 74.0f * INV);
+			xt->addVertexWithUV(fillW, xpY + 8, zLevel, fillU, 74.0f * INV);
+			xt->addVertexWithUV(fillW, xpY, zLevel, fillU, 69.0f * INV);
+			xt->addVertexWithUV(0, xpY, zLevel, 0.0f, 69.0f * INV);
+		}
+		xt->draw();
+#else
 		constexpr int_t XP_BAR_WIDTH = 182;
 		const int_t filled = static_cast<int_t>(mc->thePlayer->experience * static_cast<float_t>(XP_BAR_WIDTH + 1));
-		const int_t xpY = sh - 32 + 3;
 		emitRect(left, xpY, 0, 64, XP_BAR_WIDTH, 5);
 		if (filled > 0)
 			emitRect(left, xpY, 0, 69, filled, 5);
+#endif
 	}
-
-	const int_t healthY = sh - 39;
-	const int_t armorY = healthY - 10;
 	const int_t armor = mc->thePlayer->getPlayerArmorValue();
 	const int_t regenerationHeart = mc->thePlayer->isPotionActive(Potion::regeneration) ? updateCounter % 25 : -1;
 	const bool hardcore = mc->theWorld != nullptr && mc->theWorld->getWorldInfo() != nullptr
@@ -482,17 +567,17 @@ void GuiIngame::renderPlayerStatusHudGeometry(int_t sw, int_t sh, Tessellator *c
 	{
 		if (armor > 0)
 		{
-			const int_t armorX = left + index * 8;
-			if (index * 2 + 1 < armor)  emitRect(armorX, armorY, 34, 9, 9, 9);
-			if (index * 2 + 1 == armor) emitRect(armorX, armorY, 25, 9, 9, 9);
-			if (index * 2 + 1 > armor)  emitRect(armorX, armorY, 16, 9, 9, 9);
+			const int_t armorX = armorLeft + index * ICON_PITCH;
+			if (index * 2 + 1 < armor)  emitIcon(armorX, armorY, 34, 9);
+			if (index * 2 + 1 == armor) emitIcon(armorX, armorY, 25, 9);
+			if (index * 2 + 1 > armor)  emitIcon(armorX, armorY, 16, 9);
 		}
 
 		int_t heartTextureX = 16;
 		if (mc->thePlayer->isPotionActive(Potion::poison))
 			heartTextureX += 36;
 		const int_t flash = flashHearts ? 1 : 0;
-		const int_t hx = left + index * 8;
+		const int_t hx = heartsLeft + index * ICON_PITCH;
 		int_t hy = healthY;
 		if (health <= 4)
 			hy += rand->nextInt(2);
@@ -500,14 +585,14 @@ void GuiIngame::renderPlayerStatusHudGeometry(int_t sw, int_t sh, Tessellator *c
 			hy -= 2;
 		const int_t hardcoreRow = hardcore ? 5 : 0;
 
-		emitRect(hx, hy, 16 + flash * 9, 9 * hardcoreRow, 9, 9);
+		emitIcon(hx, hy, 16 + flash * 9, 9 * hardcoreRow);
 		if (flashHearts)
 		{
-			if (index * 2 + 1 < prevHealth)  emitRect(hx, hy, heartTextureX + 54, 9 * hardcoreRow, 9, 9);
-			if (index * 2 + 1 == prevHealth) emitRect(hx, hy, heartTextureX + 63, 9 * hardcoreRow, 9, 9);
+			if (index * 2 + 1 < prevHealth)  emitIcon(hx, hy, heartTextureX + 54, 9 * hardcoreRow);
+			if (index * 2 + 1 == prevHealth) emitIcon(hx, hy, heartTextureX + 63, 9 * hardcoreRow);
 		}
-		if (index * 2 + 1 < health)  emitRect(hx, hy, heartTextureX + 36, 9 * hardcoreRow, 9, 9);
-		if (index * 2 + 1 == health) emitRect(hx, hy, heartTextureX + 45, 9 * hardcoreRow, 9, 9);
+		if (index * 2 + 1 < health)  emitIcon(hx, hy, heartTextureX + 36, 9 * hardcoreRow);
+		if (index * 2 + 1 == health) emitIcon(hx, hy, heartTextureX + 45, 9 * hardcoreRow);
 	}
 
 	FoodStats *foodStats = mc->thePlayer->getFoodStats();
@@ -515,7 +600,7 @@ void GuiIngame::renderPlayerStatusHudGeometry(int_t sw, int_t sh, Tessellator *c
 	const float_t saturation = foodStats != nullptr ? foodStats->getSaturationLevel() : 5.0f;
 	for (int_t index = 0; index < 10; ++index)
 	{
-		int_t fy = healthY;
+		int_t fy = foodY;
 		int_t foodTextureX = 16;
 		int_t backgroundOffset = 0;
 		if (mc->thePlayer->isPotionActive(Potion::hunger))
@@ -524,11 +609,11 @@ void GuiIngame::renderPlayerStatusHudGeometry(int_t sw, int_t sh, Tessellator *c
 			backgroundOffset = 13;
 		}
 		if (saturation <= 0.0f && updateCounter % (foodLevel * 3 + 1) == 0)
-			fy = healthY + (rand->nextInt(3) - 1);
-		const int_t fx = right - index * 8 - 9;
-		emitRect(fx, fy, 16 + backgroundOffset * 9, 27, 9, 9);
-		if (index * 2 + 1 < foodLevel)  emitRect(fx, fy, foodTextureX + 36, 27, 9, 9);
-		if (index * 2 + 1 == foodLevel) emitRect(fx, fy, foodTextureX + 45, 27, 9, 9);
+			fy = foodY + (rand->nextInt(3) - 1);
+		const int_t fx = foodRight - index * ICON_PITCH - ICON_PITCH;
+		emitIcon(fx, fy, 16 + backgroundOffset * 9, 27);
+		if (index * 2 + 1 < foodLevel)  emitIcon(fx, fy, foodTextureX + 36, 27);
+		if (index * 2 + 1 == foodLevel) emitIcon(fx, fy, foodTextureX + 45, 27);
 	}
 
 	if (mc->thePlayer->isInsideOfMaterial(Material::water))
@@ -538,17 +623,27 @@ void GuiIngame::renderPlayerStatusHudGeometry(int_t sw, int_t sh, Tessellator *c
 		const int_t empty = JavaArithmetic::floatToInt(std::ceil((static_cast<float_t>(air) * 10.0f) / 300.0f)) - full;
 		for (int_t index = 0; index < full + empty; ++index)
 		{
-			const int_t ax = right - index * 8 - 9;
+			const int_t ax = airLeft - index * ICON_PITCH - ICON_PITCH;
 			if (index < full)
-				emitRect(ax, armorY, 16, 18, 9, 9);
+				emitIcon(ax, airY, 16, 18);
 			else
-				emitRect(ax, armorY, 25, 18, 9, 9);
+				emitIcon(ax, airY, 25, 18);
 		}
 	}
 }
 
 void GuiIngame::renderPlayerStatusHudUncached(int_t sw, int_t sh)
 {
+	// The status bars sample /gui/icons.png, but nothing else in the frame
+	// guarantees that bind: the crosshair block that owns it sits inside
+	// "if (!showDebug)" and is skipped while any GuiScreen is open, and the
+	// boss bar only re-binds when a boss is actually on screen. The
+	// hotbar's gui.png used to leak through instead, so opening the pause
+	// menu or the inventory drew hearts and food from the wrong atlas --
+	// garbled bars, hidden behind the menu on a single screen but in plain
+	// sight once the menus moved to the 3DS bottom panel. Bind here so
+	// every caller (direct, display list, static-mesh fallback) is covered.
+	renderBindTexture(mc->renderEngine->getTexture("/gui/icons.png"));
 	renderPlayerStatusHudGeometry(sw, sh, nullptr);
 }
 
@@ -758,6 +853,10 @@ void GuiIngame::ps2RenderPlayerStatusHud(int_t sw, int_t sh)
 		}
 	}
 
+	// The cached mesh replays geometry only, and the icons.png bind belongs
+	// to the crosshair block that an open screen skips -- see
+	// renderPlayerStatusHudUncached. Bind it here too.
+	renderBindTexture(mc->renderEngine->getTexture("/gui/icons.png"));
 	if (cache.statusValid && renderStaticMeshDraw(cache.status))
 		return;
 
@@ -775,6 +874,19 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 
 	mc->entityRenderer->setupOverlayRendering();
 	resetOverlayGLState();
+
+#if defined(CTR_PLATFORM)
+	// Dual-screen gameplay: the bottom panel carries the touch layer --
+	// hotbar, coordinates and the inventory/crafting/pause buttons. Only
+	// while no GuiScreen is open: any screen (pause, inventory, chat) owns
+	// the panel through EntityRenderer's wrapper, and a second pass here
+	// would clear it away.
+	if (mc->currentScreen == nullptr && renderBottomPanelBegin())
+	{
+		renderGameplayBottomPanel(partialTick);
+		renderBottomPanelEnd();
+	}
+#endif
 
 	if (Minecraft::isFancyGraphicsEnabled())
 		renderVignette(mc->thePlayer->getEntityBrightness(partialTick), sw, sh);
@@ -803,9 +915,14 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 #elif defined(PS2_PLATFORM)
 	ps2RenderHotbarFrame(sw, hudHeight, inv->currentItem);
 #else
+#if !defined(CTR_PLATFORM)
+	// Dual-screen: the hotbar lives on the touch panel (see
+	// renderGameplayBottomPanel); the top screen keeps only the crosshair
+	// and the status cluster.
 	zLevel = -90.0f;
 	drawTexturedModalRect(sw / 2 - 91, hudHeight - 22, 0,  0, 182, 22);
 	drawTexturedModalRect((sw / 2 - 91 - 1) + inv->currentItem * 20, hudHeight - 22 - 1, 0, 22, 24, 22);
+#endif
 #endif
 
 	if (!showDebug)
@@ -845,12 +962,14 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 	const std::uint32_t cycHudItems = platformProfileRenderPhaseBegin();
 #endif
 	RenderHelper::enableGUIStandardItemLighting();
+#if !defined(CTR_PLATFORM)
 	for (int_t l1 = 0; l1 < 9; l1++)
 	{
 		int_t ix = (sw / 2 - 90) + l1 * 20 + 2;
 		int_t iy = hudHeight - 16 - 3;
 		renderInventorySlot(l1, ix, iy, partialTick);
 	}
+#endif
 	RenderHelper::disableStandardItemLighting();
 #if PLATFORM_PROFILE_RENDER_PHASES
 	platformProfileRenderPhaseEnd(cycHudItems, PlatformRenderPhase::HudItems);
@@ -876,7 +995,12 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 		const std::string level = std::to_string(mc->thePlayer->experienceLevel);
 		const int_t color = 0x80ff20;
 		const int_t x = (sw - fr->getStringWidth(level)) / 2;
+#if defined(CTR_PLATFORM)
+		// In the middle of the icon row under the XP strip.
+		const int_t y = 13;
+#else
 		const int_t y = hudHeight - 35;
+#endif
 		fr->drawString(level, x + 1, y, 0);
 		fr->drawString(level, x - 1, y, 0);
 		fr->drawString(level, x, y + 1, 0);
@@ -1014,6 +1138,200 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 	ModManager::getInstance().onRenderGameOverlay(this, sw, sh, partialTick);
 	finishOverlayGLState();
 }
+
+#if defined(CTR_PLATFORM)
+void GuiIngame::renderGameplayBottomPanel(float_t partialTick)
+{
+	// Called inside renderBottomPanelBegin/End, whose projection is this
+	// panel's own 320x240 canvas -- every constant below is a panel pixel
+	// from TouchHudLayout.h. The rest of the panel stays the camera pad.
+	//
+	// Everything draws at zLevel 0: the panel's depth buffer is cleared to
+	// its near plane every pass, and every widget that has always rendered
+	// here (the menus, the containers) draws at z >= 0. The first cut drew
+	// at -90 like the top HUD, and the depth test rejected every textured
+	// quad -- only the z=0 rects showed, which is exactly how the bug
+	// looked on hardware.
+	zLevel = 0.0f;
+
+	// The classic menu backdrop: the dirt texture tiled at 32 px and
+	// darkened, the same surface GuiScreen::drawBackground lays under the
+	// Java menus ("gray like the original", owner call).
+	{
+		Tessellator *bgTess = &Tessellator::instance;
+		constexpr float BG_TILE = 32.0f;
+		renderDisable(RenderCapability::Lighting);
+		renderDisable(RenderCapability::Fog);
+		renderBindTexture(mc->renderEngine->getTexture("/gui/background.png"));
+		renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+		bgTess->startDrawingQuads();
+		bgTess->setColorOpaque_I(0x404040);
+		bgTess->addVertexWithUV(0, static_cast<float_t>(touchHud::PANEL_HEIGHT), 0.0f, 0.0f,
+			static_cast<float_t>(touchHud::PANEL_HEIGHT) / BG_TILE);
+		bgTess->addVertexWithUV(static_cast<float_t>(touchHud::PANEL_WIDTH),
+			static_cast<float_t>(touchHud::PANEL_HEIGHT), 0.0f,
+			static_cast<float_t>(touchHud::PANEL_WIDTH) / BG_TILE,
+			static_cast<float_t>(touchHud::PANEL_HEIGHT) / BG_TILE);
+		bgTess->addVertexWithUV(static_cast<float_t>(touchHud::PANEL_WIDTH), 0.0f, 0.0f,
+			static_cast<float_t>(touchHud::PANEL_WIDTH) / BG_TILE, 0.0f);
+		bgTess->addVertexWithUV(0, 0.0f, 0.0f, 0.0f, 0.0f);
+		bgTess->draw();
+	}
+
+	InventoryPlayer *inv = mc->thePlayer->inventory;
+
+	// Touch hotbar: the vanilla 182x22 strip stretched across the panel's
+	// full width -- nine equal slots, wide enough for fingers.
+	renderBindTexture(mc->renderEngine->getTexture("/gui/gui.png"));
+	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+	{
+		Tessellator *tess = &Tessellator::instance;
+		constexpr float INV = 1.0f / 256.0f;
+		const int_t slotW = touchHud::HOTBAR_W / touchHud::HOTBAR_SLOTS;
+		const int_t selX = touchHud::HOTBAR_X + inv->currentItem * slotW;
+
+		tess->startDrawingQuads();
+		tess->setColorOpaque_I(0xffffff);
+		tess->addVertexWithUV(touchHud::HOTBAR_X, touchHud::HOTBAR_Y + touchHud::HOTBAR_H, zLevel, 0.0f, 22.0f * INV);
+		tess->addVertexWithUV(touchHud::HOTBAR_X + touchHud::HOTBAR_W, touchHud::HOTBAR_Y + touchHud::HOTBAR_H, zLevel, 182.0f * INV, 22.0f * INV);
+		tess->addVertexWithUV(touchHud::HOTBAR_X + touchHud::HOTBAR_W, touchHud::HOTBAR_Y, zLevel, 182.0f * INV, 0.0f);
+		tess->addVertexWithUV(touchHud::HOTBAR_X, touchHud::HOTBAR_Y, zLevel, 0.0f, 0.0f);
+		// The selection frame, stretched over the selected slot.
+		tess->addVertexWithUV(selX - 1, touchHud::HOTBAR_Y - 1 + touchHud::HOTBAR_H, zLevel, 0.0f, 44.0f * INV);
+		tess->addVertexWithUV(selX + slotW + 1, touchHud::HOTBAR_Y - 1 + touchHud::HOTBAR_H, zLevel, 24.0f * INV, 44.0f * INV);
+		tess->addVertexWithUV(selX + slotW + 1, touchHud::HOTBAR_Y - 1, zLevel, 24.0f * INV, 22.0f * INV);
+		tess->addVertexWithUV(selX - 1, touchHud::HOTBAR_Y - 1, zLevel, 0.0f, 22.0f * INV);
+		tess->draw();
+	}
+
+	// Player coordinates, centred on a translucent black strip a little
+	// below the hotbar (the same strip style the title's "A Select" row
+	// uses), at 2x the UI font (owner call: +200%).
+	{
+		const std::string coords = "X:"
+			+ std::to_string(MathHelper::floor_double(mc->thePlayer->posX)) + " Y:"
+			+ std::to_string(MathHelper::floor_double(mc->thePlayer->posY)) + " Z:"
+			+ std::to_string(MathHelper::floor_double(mc->thePlayer->posZ));
+		drawRect(0, touchHud::COORDS_BAR_TOP, touchHud::PANEL_WIDTH, touchHud::COORDS_BAR_BOTTOM,
+			static_cast<int_t>(0x88000000u));
+		const int_t textX = (touchHud::PANEL_WIDTH - mc->fontRenderer->getStringWidth(coords) * 2) / 2;
+		renderPushMatrix();
+		renderTranslate(static_cast<float_t>(textX), static_cast<float_t>(touchHud::COORDS_TEXT_Y), 0.0f);
+		renderScale(2.0f, 2.0f, 1.0f);
+		mc->fontRenderer->drawStringWithShadow(coords, 0, 0, 0xffffff);
+		renderPopMatrix();
+	}
+
+	// Map slot: Minecraft's own map rendering (MapItemRenderer) -- the
+	// HELD map first, otherwise the first filled map anywhere in the
+	// inventory. The panel does not depend on the minimap mod, which is
+	// not registered on this setup (owner call).
+	{
+		ItemStack *mapStack = nullptr;
+		ItemStack *held = inv->getStackInSlot(inv->currentItem);
+		if (held != nullptr && held->getItem() != nullptr && held->getItem() == Item::mapItem)
+			mapStack = held;
+		if (mapStack == nullptr)
+		{
+			for (int_t slot = 0; slot < inv->getSizeInventory() && mapStack == nullptr; ++slot)
+			{
+				ItemStack *stack = inv->getStackInSlot(slot);
+				if (stack != nullptr && stack->getItem() != nullptr && stack->getItem() == Item::mapItem)
+					mapStack = stack;
+			}
+		}
+		MapData *mapData = mapStack != nullptr && Item::mapItem != nullptr
+			? static_cast<ItemMap *>(Item::mapItem)->getMapData(mapStack, mc->theWorld)
+			: nullptr;
+
+		if (mapData != nullptr)
+		{
+			// MapItemRenderer draws its 128x128 frame at (0,0); lift it
+			// into the slot. The instance owns a texture and a colour
+			// buffer, so it is built once and kept.
+			static MapItemRenderer *heldMapRenderer = nullptr;
+			if (heldMapRenderer == nullptr)
+				heldMapRenderer = new MapItemRenderer(mc->fontRenderer, mc->gameSettings, mc->renderEngine);
+			renderPushMatrix();
+			renderTranslate(static_cast<float_t>(touchHud::MINIMAP_X), static_cast<float_t>(touchHud::MINIMAP_Y), 0.0f);
+			heldMapRenderer->renderMap(mc->thePlayer, mc->renderEngine, mapData);
+			renderPopMatrix();
+		}
+		else
+		{
+			// No map anywhere: an empty framed slot, so the layout reads
+			// the same as with one.
+			drawRect(touchHud::MINIMAP_X - 1, touchHud::MINIMAP_Y - 1,
+				touchHud::MINIMAP_X + touchHud::MINIMAP_SIZE + 1,
+				touchHud::MINIMAP_Y + touchHud::MINIMAP_SIZE + 1,
+				static_cast<int_t>(0xA0000000u));
+			drawRect(touchHud::MINIMAP_X - 1, touchHud::MINIMAP_Y - 1,
+				touchHud::MINIMAP_X + touchHud::MINIMAP_SIZE + 1, touchHud::MINIMAP_Y,
+				0xFF555555);
+			drawRect(touchHud::MINIMAP_X - 1, touchHud::MINIMAP_Y + touchHud::MINIMAP_SIZE,
+				touchHud::MINIMAP_X + touchHud::MINIMAP_SIZE + 1,
+				touchHud::MINIMAP_Y + touchHud::MINIMAP_SIZE + 1, 0xFF555555);
+			drawRect(touchHud::MINIMAP_X - 1, touchHud::MINIMAP_Y - 1, touchHud::MINIMAP_X,
+				touchHud::MINIMAP_Y + touchHud::MINIMAP_SIZE + 1, 0xFF555555);
+			drawRect(touchHud::MINIMAP_X + touchHud::MINIMAP_SIZE, touchHud::MINIMAP_Y - 1,
+				touchHud::MINIMAP_X + touchHud::MINIMAP_SIZE + 1,
+				touchHud::MINIMAP_Y + touchHud::MINIMAP_SIZE + 1, 0xFF555555);
+		}
+	}
+
+	// The hotbar's item icons: the same path the containers use, centred
+	// in each stretched slot.
+	RenderHelper::enableGUIStandardItemLighting();
+	for (int_t slot = 0; slot < 9; ++slot)
+	{
+		const int_t slotW = touchHud::HOTBAR_W / touchHud::HOTBAR_SLOTS;
+		renderInventorySlot(slot, touchHud::HOTBAR_X + slot * slotW + (slotW - 16) / 2,
+			touchHud::HOTBAR_Y + (touchHud::HOTBAR_H - 16) / 2, partialTick);
+	}
+	RenderHelper::disableStandardItemLighting();
+
+	// Action buttons down the right edge: inventory (chest front), crafting
+	// (workbench top), pause (procedural bars).
+	drawTouchHudButton(touchHud::BUTTON_INVENTORY_Y, "/terrain.png", 27);
+	drawTouchHudButton(touchHud::BUTTON_CRAFTING_Y, "/terrain.png", 43);
+	drawTouchHudButton(touchHud::BUTTON_PAUSE_Y, nullptr, 0);
+}
+
+void GuiIngame::drawTouchHudButton(int_t y, const char *iconTexture, int_t iconTile)
+{
+	zLevel = 0.0f;
+	// A 40x40 tile: translucent black fill, a light frame, and a 24x24 icon
+	// drawn from the game's own terrain atlas -- the same convention the
+	// dual-screen main-menu button icons use.
+	drawRect(touchHud::BUTTON_X, y, touchHud::BUTTON_X + touchHud::BUTTON_W, y + touchHud::BUTTON_H,
+		static_cast<int_t>(0xB0000000u));
+	drawRect(touchHud::BUTTON_X, y, touchHud::BUTTON_X + touchHud::BUTTON_W, y + 1, 0x80ffffff);
+	drawRect(touchHud::BUTTON_X, y + touchHud::BUTTON_H - 1,
+		touchHud::BUTTON_X + touchHud::BUTTON_W, y + touchHud::BUTTON_H, 0x80000000);
+
+	const int_t iconX = touchHud::BUTTON_X + (touchHud::BUTTON_W - 24) / 2;
+	const int_t iconY = y + (touchHud::BUTTON_H - 24) / 2;
+	if (iconTexture == nullptr)
+	{
+		// Pause: the universal two-bar glyph, plain quads.
+		drawRect(iconX + 6, iconY + 2, iconX + 10, iconY + 22, 0xffffffff);
+		drawRect(iconX + 14, iconY + 2, iconX + 18, iconY + 22, 0xffffffff);
+		return;
+	}
+
+	renderBindTexture(mc->renderEngine->getTexture(iconTexture));
+	Tessellator *tess = &Tessellator::instance;
+	const float u0 = static_cast<float>(iconTile % 16) / 16.0f;
+	const float v0 = static_cast<float>(iconTile / 16) / 16.0f;
+	tess->startDrawingQuads();
+	tess->setColorOpaque_I(0xffffff);
+	tess->addVertexWithUV(iconX, iconY + 24, zLevel, u0, v0 + 1.0f / 16.0f);
+	tess->addVertexWithUV(iconX + 24, iconY + 24, zLevel, u0 + 1.0f / 16.0f, v0 + 1.0f / 16.0f);
+	tess->addVertexWithUV(iconX + 24, iconY, zLevel, u0 + 1.0f / 16.0f, v0);
+	tess->addVertexWithUV(iconX, iconY, zLevel, u0, v0);
+	tess->draw();
+}
+#endif
 
 void GuiIngame::renderPumpkinBlur(int_t w, int_t h)
 {

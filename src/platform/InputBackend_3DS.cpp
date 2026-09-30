@@ -133,7 +133,15 @@ bool platformMenuPointerActive()
 
 bool platformMenuCursorVisible()
 {
-    return true; // software cursor, touch-driven (PLATFORM_SOFTWARE_CURSOR)
+    // The dual-screen UI made the bottom panel a touch surface: the finger
+    // IS the pointer, so the software cursor drawn under it is pure noise
+    // (and is hidden by the finger itself anyway). Returning false here
+    // makes menuCursorSuppressed() hide it everywhere while keeping the
+    // Wii's shape -- that policy uses this exact hook. The mouse keeps
+    // working for hover/click, and containers still draw their own D-pad
+    // slot cursor (GuiContainer -> legacyDrawSlotCursor), which does not
+    // go through this function.
+    return false;
 }
 
 void platformSetMenuCursor(int x, int y)

@@ -300,6 +300,16 @@ void GuiScreen::setWorldAndResolution(Minecraft *minecraft, int_t w, int_t h)
 	guiParticles = new GuiParticle(minecraft);
 	mc = minecraft;
 	fontRenderer = minecraft->fontRenderer;
+#if PLATFORM_3DS
+	// Dual-screen GUI: every GuiScreen is laid out on the bottom LCD's own
+	// 320x240 canvas while the top screen keeps the world / title art, so
+	// the canvas the caller asks for is ignored. Callers that recompute a
+	// ScaledResolution (the OF settings screens re-resolve on a GUI-scale
+	// change) would otherwise hand back 400x240 and push the right edge of
+	// the menu off the panel.
+	w = 320;
+	h = 240;
+#endif
 	width = w;
 	height = h;
 	// selectedButton siempre apunta a un boton de controlList; al destruirlos quedaria

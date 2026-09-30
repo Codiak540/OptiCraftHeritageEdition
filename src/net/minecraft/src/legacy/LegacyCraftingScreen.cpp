@@ -2319,33 +2319,30 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
     if (hoveredStack != nullptr)
         drawTooltip(hoveredStack, mouseX, mouseY);
 
-    // Bottom Action Hints (static strings to avoid runtime heap allocation)
+    // Bottom Action Hints (static strings to avoid runtime heap allocation).
+    // Every platform declares its arrays at function scope and draws exactly
+    // once inside its own branch. An earlier merge left a second, shared
+    // draw after this block: it double-drew the row on the consoles, and on
+    // PS2 it referenced arrays that only existed inside the if/else blocks
+    // -- out of scope there, so it broke the PS2 build outright.
 #if PLATFORM_PS2
+    static const std::string buttons2x2[] = {"L1/R1", "D-Pad", "Cross", "Triangle", "Circle"};
+    static const std::string actions2x2[] = {uiText("Category"), uiText("Navigate"), uiText("Craft/Move"), uiText("Inventory"), uiText("Back")};
+    static const std::string buttons3x3[] = {"L1/R1", "D-Pad", "Cross", "Circle"};
+    static const std::string actions3x3[] = {uiText("Category"), uiText("Navigate"), uiText("Craft/Move"), uiText("Back")};
     if (is2x2Mode)
-    {
-        static const std::string buttons[] = {"L1/R1", "D-Pad", "Cross", "Triangle", "Circle"};
-        static const std::string actions[] = {uiText("Category"), uiText("Navigate"), uiText("Craft/Move"), uiText("Inventory"), uiText("Back")};
-        drawControlHintRow(mc, width, legacyHintRowY(height), buttons, actions, 5);
-    }
+        drawControlHintRow(mc, width, legacyHintRowY(height), buttons2x2, actions2x2, 5);
     else
-    {
-        static const std::string buttons[] = {"L1/R1", "D-Pad", "Cross", "Circle"};
-        static const std::string actions[] = {uiText("Category"), uiText("Navigate"), uiText("Craft/Move"), uiText("Back")};
-        drawControlHintRow(mc, width, legacyHintRowY(height), buttons, actions, 4);
-    }
-#elif PLATFORM_3DS
-    static const std::string buttons[] = {"L/R", "D-Pad", "A", "B"};
-    static const std::string actions[] = {uiText("Category"), uiText("Navigate"), uiText("Craft/Move"), uiText("Back")};
-    drawControlHintRow(mc, width, legacyHintRowY(height), buttons, actions, 4);
-#elif PLATFORM_WII
+        drawControlHintRow(mc, width, legacyHintRowY(height), buttons3x3, actions3x3, 4);
+#elif PLATFORM_3DS || PLATFORM_WII
     static const std::string buttons[] = {"L/R", "D-Pad", "A", "B"};
     static const std::string actions[] = {uiText("Category"), uiText("Navigate"), uiText("Craft/Move"), uiText("Back")};
     drawControlHintRow(mc, width, legacyHintRowY(height), buttons, actions, 4);
 #else
     static const std::string buttons[] = {"Q/E", "Arrows", "Enter", "Esc"};
     static const std::string actions[] = {uiText("Category"), uiText("Navigate"), uiText("Craft/Move"), uiText("Back")};
-#endif
     drawControlHintRow(mc, width, legacyHintRowY(height), buttons, actions, 4);
+#endif
 }
 
 void LegacyCraftingScreen::updateScreen()

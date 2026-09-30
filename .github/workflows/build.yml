@@ -248,14 +248,20 @@ jobs:
       - name: Fetch CIA packaging tools
         run: |
           set -eux
-          # Latest makerom release; v0.19.0 at the time of this writing. The
-          # tool version is NOT the variable that decides whether the .cia
-          # launches on real hardware -- both v0.18.3 and v0.19.0 were verified
-          # on an Old 2DS (2026-09-28) under this repo's packaging posture
-          # (fully test-signed, real title version, -exefslogo, banner); what
-          # the previously-failing build lacked was that posture, not a
-          # different makerom.
-          MAKEROM_VER=0.19.0
+          # makerom is pinned to v0.18.3, NOT the latest: this job runs inside
+          # the devkitpro/devkitarm container (Ubuntu 22.04 base, glibc 2.35)
+          # and the v0.19.0 ubuntu_x86_64 binary is linked against GLIBC_2.38,
+          # which that container does not provide -- the ubuntu-26.04 runner
+          # image is irrelevant, the steps execute against the container's
+          # libc (v0.18.3 needs at most GLIBC_2.14). The tool version is NOT
+          # the variable that decides whether the .cia launches on real
+          # hardware -- both v0.18.3 and v0.19.0 were verified on an Old 2DS
+          # (2026-09-28) under this repo's packaging posture (fully
+          # test-signed, real title version, -exefslogo, banner); what the
+          # previously-failing build lacked was that posture, not a
+          # different makerom. If this pin is ever lifted, check the
+          # container's glibc against the release binary first.
+          MAKEROM_VER=0.18.3
           curl -fsSL -o /tmp/makerom.zip \
             "https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v${MAKEROM_VER}/makerom-v${MAKEROM_VER}-ubuntu_x86_64.zip"
           ( cd /tmp && unzip -qo makerom.zip && cp makerom /usr/local/bin/makerom \

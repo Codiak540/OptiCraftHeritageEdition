@@ -1,4 +1,5 @@
 #include "World.h"
+#include "net/minecraft/src/UiStrings.h"
 #include "platform/Log.h"
 #include "platform/WorldLoadTrace.h"
 #include "platform/Diagnostics.h"
@@ -828,7 +829,7 @@ void World::saveWorld(bool flag, IProgressUpdate* progressUpdate)
     
     if (progressUpdate != nullptr)
     {
-        progressUpdate->displaySavingString("Saving level");
+        progressUpdate->displaySavingString(uiText("Saving level.."));
     }
     
     MC_LOG_DEBUG("save", "[world save] saveLevel begin\n");

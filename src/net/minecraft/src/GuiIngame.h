@@ -41,6 +41,10 @@ private:
 	void pcLegacyRenderCrosshair(int_t sw, int_t sh);
 	void pcLegacyRenderPlayerStatusHud(int_t sw, int_t sh);
 #endif
+#if defined(CTR_PLATFORM)
+	void renderGameplayBottomPanel(float_t partialTick);
+	void drawTouchHudButton(int_t y, const char *iconTexture, int_t iconTile);
+#endif
 #ifdef PS2_PLATFORM
 	void ps2RenderHotbarFrame(int_t sw, int_t sh, int_t currentItem);
 	void ps2RenderCrosshair(int_t sw, int_t sh);

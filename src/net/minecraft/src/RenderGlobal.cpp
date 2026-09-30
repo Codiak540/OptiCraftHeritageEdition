@@ -1784,63 +1784,10 @@ void RenderGlobal::renderSky(float f)
 	renderColor3f(f1, f2, f3);
 	if (Config::isSkyEnabled()) // OptiFine: Sky OFF (sol/luna/estrellas siguen visibles)
 	{
-#if defined(CTR_PLATFORM)
-		// The classic sky is two flat planes whose smooth look is entirely
-		// per-pixel fog; RenderAPI_CTR_3DS has no fog unit behind the fog
-		// calls, so unfogged the upper plane clips at the 64-block far plane
-		// and the fog-coloured clear shows between it and the sea-level
-		// horizon plane -- three hard bands. Draw the gradient directly: a
-		// dome from the biome sky colour overhead to the exact clear colour
-		// at and below the horizon. updateFogColor ran before the clear, so
-		// fogColorRed/Green/Blue are precisely what the frame was cleared
-		// to -- every edge of this dome meets the clear with no seam.
-		{
-			float fogRed = 0.0f;
-			float fogGreen = 0.0f;
-			float fogBlue = 0.0f;
-			mc->entityRenderer->getFogColor(fogRed, fogGreen, fogBlue);
-			const float domeRadius = 60.0f; // inside the 64-block far plane
-			// Ring altitudes as sin(angle): apex to horizon, then a stretch
-			// below it so the sea-level horizon ring (drawn later, nearer)
-			// and the terrain edge always sit on clear-coloured sky.
-			static const float kAltitudes[] = { 1.0f, 0.86f, 0.68f, 0.50f, 0.32f, 0.16f, 0.0f, -0.45f };
-			const int kAltitudeCount = sizeof(kAltitudes) / sizeof(kAltitudes[0]);
-			const int kSlices = 16;
-			// Seen from the camera the dome is inside-out; culling is cheaper
-			// to drop for two draws than to wind by hand for every ring.
-			renderDisable(RenderCapability::CullFace);
-			tessellator->startDrawingQuads();
-			for (int ring = 0; ring < kAltitudeCount - 1; ++ring)
-			{
-				for (int slice = 0; slice < kSlices; ++slice)
-				{
-					const float angle0 = ((float)slice * 3.1415927f * 2.0f) / (float)kSlices;
-					const float angle1 = (((float)slice + 1.0f) * 3.1415927f * 2.0f) / (float)kSlices;
-					for (int corner = 0; corner < 4; ++corner)
-					{
-						// ring 0 / ring 1, walked angle0 -> angle1 so each
-						// quad is (r0,a0) (r0,a1) (r1,a1) (r1,a0).
-						const int whichRing = (corner == 0 || corner == 1) ? 0 : 1;
-						const float altitude = kAltitudes[ring + whichRing];
-						// sky colour at the zenith, clear colour from the
-						// horizon down, lerped by altitude in between.
-						const float blend = altitude > 0.0f ? altitude : 0.0f;
-						const float red = fogRed + (f1 - fogRed) * blend;
-						const float green = fogGreen + (f2 - fogGreen) * blend;
-						const float blue = fogBlue + (f3 - fogBlue) * blend;
-						tessellator->setColorRGBA_F(red, green, blue, 1.0f);
-						const float angle = (corner == 1 || corner == 2) ? angle1 : angle0;
-						const float horizontal = domeRadius * std::sqrt(std::max(0.0f, 1.0f - altitude * altitude));
-						tessellator->addVertex(MathHelper::cos(angle) * horizontal, domeRadius * altitude,
-						                       MathHelper::sin(angle) * horizontal);
-					}
-				}
-			}
-			tessellator->draw();
-			renderEnable(RenderCapability::CullFace);
-		}
-#else
+#if defined(PS2_PLATFORM) || defined(WII_PLATFORM) || defined(CTR_PLATFORM)
 		renderStaticMeshDraw(skyMesh);
+#else
+		renderCallDisplayList(glSkyList);
 #endif
 	}
 	renderDisable(RenderCapability::Fog);
@@ -1909,6 +1856,18 @@ void RenderGlobal::renderSky(float f)
 	renderEnable(RenderCapability::Texture2D);
 	renderBlendFunc(RenderBlendFactor::SrcAlpha, RenderBlendFactor::One);
 	renderPushMatrix();
+#if defined(CTR_PLATFORM)
+	// Vanilla parks the sun, the moon and the star sphere 100 units out --
+	// inside a desktop far plane, but far beyond the 3DS's 64-block one,
+	// which clipped the whole celestial group away: no sun and no moon,
+	// ever. Pull the group inside the active far plane, the same fit the
+	// sky-plane geometry gets by being drawn small.
+	{
+		const float celestialFit = std::min(1.0f,
+			static_cast<float>(Config::getRenderDistanceFine()) * 0.7f / 100.0f);
+		renderScale(celestialFit, celestialFit, celestialFit);
+	}
+#endif
 
 	float f6 = 1.0f - worldObj->getRainStrengthInterpolated(f);
 	float f9 = 0.0f;
@@ -2024,53 +1983,10 @@ void RenderGlobal::renderSky(float f)
 	{
 		renderPushMatrix();
 		renderTranslate(0.0f, -((float)(horizonOffset - 16.0)), 0.0f);
-#if defined(CTR_PLATFORM)
-		// Same story as the dome above: without fog a flat navy plane reads
-		// as a hard stripe under the horizon. Draw the horizon ring as a
-		// gradient instead -- the dark "sky blend" colour where the water's
-		// surface ends, dissolving into the clear colour at the far plane,
-		// which is also the colour of the dome's rim and of the framebuffer
-		// clear, so band, sky and clear all meet in one tone. Local y=-16
-		// is where skyMesh2 itself sat: world sea level.
-		{
-			float fogRed = 0.0f;
-			float fogGreen = 0.0f;
-			float fogBlue = 0.0f;
-			mc->entityRenderer->getFogColor(fogRed, fogGreen, fogBlue);
-			const float bandRed = worldObj->worldProvider->hasSkyColorBlend()
-			    ? f1 * 0.2f + 0.04f : f1;
-			const float bandGreen = worldObj->worldProvider->hasSkyColorBlend()
-			    ? f2 * 0.2f + 0.04f : f2;
-			const float bandBlue = worldObj->worldProvider->hasSkyColorBlend()
-			    ? f3 * 0.6f + 0.1f : f3;
-			const int kSlices = 16;
-			renderDisable(RenderCapability::CullFace);
-			tessellator->startDrawingQuads();
-			for (int slice = 0; slice < kSlices; ++slice)
-			{
-				const float angle0 = ((float)slice * 3.1415927f * 2.0f) / (float)kSlices;
-				const float angle1 = (((float)slice + 1.0f) * 3.1415927f * 2.0f) / (float)kSlices;
-				for (int corner = 0; corner < 4; ++corner)
-				{
-					// inner (16) at angle0, inner at angle1, outer (60) at
-					// angle1, outer at angle0, so the colour lerp runs
-					// outward across the ring.
-					const bool inner = (corner == 0 || corner == 1);
-					const float radius = inner ? 16.0f : 60.0f;
-					const float blend = inner ? 1.0f : 0.0f;
-					tessellator->setColorRGBA_F(fogRed + (bandRed - fogRed) * blend,
-					                            fogGreen + (bandGreen - fogGreen) * blend,
-					                            fogBlue + (bandBlue - fogBlue) * blend, 1.0f);
-					const float angle = (corner == 1 || corner == 2) ? angle1 : angle0;
-					tessellator->addVertex(MathHelper::cos(angle) * radius, -16.0f,
-					                       MathHelper::sin(angle) * radius);
-				}
-			}
-			tessellator->draw();
-			renderEnable(RenderCapability::CullFace);
-		}
-#else
+#if defined(PS2_PLATFORM) || defined(WII_PLATFORM) || defined(CTR_PLATFORM)
 		renderStaticMeshDraw(skyMesh2);
+#else
+		renderCallDisplayList(glSkyList2);
 #endif
 		renderPopMatrix();
 	}
@@ -2097,7 +2013,19 @@ void RenderGlobal::renderClouds(float f)
 	float f1 = (float)(mc->renderViewEntity->lastTickPosY + (mc->renderViewEntity->posY - mc->renderViewEntity->lastTickPosY) * (double)f);
 
 	byte_t byte0 = 32;
-	int_t i = 256 / byte0;
+#if defined(CTR_PLATFORM)
+	// Vanilla's 512-block cloud band rides 108 blocks up -- beyond the
+	// 3DS's 64-block far plane, so the whole layer clipped away and clouds
+	// never showed. Keep the world-anchored UV drift but pull the band and
+	// its height inside the far plane (the geometry is camera-relative
+	// either way); the band stays wider than the visible disc, like
+	// vanilla's does against its own far plane.
+	const int_t bandHalf = (std::min<int_t>(256,
+		static_cast<int_t>(Config::getRenderDistanceFine() * 1.2f) + byte0 - 1) / byte0) * byte0;
+#else
+	const int_t i = 256 / byte0;
+	const int_t bandHalf = byte0 * i;
+#endif
 
 	Tessellator *tessellator = &Tessellator::instance;
 
@@ -2134,6 +2062,15 @@ void RenderGlobal::renderClouds(float f)
 	d1 -= k * 2048;
 
 	float f9 = (worldObj->worldProvider->getCloudHeight() - f1) + 0.33f;
+#if defined(CTR_PLATFORM)
+	{
+		const float cloudCeiling = static_cast<float>(Config::getRenderDistanceFine()) * 0.55f;
+		if (f9 > cloudCeiling)
+			f9 = cloudCeiling;
+		else if (f9 < -cloudCeiling)
+			f9 = -cloudCeiling;
+	}
+#endif
 	const tess_coord_t cloudLocalX = static_cast<tess_coord_t>(d);
 	const tess_coord_t cloudLocalZ = static_cast<tess_coord_t>(d1);
 	float f10 = static_cast<float>(cloudLocalX * static_cast<tess_coord_t>(f6));
@@ -2142,9 +2079,9 @@ void RenderGlobal::renderClouds(float f)
 	tessellator->startDrawingQuads();
 	tessellator->setColorRGBA_F(f2, f3, f4, 0.8f);
 
-	for (int_t l = -byte0 * i; l < byte0 * i; l += byte0)
+	for (int_t l = -bandHalf; l < bandHalf; l += byte0)
 	{
-		for (int_t i1 = -byte0 * i; i1 < byte0 * i; i1 += byte0)
+		for (int_t i1 = -bandHalf; i1 < bandHalf; i1 += byte0)
 		{
 			tessellator->addVertexWithUV(l + 0, f9, i1 + byte0, (float)(l + 0) * f6 + f10, (float)(i1 + byte0) * f6 + f11);
 			tessellator->addVertexWithUV(l + byte0, f9, i1 + byte0, (float)(l + byte0) * f6 + f10, (float)(i1 + byte0) * f6 + f11);

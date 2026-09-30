@@ -1,5 +1,6 @@
 #include "LegacyOptionsScreen.h"
 
+#include "platform/PlatformConfig.h"
 #include "LegacyMainMenuLayout.h"
 #include "LegacyMenuHints.h"
 #include "LegacyMenuNavigation.h"
@@ -234,7 +235,11 @@ void LegacyOptionsScreen::drawLegacyBackground(float_t partialTick)
     titleLayout.titleY = legacyLayout.titleY;
     titleLayout.titleMaxWidth = legacyLayout.titleMaxWidth;
     titleLayout.titleMaxHeight = legacyLayout.titleMaxHeight;
+#if !PLATFORM_3DS
+    // The 3DS already shows the game title on the top LCD; a second banner
+    // at the top of the bottom panel would only duplicate it.
     legacyDrawTitleTexture(mc, titleLayout, width, zLevel, nullptr);
+#endif
 
     if (panelVisible)
         panelRenderer.draw(legacyLayout);

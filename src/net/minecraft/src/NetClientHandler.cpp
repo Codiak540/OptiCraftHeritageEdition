@@ -698,12 +698,15 @@ void NetClientHandler::handleMapChunk(Packet51MapChunk* packet)
 #endif
 #endif
 
+#if PLATFORM_3DS
     // Scope the receive-region to the sections this packet actually carries
     // (Packet51's "yChMin" is the primary section bitmask, 1.2.5 wire
     // format): a one-section update to a loaded column used to invalidate
     // and re-mesh the full 128-block height -- every vertical renderer of
     // the column, per packet. Full-initialize chunks carry the full mask and
-    // keep the previous whole-column behaviour bit for bit.
+    // keep the previous whole-column behaviour bit for bit. This is a
+    // 3DS-side optimization (this branch's scope is 3DS-only); every other
+    // platform keeps the original whole-column behaviour below.
     const int_t primaryMask = packet->yChMin & 0xffff;
     int_t yMinBlocks = 0;
     int_t yMaxBlocks = WorldHeight::HEIGHT;
@@ -716,6 +719,10 @@ void NetClientHandler::handleMapChunk(Packet51MapChunk* packet)
         yMinBlocks = JavaArithmetic::intShl(lo, 4);
         yMaxBlocks = std::min<int_t>(WorldHeight::HEIGHT, JavaArithmetic::intShl(hi + 1, 4));
     }
+#else
+    const int_t yMinBlocks = 0;
+    const int_t yMaxBlocks = WorldHeight::HEIGHT;
+#endif
 
     worldClient->invalidateBlockReceiveRegion(
         JavaArithmetic::intShl(packet->xCh, 4), yMinBlocks, JavaArithmetic::intShl(packet->zCh, 4),
@@ -747,8 +754,10 @@ void NetClientHandler::handleMapChunk(Packet51MapChunk* packet)
         return;
     }
 
-    // The same Y scoping on the dirty mark: func_48494_a imported only the
-    // masked sections, so only those renderers need re-meshing.
+    // The same Y scoping on the dirty mark (3DS only): func_48494_a
+    // imported only the masked sections, so only those renderers need
+    // re-meshing. Every other platform passes the vanilla full-column
+    // bounds defined above.
     worldClient->markBlocksDirty(
         JavaArithmetic::intShl(packet->xCh, 4), yMinBlocks, JavaArithmetic::intShl(packet->zCh, 4),
         JavaArithmetic::intAdd(JavaArithmetic::intShl(packet->xCh, 4), 15), yMaxBlocks,

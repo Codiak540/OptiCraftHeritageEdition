@@ -9,6 +9,8 @@
 #include "legacy/LegacyMenuHints.h"
 #include "legacy/LegacyMenuNavigation.h"
 #include "legacy/LegacyPauseStyle.h"
+#include "legacy/LegacyPanorama.h"
+#include "legacy/LegacySceneState.h"
 #include "legacy/LegacyUiAssets.h"
 #include "GuiMainMenu.h"
 #include "GuiAchievements.h"

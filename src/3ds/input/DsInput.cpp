@@ -106,7 +106,63 @@ std::uint32_t g_prevHeld = 0;
 // Previous poll's touch sample. The panel reports an ABSOLUTE contact point,
 // but the mouse queue wants relative motion too, so deltas are differenced
 // here -- the same job the Wii's IR producer does in WiiPointer.cpp.
+#include "platform/TouchHudLayout.h"
+
+// The gameplay touch-HUD widget key currently latched down (0 = none).
+// Widget actions press the key on contact and release it on lift, at least
+// one frame apart: pushing both edges into the same poll made Minecraft's
+// keyboard drain process down+up together, and the state-based checks
+// (inventory, hotbar slots) never saw the press at all -- the pause button
+// alone worked, because its check is event-driven inside the drain loop.
+int g_widgetKeyDown = 0;
+
+// Press a gameplay touch-HUD widget's action key. The crafting button opens
+// the inventory's own 2x2 grid -- the owner's call, the same screen
+// inventory opens.
+void pressTouchHudWidget(touchHud::WidgetHit hit)
+{
+	int key = 0;
+	switch (hit.widget)
+	{
+	case touchHud::Widget::Hotbar:
+		key = lwjgl::Keyboard::KEY_1 + hit.slot;
+		break;
+	case touchHud::Widget::Inventory:
+	case touchHud::Widget::Crafting:
+		// The 3DS inventory binding rides the pad's Y-button code (the
+		// same code the physical Y pushes through the gameplay channel);
+		// KEY_E only reached a desktop binding nobody re-set.
+		key = DS_KEY_Y;
+		break;
+	case touchHud::Widget::Pause:
+		key = lwjgl::Keyboard::KEY_ESCAPE;
+		break;
+	default:
+		return;
+	}
+	if (g_widgetKeyDown != 0 && g_widgetKeyDown != key)
+		lwjgl::Keyboard::detail::pushKey(g_widgetKeyDown, false);
+	g_widgetKeyDown = key;
+	lwjgl::Keyboard::detail::pushKey(key, true);
+}
+
+// Release the latched widget key: on finger lift, on sliding off the
+// widget, or when a menu takes the panel away.
+void releaseTouchHudWidget()
+{
+	if (g_widgetKeyDown != 0)
+	{
+		lwjgl::Keyboard::detail::pushKey(g_widgetKeyDown, false);
+		g_widgetKeyDown = 0;
+	}
+}
+
 bool g_prevTouchDown = false;
+// True while the previous touch contact sat on a gameplay touch-HUD
+// widget: widget contacts never feed the camera, and leaving one must
+// restart the pointer publish as a fresh contact rather than difference
+// against the stale pre-widget sample.
+bool g_prevTouchOnWidget = false;
 int g_prevTouchX = 0;
 int g_prevTouchY = 0;
 
@@ -788,45 +844,78 @@ void dsInputPoll(bool inMenu)
 	// enters the mouse queue -- a click at panel coordinates would land
 	// under the top screen's cursor instead of under the finger.
 	const bool touchDown = (heldKeysRaw & KEY_TOUCH) != 0;
+	bool widgetContact = false;
 	if (touchDown)
 	{
 		touchPosition touch = {};
 		hidTouchRead(&touch);
-		// X: 320-wide panel -> top-screen width. Y: both screens are 240
-		// tall, so it needs no scaling; clamp against the stored height
-		// anyway so the pointer can never land outside the GUI regardless
-		// of what geometry dsInputInit was handed.
-		const int x = typing
-		    ? static_cast<int>(touch.px)
-		    : static_cast<int>(touch.px) * g_screenW / kTouchPanelW;
-		const int y = typing
-		    ? static_cast<int>(touch.py)
-		    : std::min(static_cast<int>(touch.py), g_screenH - 1);
 
-		g_state.pointerActive = true;
-		g_state.pointerX = x;
-		g_state.pointerY = y;
-
-		// Publish the position before any click derived from it, and on new
-		// contact publish it first so the click lands where the finger is.
-		// A finger surviving the end of a typing session counts as a new
-		// contact too: the previous sample was in the other coordinate
-		// space, and differencing across that would fling the cursor once.
-		if (!typing)
+		// Dual-screen gameplay HUD: the panel's touch widgets own their
+		// contact -- the camera pad must not look while a finger is on one,
+		// and a fresh contact fires the widget's action once instead. A
+		// drag that merely slides onto a widget does nothing; everything
+		// else on the panel stays the camera pad exactly as before.
+		if (!typing && !g_inMenu)
 		{
-			if (!g_prevTouchDown || g_prevTextExclusive)
-				lwjgl::Mouse::detail::pushMotion(x, y, 0, 0);
-			else if (x != g_prevTouchX || y != g_prevTouchY)
-				lwjgl::Mouse::detail::pushMotion(x, y, x - g_prevTouchX, y - g_prevTouchY);
+			const touchHud::WidgetHit hit =
+			    touchHud::hitTest(static_cast<int>(touch.px), static_cast<int>(touch.py));
+			if (hit.widget != touchHud::Widget::None)
+			{
+				widgetContact = true;
+				if (!g_prevTouchDown || g_prevTextExclusive)
+					pressTouchHudWidget(hit);
+			}
 		}
+
+		if (!widgetContact)
+		{
+			// Sliding off a widget (or never touching one): any latched
+			// widget key comes up so the camera pad can take over.
+			releaseTouchHudWidget();
+			// X: 320-wide panel -> top-screen width. Y: both screens are 240
+			// tall, so it needs no scaling; clamp against the stored height
+			// anyway so the pointer can never land outside the GUI regardless
+			// of what geometry dsInputInit was handed.
+			const int x = typing
+			    ? static_cast<int>(touch.px)
+			    : static_cast<int>(touch.px) * g_screenW / kTouchPanelW;
+			const int y = typing
+			    ? static_cast<int>(touch.py)
+			    : std::min(static_cast<int>(touch.py), g_screenH - 1);
+
+			g_state.pointerActive = true;
+			g_state.pointerX = x;
+			g_state.pointerY = y;
+
+			// Publish the position before any click derived from it, and on new
+			// contact publish it first so the click lands where the finger is.
+			// A finger surviving the end of a typing session counts as a new
+			// contact too: the previous sample was in the other coordinate
+			// space, and differencing across that would fling the cursor once.
+			// Leaving a widget counts the same way: its samples never reached
+			// the pointer, so the publish must restart from zero deltas.
+			if (!typing)
+			{
+				if (!g_prevTouchDown || g_prevTextExclusive || g_prevTouchOnWidget)
+					lwjgl::Mouse::detail::pushMotion(x, y, 0, 0);
+				else if (x != g_prevTouchX || y != g_prevTouchY)
+					lwjgl::Mouse::detail::pushMotion(x, y, x - g_prevTouchX, y - g_prevTouchY);
+			}
+		}
+		// A widget contact leaves pointerActive/X/Y at their last sample:
+		// no motion reaches the camera while the finger is on the widget.
 	}
 	else
 	{
 		// Release at the last contact point, not at (0,0): pointerX/Y keep
 		// the final sample, which is where updateGameplay() emits the up.
 		g_state.pointerActive = false;
+		// The finger lifting off a widget ends its action: the latched key
+		// comes up here -- a hold on the hotbar selects once, not forever.
+		releaseTouchHudWidget();
 	}
 	g_prevTouchDown = touchDown;
+	g_prevTouchOnWidget = widgetContact;
 	g_prevTouchX = g_state.pointerX;
 	g_prevTouchY = g_state.pointerY;
 

@@ -109,9 +109,60 @@ void GuiContainer::initGui()
 		p->craftingInventory = inventorySlots;
 }
 
+#if defined(CTR_PLATFORM)
+namespace
+{
+// The dual-screen bottom panel is 320x240 and the vanilla container panel
+// (176x166 at GUI scale 1) sits centered inside it with a bare frame
+// around. The container scales up to the biggest uniform fit instead, and
+// the touch coordinates fold back into logical space so every slot, hover
+// and tooltip rect keeps working untouched.
+float_t containerPanelFit(int_t canvasW, int_t canvasH, int_t guiW, int_t guiH)
+{
+	if (guiW <= 0 || guiH <= 0)
+		return 1.0f;
+	const float_t fitX = static_cast<float_t>(canvasW) / static_cast<float_t>(guiW);
+	const float_t fitY = static_cast<float_t>(canvasH) / static_cast<float_t>(guiH);
+	float_t fit = fitX < fitY ? fitX : fitY;
+	if (fit < 1.0f)
+		fit = 1.0f;
+	return fit;
+}
+
+void containerPanelUnfold(float_t &x, float_t &y, int_t canvasW, int_t canvasH, float_t fit)
+{
+	if (fit <= 1.0f)
+		return;
+	const float_t cx = static_cast<float_t>(canvasW) * 0.5f;
+	const float_t cy = static_cast<float_t>(canvasH) * 0.5f;
+	x = (x - cx) / fit + cx;
+	y = (y - cy) / fit + cy;
+}
+}
+#endif
+
 void GuiContainer::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick)
 {
 	drawDefaultBackground();
+#if defined(CTR_PLATFORM)
+	// Fill the panel: the content below scales up to the fit, and the mouse
+	// folds back into logical space first so hover, tooltips and the
+	// buttons GuiScreen::drawScreen draws at the end all line up with the
+	// scaled geometry. The body has no early returns, so the push brackets
+	// the whole draw.
+	const float_t panelFit = containerPanelFit(width, height, xSize, ySize);
+	{
+		float_t mx = static_cast<float_t>(mouseX);
+		float_t my = static_cast<float_t>(mouseY);
+		containerPanelUnfold(mx, my, width, height, panelFit);
+		mouseX = static_cast<int_t>(mx);
+		mouseY = static_cast<int_t>(my);
+	}
+	renderPushMatrix();
+	renderTranslate(static_cast<float_t>(width) * 0.5f, static_cast<float_t>(height) * 0.5f, 0.0f);
+	renderScale(panelFit, panelFit, 1.0f);
+	renderTranslate(-static_cast<float_t>(width) * 0.5f, -static_cast<float_t>(height) * 0.5f, 0.0f);
+#endif
 	int_t guiX = guiLeft;
 	int_t guiY = guiTop;
 
@@ -305,6 +356,9 @@ void GuiContainer::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick)
 
 	renderEnable(RenderCapability::Lighting);
 	renderEnable(RenderCapability::DepthTest);
+#if defined(CTR_PLATFORM)
+	renderPopMatrix();
+#endif
 }
 
 void GuiContainer::drawGuiContainerForegroundLayer()
@@ -360,6 +414,19 @@ bool GuiContainer::getIsMouseOverSlot(Slot *slot, int_t mouseX, int_t mouseY)
 
 void GuiContainer::mouseClicked(int_t x, int_t y, int_t button)
 {
+#if defined(CTR_PLATFORM)
+	// Fold the touch point back into the container's logical space: the
+	// draw scales the panel up to fit (see drawScreen), so the hit tests
+	// need the unscaled coordinates.
+	{
+		const float_t panelFit = containerPanelFit(width, height, xSize, ySize);
+		float_t mx = static_cast<float_t>(x);
+		float_t my = static_cast<float_t>(y);
+		containerPanelUnfold(mx, my, width, height, panelFit);
+		x = static_cast<int_t>(mx);
+		y = static_cast<int_t>(my);
+	}
+#endif
 #if PLATFORM_PS2 || PLATFORM_WII || PLATFORM_3DS
 	ContainerSlotNavigator &navigator = ContainerSlotNavigator::instance(getOwnerPlayerIndex());
 	const bool pointerActive = platformMenuPointerActive();

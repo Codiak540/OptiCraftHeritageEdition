@@ -19,6 +19,7 @@
 #include <cstdlib>
 
 #include "platform/Log.h"
+#include "3ds/render/DsRender.h"
 
 namespace
 {
@@ -45,6 +46,21 @@ namespace CrashHandler
 
 void Crash(const std::string &message, const std::string &stackTrace)
 {
+	// The dual-screen GUI may have taken the bottom LCD over at BGR8
+	// (DsRender.cpp), while the console renders RGB565 text -- printing
+	// straight away would write the report in the wrong pixel format over
+	// the panel image. Hand the screen back first: blank the panel (scanned
+	// as RGB565 it is garbage), re-present so the LCD picks the format up,
+	// then print. Before the panel exists nothing needs doing -- the format
+	// is still consoleInit()'s RGB565 and the boot log stays on screen.
+	if (ds::bottomPanelOwned())
+	{
+		gfxSetScreenFormat(GFX_BOTTOM, GSP_RGB565_OES);
+		consoleClear();
+		gfxScreenSwapBuffers(GFX_BOTTOM, false);
+		gspWaitForVBlank();
+	}
+
 	// Print first, always: stdout is unbuffered after consoleInit(), so this
 	// lands on the bottom screen even if everything below misbehaves.
 	std::printf("\nOptiCraft has crashed\n");
