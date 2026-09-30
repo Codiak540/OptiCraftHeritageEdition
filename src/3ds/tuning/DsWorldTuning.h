@@ -644,3 +644,295 @@
 #define PLATFORM_POPULATE_GRAVEL_VEINS             (DS_FAST_WORLDGEN ? 2 : 10)
 #undef  PLATFORM_POPULATE_SNOW_PASS
 #define PLATFORM_POPULATE_SNOW_PASS                (DS_FAST_WORLDGEN ? 0 : 1)
+
+// -----------------------------------------------------------------------------
+// PS2 parity pass: the shared fast paths the desktop branch compiles out
+// -----------------------------------------------------------------------------
+// The 3DS takes the desktop branch of PlatformGameTuning.h (file header), and
+// the desktop branch is the REFERENCE profile: every console fast path in the
+// table is off in it by construction, because that branch exists to describe
+// the machine with no constraints. This section claims the PS2's values for
+// the knobs whose machinery is plain flag-gated code in the common tree -- no
+// src/ps2 file participates in any of them, so switching one on here compiles
+// exactly the code the PS2 already ships, and the PS2 headers stay the
+// rationale of record:
+//
+//   Ps2WorldTuning.h  world probes, collisions, float math, scheduling, End;
+//   Ps2MeshTuning.h   particles, clouds;
+//   PcLegacyTuning.h  every knob tagged [PC] below is also live on the
+//                     gcc32-legacy desktop profile, so it has a second,
+//                     desktop-configured configuration behind it too.
+//
+// What made the cut: the knob has to read as a plain `#if PLATFORM_X` in a
+// file that includes PlatformTuning.h (checked consumer by consumer -- a macro
+// read only where PlatformTuning.h never reaches would silently stay 0 and
+// LOOK like it worked), and it has to be a cost saving rather than a change of
+// what the world is. The knobs that fail the second test are listed at the end
+// of this section instead of being taken quietly.
+//
+// Why the ARM11 wants the same answers as the R5900 despite having a
+// coprocessor: this is an in-order, single-issue 268 MHz core, VFPv2 double
+// multiplies and divides cost several times their single-precision forms, and
+// a compare's flag readback stalls the pipe -- the same reasoning that already
+// put PLATFORM_INTEGER_FLOOR_DOUBLE at 1 above.
+
+// World probes around the player: the phase the PS2 measured as its own worst
+// spike, and the 3DS runs it at the desktop's cost. randomDisplayUpdates()
+// fires every game tick from Minecraft.cpp (torch flames, lava drips, portal
+// sparkle) and probes 1000 positions with six RNG draws plus a block lookup
+// each -- on the PS2 that was "slowTick=randomDisplay 347 ms" on 2026-09-16.
+// Three knobs fix it:
+//
+//   RANDOM_DISPLAY_PROBES 1000 -> 128   [PS2] the search itself; 128 still
+//     carries the ambient torch/lava/portal particles the PS2 measured as
+//     enough, at an eighth of the probes.
+//   CACHE_RANDOM_DISPLAY_CHUNKS 0 -> 1  [PC] every probe resolves a chunk;
+//     the 3x3 window the probes land in is resolved once instead of up to
+//     1000 times, with the vanilla RNG draws preserved.
+//   REUSE_RANDOM_DISPLAY_RNG 0 -> 1     the desktop path constructs a fresh
+//     Random PER CALL -- a clock/atomic seed each tick (World.h) just to
+//     throw it away -- where the PS2 keeps one display-only RNG alive.
+//
+// The three tick-side caches are the same idea in the phases that walk a chunk
+// set every tick (random ticks, spawn eligibility, entity placement): a
+// resident-window lookup instead of a provider call per candidate, with
+// invalidation keyed on the chunk list and (for the entity one) on the
+// provider topology version, so streamed changes still show up immediately.
+//   [PC] all three.
+#undef  PLATFORM_RANDOM_DISPLAY_PROBES
+#define PLATFORM_RANDOM_DISPLAY_PROBES             128
+#undef  PLATFORM_CACHE_RANDOM_DISPLAY_CHUNKS
+#define PLATFORM_CACHE_RANDOM_DISPLAY_CHUNKS        1
+#undef  PLATFORM_REUSE_RANDOM_DISPLAY_RNG
+#define PLATFORM_REUSE_RANDOM_DISPLAY_RNG           1
+#undef  PLATFORM_CACHE_RANDOM_TICK_CHUNKS
+#define PLATFORM_CACHE_RANDOM_TICK_CHUNKS           1
+#undef  PLATFORM_CACHE_SPAWN_CHUNKS
+#define PLATFORM_CACHE_SPAWN_CHUNKS                 1
+#undef  PLATFORM_CACHE_ENTITY_CHUNK_EXISTENCE
+#define PLATFORM_CACHE_ENTITY_CHUNK_EXISTENCE       1
+
+// Block collision and entity queries: the Legacy-PC fast paths the PS2 also
+// reuses (its own comment: "preserve the same block collision semantics while
+// replacing per-block virtual World/Chunk lookups with direct resident-section
+// reads; special collision shapes keep their block-specific virtual
+// fallback"). Unit cubes -- nearly every candidate in a walk -- never enter a
+// virtual dispatch at all, the scan exits as soon as a candidate cannot win,
+// and getEntitiesWithinAABB resolves its chunks through a per-query cache.
+// [PC] all four: same semantics, different dispatch cost.
+//
+// FLOAT_COLLISION_SWEEP is the one of this family that is PS2-only. It runs
+// the candidate sweep in float in a local frame anchored on an integer block
+// corner next to the entity (PlatformBlockCollisionSweeper), then RE-DERIVES
+// the winning axis in double against the block face, so an entity still lands
+// on the block coordinate exactly as vanilla does -- float only picks which box
+// wins, which can differ from double only when two faces sit within ~1e-7 of
+// each other. Positions and AABBs stay double. Worth taking on an in-order core
+// because the alternative is six double compares per candidate per axis, and
+// the unit cubes take the integer-cell path without touching a pooled double
+// box.
+#undef  PLATFORM_FAST_BLOCK_COLLISIONS
+#define PLATFORM_FAST_BLOCK_COLLISIONS              1
+#undef  PLATFORM_EARLY_UNIT_CUBE_COLLISION_TEST
+#define PLATFORM_EARLY_UNIT_CUBE_COLLISION_TEST     1
+#undef  PLATFORM_EARLY_COLLISION_EXIT
+#define PLATFORM_EARLY_COLLISION_EXIT               1
+#undef  PLATFORM_ENTITY_QUERY_CACHE
+#define PLATFORM_ENTITY_QUERY_CACHE                 1
+#undef  PLATFORM_FLOAT_COLLISION_SWEEP
+#define PLATFORM_FLOAT_COLLISION_SWEEP              1
+
+// Float arithmetic where the arithmetic, not the storage, narrows. Every
+// entity/world position and every Vec3D keeps its double storage and its
+// double signature; only the hot inner expressions run in float, because they
+// operate over tens of blocks and are immediately consumed as float rotations,
+// speeds and threshold comparisons. This is the PS2's whole float family:
+//
+//   [PC] FLOAT_ENTITY_AI_MATH, FLOAT_ENTITY_CORE_MATH, FLOAT_VECTOR_MATH,
+//        FLOAT_FLUID_FLOW -- the Legacy-PC profile ships all four.
+//   PS2-only: FLOAT_ENTITY_DISTANCE (squared separation computed after the
+//        double subtraction, which is what keeps it accurate far from spawn --
+//        the three double multiplies dominate a proximity test that almost
+//        always ends in a constant comparison), FLOAT_EXPLOSION_MATH (rays
+//        travel a few blocks; the marching frame is rebased on the origin
+//        block), FLOAT_COLLISION_SWEEP (above).
+#undef  PLATFORM_FLOAT_ENTITY_AI_MATH
+#define PLATFORM_FLOAT_ENTITY_AI_MATH               1
+#undef  PLATFORM_FLOAT_ENTITY_CORE_MATH
+#define PLATFORM_FLOAT_ENTITY_CORE_MATH             1
+#undef  PLATFORM_FLOAT_ENTITY_DISTANCE
+#define PLATFORM_FLOAT_ENTITY_DISTANCE              1
+#undef  PLATFORM_FLOAT_VECTOR_MATH
+#define PLATFORM_FLOAT_VECTOR_MATH                  1
+#undef  PLATFORM_FLOAT_EXPLOSION_MATH
+#define PLATFORM_FLOAT_EXPLOSION_MATH               1
+#undef  PLATFORM_FLOAT_FLUID_FLOW
+#define PLATFORM_FLOAT_FLUID_FLOW                   1
+// Spreading water/lava: vanilla looks four blocks out through a three-way
+// recursion (up to 324 leaf probes, each two or three chunk lookups, per
+// spreading tick); 2 keeps the nearby steering and costs 36. PS2-only.
+#undef  PLATFORM_FLUID_FLOW_SEARCH_DEPTH
+#define PLATFORM_FLUID_FLOW_SEARCH_DEPTH            2
+
+// Tick scheduling. The line-of-sight shortcut scan behind PathNavigate's
+// current node is the expensive half of path FOLLOWING (the node itself still
+// advances every tick), so it runs every 4th tick [PS2][PC]; remote players'
+// living physics -- simulated on this client for everyone else -- runs every
+// 8th tick [PS2], both powers of two so the entity round-robin keeps the
+// phases spread instead of synchronising; and the sheep FUR pass, an extra
+// texture bind plus an extra mesh draw per sheep, is skipped past 16 blocks
+// [PS2] (the sheep still draws its base model, only the wool overlay goes).
+#undef  PLATFORM_PATH_SHORTCUT_TICK_DIVISOR
+#define PLATFORM_PATH_SHORTCUT_TICK_DIVISOR        4
+#undef  PLATFORM_MULTIPLAYER_REMOTE_LIVING_PHYSICS_TICK_DIVISOR
+#define PLATFORM_MULTIPLAYER_REMOTE_LIVING_PHYSICS_TICK_DIVISOR 8
+#undef  PLATFORM_SHEEP_WOOL_LOD_DISTANCE_SQ
+#define PLATFORM_SHEEP_WOOL_LOD_DISTANCE_SQ    256.0f
+
+// Particles [PS2, Ps2MeshTuning.h]. Each one is a live entity with its own
+// collision sweep per tick AND a fresh tessellation on the way out, which is
+// why this profile's particleSetting is already "decreased" above (the profile
+// cuts requests; these cut what the survivors cost):
+//
+//   FAST_PARTICLE_PHYSICS 0 -> 1     float step maths instead of double.
+//   PARTICLE_BRIGHTNESS_INTERVAL 1 -> 4   the per-layer light lookup, one
+//     value per four particles instead of per particle (already quantised
+//     through the 16-step lightmap afterwards).
+//   BLOCK_DESTROY_PARTICLE_GRID 4 -> 2   the spawn grid for a broken block
+//     (4x4x4 down to 2x2x2), i.e. the burst a single dig costs.
+//   MAX_PARTICLES_PER_LAYER 4000 -> 128  the per-layer pool ceiling (4000 is
+//     the desktop's "never bind" figure). Past it EffectRenderer::addEffect
+//     evicts the layer's OLDEST particle, so 128 is a bound on how much a
+//     burst can cost rather than on spawning -- the PS2's own number.
+#undef  PLATFORM_FAST_PARTICLE_PHYSICS
+#define PLATFORM_FAST_PARTICLE_PHYSICS              1
+#undef  PLATFORM_PARTICLE_BRIGHTNESS_INTERVAL
+#define PLATFORM_PARTICLE_BRIGHTNESS_INTERVAL       4
+#undef  PLATFORM_BLOCK_DESTROY_PARTICLE_GRID
+#define PLATFORM_BLOCK_DESTROY_PARTICLE_GRID        2
+#undef  PLATFORM_MAX_PARTICLES_PER_LAYER
+#define PLATFORM_MAX_PARTICLES_PER_LAYER          128
+
+// Populate and lighting access [PS2][PC], all four. They shrink the two
+// lumps this profile already puts a wall-clock budget on -- the async publish
+// (structures, decoration, construction, skylight, one per frame) and the
+// budgeted populate drain:
+//
+//   BATCH_POPULATION_LIGHTING   collapse the per-block renderer
+//     invalidations a populate emits into one dirty range per section.
+//   POPULATION_BLOCK_WRITER     take block/random-tick counts from the fill
+//     loop that writes them instead of rescanning every cell of every
+//     allocated section afterwards.
+//   FAST_LIGHTING_CHUNK_ACCESS  one resolved source chunk per flood fill
+//     instead of a provider lookup per probe.
+//   FAST_BLOCK_COUNT_SCAN       ExtendedBlockStorage::recalcBlockCounts walks
+//     the packed array directly, which is also what makes the bulk import
+//     above trustworthy.
+#undef  PLATFORM_BATCH_POPULATION_LIGHTING
+#define PLATFORM_BATCH_POPULATION_LIGHTING          1
+#undef  PLATFORM_POPULATION_BLOCK_WRITER
+#define PLATFORM_POPULATION_BLOCK_WRITER            1
+#undef  PLATFORM_FAST_LIGHTING_CHUNK_ACCESS
+#define PLATFORM_FAST_LIGHTING_CHUNK_ACCESS         1
+#undef  PLATFORM_FAST_BLOCK_COUNT_SCAN
+#define PLATFORM_FAST_BLOCK_COUNT_SCAN              1
+
+// Worldgen ARITHMETIC only -- none of these changes what gets placed. The
+// per-feature float/double alias (WorldGenLakes, WorldGenBigTree) is the
+// opt-in PlatformConfig.h describes feature by feature: both features already
+// route every draw through nextFloat()/nextDoubleFloat(), so the switch does
+// not change how many random numbers they consume and cannot push the seed's
+// stream out of step [PC]. FLOAT_BIOME_NOISE narrows the Voronoi zoom that
+// answers every biome read [PC]; FLOAT_ORE_VEINS narrows WorldGenMinable's
+// density march [PC]. All three run inside the budgeted populate drain or on
+// the worker, so this is queue headroom and tick headroom, not a visual trade.
+#undef  PLATFORM_FLOAT_BIOME_NOISE
+#define PLATFORM_FLOAT_BIOME_NOISE                  1
+#undef  PLATFORM_FLOAT_ORE_VEINS
+#define PLATFORM_FLOAT_ORE_VEINS                    1
+#undef  PLATFORM_FLOAT_FEATURE_GENERATION
+#define PLATFORM_FLOAT_FEATURE_GENERATION           1
+
+// Presentation and heap [PS2 unless noted]:
+//
+//   SIN_TABLE_BITS 16 -> 12   [PC] 65536 entries is 256 KB sitting in .bss
+//     -- 32x the ARM11's 16 KB D-cache, and the index is an angle, so
+//     consecutive calls land nowhere near each other and there is no locality
+//     to recover: entity motion, mob AI, particles and every rotated model
+//     call these constantly and each one misses at main-memory latency. 4096
+//     entries is 16 KB and 240 KB back, and the startup fill loop drops from
+//     65536 fdlibm sin calls to 4096. The trade Ps2WorldTuning.h already
+//     wrote for this value: the angular step goes 2*pi/65536 -> 2*pi/4096,
+//     worst-case error ~0.0015 (0.09 degrees) -- invisible in a rendered
+//     rotation, but entity motion no longer matches the double-precision Java
+//     path exactly. The PS2 then shipped 6 bits on top of that comment; 12 is
+//     PC_LEGACY's value and the accuracy-preserving half of the same move, so
+//     that is what is taken here (one line to go to 6).
+//
+//   TESSELLATOR_BUFFER_INTS 0x200000 -> 0x10000   [PS2/Wii] the raw vertex
+//     buffer is an 8 MB heap allocation today, sized for a desktop that
+//     never reuses it. It grows on demand by doubling (ensureRawBufferCapacity,
+//     and every write site calls it first), so 256 KB is the resting size
+//     and a dense section simply takes it up to what that section needs --
+//     the 21096-vertex section in this header's own log is ~169k ints, under
+//     the next two doublings. ~7 MB of the 64 MB heap back, and a buffer
+//     that fits the cache instead of fighting it.
+//
+//   DYNAMIC_TEXTURE_INTERVAL_TICKS 1 -> 8   the dynamic texture upload pass
+//     (compass/clock re-read from the atlas) every 8th tick instead of every
+//     tick; the animated tiles inside it are already off in this profile.
+#undef  PLATFORM_SIN_TABLE_BITS
+#define PLATFORM_SIN_TABLE_BITS                    12
+#undef  PLATFORM_TESSELLATOR_BUFFER_INTS
+#define PLATFORM_TESSELLATOR_BUFFER_INTS         0x10000
+#undef  PLATFORM_DYNAMIC_TEXTURE_INTERVAL_TICKS
+#define PLATFORM_DYNAMIC_TEXTURE_INTERVAL_TICKS     8
+
+// End dimension [PS2]. The End biome spawns nothing but endermen in groups of
+// four, so one spawn pass otherwise fills every live slot with mobs that each
+// run a teleport search, a block-carry scan and a player stare test per tick;
+// 2 keeps the fight's side threat. The teleport trail is dropped with it --
+// 128 particle entities in one call is exactly the burst the particle knobs
+// above exist to avoid (loop body never runs at 0, no division outside it).
+// The dragon runs three AABB entity scans per tick on top of seven part
+// updates and a block sweep; every other tick is enough because
+// hurtResistantTime already blocks repeat damage inside that window.
+#undef  PLATFORM_END_MAX_ENDERMEN
+#define PLATFORM_END_MAX_ENDERMEN                   2
+#undef  PLATFORM_ENDERMAN_TELEPORT_PARTICLES
+#define PLATFORM_ENDERMAN_TELEPORT_PARTICLES        0
+#undef  PLATFORM_DRAGON_COLLISION_TICK_DIVISOR
+#define PLATFORM_DRAGON_COLLISION_TICK_DIVISOR      2
+
+// Passive-mob population at worldgen [PS2]. Both are caps, not switches:
+// GROUP_MAX clamps a herd roll (vanilla tops out at four) and LIVE_MAX stops
+// the pass once that many creatures exist, so spawn slots go to variety
+// instead of a second herd, and fewer live animals is fewer bodies through
+// the entity tick and the render pass every frame.
+#undef  PLATFORM_WORLDGEN_ANIMAL_GROUP_MAX
+#define PLATFORM_WORLDGEN_ANIMAL_GROUP_MAX          2
+#undef  PLATFORM_WORLDGEN_ANIMAL_LIVE_MAX
+#define PLATFORM_WORLDGEN_ANIMAL_LIVE_MAX          12
+
+// NOT taken, and why -- each of these is a real PS2 knob that fails the
+// "cost saving only" rule above:
+//
+//   FAST_BIOME_SOURCE        replaces the 26-layer GenLayer chain with three
+//     float octave fields. Biggest worldgen win available, but it changes the
+//     field outright: rivers and beaches disappear and the heights the
+//     heightmap generator blends from biome temperature move, so chunks
+//     generated after the change seam against chunks generated before it. It
+//     is also the one expensive knob here that does NOT run on the frame:
+//     the 20x20 halo the chain answers belongs to the async worker, which has
+//     core 1 to itself. One line to take when a world-format break is wanted.
+//   END_RESIDENT_CHUNK_RADIUS the PS2's reservation for keeping the End
+//     island resident; -1 (here) means NO reservation, which is less memory,
+//     not less work. Taking 5 would add 121 columns to the map reserve.
+//   RANDOM_BLOCK_TICKS_PER_CHUNK / RANDOM_TICK_CHUNKS_PER_TICK
+//     10/6 here against the PS2's 8/5 is this profile's own deliberate
+//     random-tick rate, not an inherited default; dropping to the PS2's
+//     numbers would slow grass, crops and saplings by a third, which is a
+//     world-speed change rather than an optimisation.
+//   SKIP_CLOUDS               left at 0 so ofClouds stays a live toggle; the
+//     clouds DEFAULT is switched off with the PS2/Wii in GameDefaults.cpp,
+//     which is where this profile puts every other default it shares.
