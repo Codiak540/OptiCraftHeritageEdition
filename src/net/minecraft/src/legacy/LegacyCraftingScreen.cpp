@@ -710,7 +710,7 @@ void initStaticRecipes()
                               int_t matCount)
     {
         g.variantCount = 5;
-        const int_t mats[5] = {ID_PLANKS, ID_COBBLE, ID_IRON_INGOT, ID_DIAMOND, ID_GOLD_INGOT};
+        const int_t mats[5] = {ID_PLANKS, ID_COBBLE, ID_IRON_INGOT, ID_GOLD_INGOT, ID_DIAMOND};
         for (int i = 0; i < 5; ++i)
         {
             RecipeVariant &v = g.variants[i];
@@ -736,7 +736,7 @@ void initStaticRecipes()
                           int_t matCount)
     {
         g.variantCount = 4;
-        const int_t mats[4] = {ID_LEATHER, ID_IRON_INGOT, ID_DIAMOND, ID_GOLD_INGOT};
+        const int_t mats[4] = {ID_LEATHER, ID_IRON_INGOT, ID_GOLD_INGOT, ID_DIAMOND};
         for (int i = 0; i < 4; ++i)
         {
             RecipeVariant &v = g.variants[i];
@@ -754,32 +754,32 @@ void initStaticRecipes()
     };
     // G0: Pickaxes
     {
-        const char *names[5] = {"Wooden Pickaxe", "Stone Pickaxe", "Iron Pickaxe", "Diamond Pickaxe", "Golden Pickaxe"};
-        const int_t res[5] = {ID_WOOD_PICKAXE, ID_STONE_PICKAXE, ID_IRON_PICKAXE, ID_DIAM_PICKAXE, ID_GOLD_PICKAXE};
+        const char *names[5] = {"Wooden Pickaxe", "Stone Pickaxe", "Iron Pickaxe", "Golden Pickaxe", "Diamond Pickaxe"};
+        const int_t res[5] = {ID_WOOD_PICKAXE, ID_STONE_PICKAXE, ID_IRON_PICKAXE, ID_GOLD_PICKAXE, ID_DIAM_PICKAXE};
         setup5TierTool(cat2.groups[0], names, res, 1, 1, 1, 0, 2, 0, 0, 2, 0, 3);
     }
     // G1: Shovels
     {
-        const char *names[5] = {"Wooden Shovel", "Stone Shovel", "Iron Shovel", "Diamond Shovel", "Golden Shovel"};
-        const int_t res[5] = {ID_WOOD_SHOVEL, ID_STONE_SHOVEL, ID_IRON_SHOVEL, ID_DIAM_SHOVEL, ID_GOLD_SHOVEL};
+        const char *names[5] = {"Wooden Shovel", "Stone Shovel", "Iron Shovel", "Golden Shovel", "Diamond Shovel"};
+        const int_t res[5] = {ID_WOOD_SHOVEL, ID_STONE_SHOVEL, ID_IRON_SHOVEL, ID_GOLD_SHOVEL, ID_DIAM_SHOVEL};
         setup5TierTool(cat2.groups[1], names, res, 0, 1, 0, 0, 2, 0, 0, 2, 0, 1);
     }
     // G2: Axes
     {
-        const char *names[5] = {"Wooden Axe", "Stone Axe", "Iron Axe", "Diamond Axe", "Golden Axe"};
-        const int_t res[5] = {ID_WOOD_AXE, ID_STONE_AXE, ID_IRON_AXE, ID_DIAM_AXE, ID_GOLD_AXE};
+        const char *names[5] = {"Wooden Axe", "Stone Axe", "Iron Axe", "Golden Axe", "Diamond Axe"};
+        const int_t res[5] = {ID_WOOD_AXE, ID_STONE_AXE, ID_IRON_AXE, ID_GOLD_AXE, ID_DIAM_AXE};
         setup5TierTool(cat2.groups[2], names, res, 1, 1, 0, 1, 2, 0, 0, 2, 0, 3);
     }
     // G3: Hoes
     {
-        const char *names[5] = {"Wooden Hoe", "Stone Hoe", "Iron Hoe", "Diamond Hoe", "Golden Hoe"};
-        const int_t res[5] = {ID_WOOD_HOE, ID_STONE_HOE, ID_IRON_HOE, ID_DIAM_HOE, ID_GOLD_HOE};
+        const char *names[5] = {"Wooden Hoe", "Stone Hoe", "Iron Hoe", "Golden Hoe", "Diamond Hoe"};
+        const int_t res[5] = {ID_WOOD_HOE, ID_STONE_HOE, ID_IRON_HOE, ID_GOLD_HOE, ID_DIAM_HOE};
         setup5TierTool(cat2.groups[3], names, res, 1, 1, 0, 0, 2, 0, 0, 2, 0, 2);
     }
     // G4: Swords
     {
-        const char *names[5] = {"Wooden Sword", "Stone Sword", "Iron Sword", "Diamond Sword", "Golden Sword"};
-        const int_t res[5] = {ID_WOOD_SWORD, ID_STONE_SWORD, ID_IRON_SWORD, ID_DIAM_SWORD, ID_GOLD_SWORD};
+        const char *names[5] = {"Wooden Sword", "Stone Sword", "Iron Sword", "Golden Sword", "Diamond Sword"};
+        const int_t res[5] = {ID_WOOD_SWORD, ID_STONE_SWORD, ID_IRON_SWORD, ID_GOLD_SWORD, ID_DIAM_SWORD};
         setup5TierTool(cat2.groups[4], names, res, 0, 1, 0, 0, 1, 0, 0, 2, 0, 2);
     }
 
@@ -823,26 +823,26 @@ void initStaticRecipes()
 
     // G6: Helmets
     {
-        const char *names[4] = {"Leather Cap", "Iron Helmet", "Diamond Helmet", "Golden Helmet"};
-        const int_t res[4] = {ID_LEATH_HELMET, ID_IRON_HELMET, ID_DIAM_HELMET, ID_GOLD_HELMET};
+        const char *names[4] = {"Leather Cap", "Iron Helmet", "Golden Helmet", "Diamond Helmet"};
+        const int_t res[4] = {ID_LEATH_HELMET, ID_IRON_HELMET, ID_GOLD_HELMET, ID_DIAM_HELMET};
         setupArmor(cat2.groups[6], names, res, 1, 1, 1, 1, 0, 1, 0, 0, 0, 5);
     }
     // G7: Chestplates
     {
-        const char *names[4] = {"Leather Tunic", "Iron Chestplate", "Diamond Chestplate", "Golden Chestplate"};
-        const int_t res[4] = {ID_LEATH_CHEST, ID_IRON_CHEST, ID_DIAM_CHEST, ID_GOLD_CHEST};
+        const char *names[4] = {"Leather Tunic", "Iron Chestplate", "Golden Chestplate", "Diamond Chestplate"};
+        const int_t res[4] = {ID_LEATH_CHEST, ID_IRON_CHEST, ID_GOLD_CHEST, ID_DIAM_CHEST};
         setupArmor(cat2.groups[7], names, res, 1, 0, 1, 1, 1, 1, 1, 1, 1, 8);
     }
     // G8: Leggings
     {
-        const char *names[4] = {"Leather Pants", "Iron Leggings", "Diamond Leggings", "Golden Leggings"};
-        const int_t res[4] = {ID_LEATH_LEGS, ID_IRON_LEGS, ID_DIAM_LEGS, ID_GOLD_LEGS};
+        const char *names[4] = {"Leather Pants", "Iron Leggings", "Golden Leggings", "Diamond Leggings"};
+        const int_t res[4] = {ID_LEATH_LEGS, ID_IRON_LEGS, ID_GOLD_LEGS, ID_DIAM_LEGS};
         setupArmor(cat2.groups[8], names, res, 1, 1, 1, 1, 0, 1, 1, 0, 1, 7);
     }
     // G9: Boots
     {
-        const char *names[4] = {"Leather Boots", "Iron Boots", "Diamond Boots", "Golden Boots"};
-        const int_t res[4] = {ID_LEATH_BOOTS, ID_IRON_BOOTS, ID_DIAM_BOOTS, ID_GOLD_BOOTS};
+        const char *names[4] = {"Leather Boots", "Iron Boots", "Golden Boots", "Diamond Boots"};
+        const int_t res[4] = {ID_LEATH_BOOTS, ID_IRON_BOOTS, ID_GOLD_BOOTS, ID_DIAM_BOOTS};
         setupArmor(cat2.groups[9], names, res, 0, 0, 0, 1, 0, 1, 1, 0, 1, 4);
     }
 
@@ -1548,9 +1548,13 @@ LegacyCraftingScreen::LegacyCraftingScreen(InventoryPlayer *playerInventory, Wor
       visibleCategoryCount(0), selectedVisibleTab(0),
       craftHoldTicks(0), ps2ActionReleaseLatch(true),
       guiLeft(0), guiTop(0), xSize(282), ySize(168),
-      ownerPlayerIndex(-1)
+      ownerPlayerIndex(-1),
+      m_craftingStateDirty(true), m_cachedCanCraft(false), m_cachedInventoryHash(0)
 {
     initStaticRecipes();
+
+    for (int i = 0; i < 9; ++i)
+        m_cachedSlotHasIngredient[i] = true;
 
     for (int i = 0; i < kCategoryCount; ++i)
     {
@@ -1624,6 +1628,7 @@ void LegacyCraftingScreen::initGui()
     selectedCategory = visibleCategoryIndices[selectedVisibleTab];
 
     ensureSelectionVisible();
+    updateCraftingState();
 }
 
 void LegacyCraftingScreen::onGuiClosed()
@@ -1660,6 +1665,7 @@ void LegacyCraftingScreen::changeCategory(int dir)
     selectedVisibleTab = (selectedVisibleTab + dir + visibleCategoryCount) % visibleCategoryCount;
     selectedCategory = visibleCategoryIndices[selectedVisibleTab];
     ensureSelectionVisible();
+    updateCraftingState();
     if (mc != nullptr && mc->sndManager != nullptr)
         mc->sndManager->playSoundFX("random.click", 1.0f, 1.0f);
 }
@@ -1668,12 +1674,14 @@ void LegacyCraftingScreen::changeVariant(int dir)
 {
     const RecipeCategory *cats = getCategoriesTable(is2x2Mode);
     const int_t cat = selectedCategory;
+    if (cat < 0 || cat >= kCategoryCount) return;
     const int_t grp = selectedGroup[cat];
     if (grp < 0 || grp >= cats[cat].groupCount) return;
     const int_t varCount = cats[cat].groups[grp].variantCount;
     if (varCount <= 1) return;
 
     selectedVariant[cat][grp] = (selectedVariant[cat][grp] + dir + varCount) % varCount;
+    updateCraftingState();
     if (mc != nullptr && mc->sndManager != nullptr)
         mc->sndManager->playSoundFX("random.focus", 1.0f, 1.0f);
 }
@@ -1682,6 +1690,7 @@ void LegacyCraftingScreen::handleNavigation(int dirX, int dirY)
 {
     const RecipeCategory *cats = getCategoriesTable(is2x2Mode);
     const int_t cat = selectedCategory;
+    if (cat < 0 || cat >= kCategoryCount) return;
     const int_t groupCount = cats[cat].groupCount;
     if (groupCount <= 0) return;
 
@@ -1689,6 +1698,7 @@ void LegacyCraftingScreen::handleNavigation(int dirX, int dirY)
     {
         selectedGroup[cat] = (selectedGroup[cat] + dirX + groupCount) % groupCount;
         ensureSelectionVisible();
+        updateCraftingState();
         if (mc != nullptr && mc->sndManager != nullptr)
             mc->sndManager->playSoundFX("random.focus", 1.0f, 1.0f);
     }
@@ -1719,6 +1729,7 @@ bool LegacyCraftingScreen::canCraftCurrentRecipe() const
 {
     const RecipeCategory *cats = getCategoriesTable(is2x2Mode);
     const int_t cat = selectedCategory;
+    if (cat < 0 || cat >= kCategoryCount) return false;
     const int_t grp = selectedGroup[cat];
     if (grp < 0 || grp >= cats[cat].groupCount) return false;
     const int_t var = selectedVariant[cat][grp];
@@ -1752,6 +1763,54 @@ bool LegacyCraftingScreen::canCraftCurrentRecipe() const
     return true;
 }
 
+uint32_t LegacyCraftingScreen::computeInventoryHash() const
+{
+    if (inventory == nullptr || inventory->mainInventory == nullptr)
+        return 0;
+    uint32_t h = 0x811c9dc5;
+    for (int i = 0; i < 36; ++i)
+    {
+        ItemStack *st = inventory->mainInventory[i];
+        if (st != nullptr && st->isValid())
+        {
+            h ^= static_cast<uint32_t>(st->itemID);
+            h *= 0x01000193;
+            h ^= static_cast<uint32_t>(st->stackSize);
+            h *= 0x01000193;
+            h ^= static_cast<uint32_t>(st->getItemDamage() + 1);
+            h *= 0x01000193;
+        }
+    }
+    return h;
+}
+
+void LegacyCraftingScreen::updateCraftingState()
+{
+    m_cachedCanCraft = canCraftCurrentRecipe();
+
+    const RecipeCategory *cats = getCategoriesTable(is2x2Mode);
+    const int_t cat = selectedCategory;
+    if (cat >= 0 && cat < kCategoryCount && selectedGroup[cat] >= 0 && selectedGroup[cat] < cats[cat].groupCount)
+    {
+        const RecipeGroup &grp = cats[cat].groups[selectedGroup[cat]];
+        const int_t var = selectedVariant[cat][selectedGroup[cat]];
+        if (var >= 0 && var < grp.variantCount)
+        {
+            const RecipeVariant &v = grp.variants[var];
+            const int slotCount = is2x2Mode ? 4 : 9;
+            for (int s = 0; s < slotCount; ++s)
+            {
+                if (v.gridStacks[s] != nullptr)
+                    m_cachedSlotHasIngredient[s] = playerHasIngredient(v.gridItemIds[s], v.gridItemDamage[s]);
+                else
+                    m_cachedSlotHasIngredient[s] = true;
+            }
+        }
+    }
+    m_craftingStateDirty = false;
+    m_cachedInventoryHash = computeInventoryHash();
+}
+
 void LegacyCraftingScreen::craftCurrentRecipe()
 {
     if (!canCraftCurrentRecipe())
@@ -1763,6 +1822,7 @@ void LegacyCraftingScreen::craftCurrentRecipe()
 
     const RecipeCategory *cats = getCategoriesTable(is2x2Mode);
     const int_t cat = selectedCategory;
+    if (cat < 0 || cat >= kCategoryCount) return;
     const int_t grp = selectedGroup[cat];
     if (grp < 0 || grp >= cats[cat].groupCount) return;
     const int_t var = selectedVariant[cat][grp];
@@ -1798,22 +1858,21 @@ void LegacyCraftingScreen::craftCurrentRecipe()
 
     // Add crafted result to inventory
     ItemStack *result = new ItemStack(recipe.resultId, recipe.resultCount, recipe.resultDamage);
-    if (!inventory->addItemStackToInventory(result))
+    inventory->addItemStackToInventory(result);
+    if (result != nullptr && result->stackSize > 0)
     {
-        if (result != nullptr && result->stackSize > 0)
-        {
-            EntityPlayer *p = entityPlayer ? entityPlayer : (mc ? static_cast<EntityPlayer*>(mc->thePlayer) : nullptr);
-            if (p != nullptr)
-                p->dropPlayerItem(result);
-            else
-                delete result;
-        }
+        EntityPlayer *p = entityPlayer ? entityPlayer : (mc ? static_cast<EntityPlayer*>(mc->thePlayer) : nullptr);
+        if (p != nullptr)
+            p->dropPlayerItem(result);
         else
-        {
             delete result;
-        }
+    }
+    else
+    {
+        delete result;
     }
     inventory->inventoryChanged = true;
+    updateCraftingState();
 
     if (mc != nullptr && mc->sndManager != nullptr)
         mc->sndManager->playSoundFX("random.pop", 1.0f, 1.0f);
@@ -1821,14 +1880,10 @@ void LegacyCraftingScreen::craftCurrentRecipe()
 
 void LegacyCraftingScreen::drawSlotRect(int_t sx, int_t sy)
 {
-    // Classic 18x18 Minecraft slot with sunken bevel
-    drawRect(sx, sy, sx + 18, sy + 18, 0xff8b8b8b);
-    drawRect(sx, sy, sx + 18, sy + 1, 0xff373737);
-    drawRect(sx, sy, sx + 1, sy + 18, 0xff373737);
-    drawRect(sx + 1, sy + 1, sx + 17, sy + 2, 0xff373737);
-    drawRect(sx + 1, sy + 1, sx + 2, sy + 17, 0xff373737);
-    drawRect(sx + 17, sy + 1, sx + 18, sy + 18, 0xffffffff);
-    drawRect(sx + 1, sy + 17, sx + 18, sy + 18, 0xffffffff);
+    // Sunken slot with 3 rects: dark top/left, light bottom/right, slot gray fill
+    drawRect(sx, sy, sx + 18, sy + 18, 0xff373737);
+    drawRect(sx + 1, sy + 1, sx + 18, sy + 18, 0xffffffff);
+    drawRect(sx + 1, sy + 1, sx + 17, sy + 17, 0xff8b8b8b);
 }
 
 void LegacyCraftingScreen::drawTooltip(ItemStack *stack, int_t mouseX, int_t mouseY)
@@ -1885,7 +1940,52 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
     const int_t panelRight = guiLeft + xSize;
     const int_t panelBottom = guiTop + ySize;
 
-    // Draw main panel drop shadow and outer bevel
+    if (selectedCategory < 0 || selectedCategory >= kCategoryCount)
+        selectedCategory = 0;
+    if (selectedVisibleTab < 0 || selectedVisibleTab >= visibleCategoryCount)
+        selectedVisibleTab = 0;
+
+    const RecipeCategory *cats = getCategoriesTable(is2x2Mode);
+    const RecipeCategory &currentCat = cats[selectedCategory];
+
+    const int_t carouselY = panelTop + 16;
+    const int_t visibleCount = 10;
+    const int_t carouselW = visibleCount * 22;
+    const int_t carouselStartX = guiLeft + (xSize - carouselW) / 2;
+
+    const int_t curGroup = selectedGroup[selectedCategory];
+    const int_t scroll = scrollOffset[selectedCategory];
+
+    const int_t matrixX = is2x2Mode ? (guiLeft + 12) : (guiLeft + 9);
+    const int_t matrixY = is2x2Mode ? (panelTop + 68) : (panelTop + 62);
+    const int_t arrowX = is2x2Mode ? (guiLeft + 54) : (guiLeft + 66);
+    const int_t arrowY = is2x2Mode ? (matrixY + 10) : (matrixY + 19);
+    const int_t resultX = is2x2Mode ? (guiLeft + 82) : (guiLeft + 90);
+    const int_t resultY = is2x2Mode ? (matrixY + 7) : (matrixY + 16);
+    const int_t statusY = panelTop + 122;
+
+    const int_t invX = guiLeft + 114;
+    const int_t invY = panelTop + 62;
+
+    const bool hasActiveGroup = (curGroup >= 0 && curGroup < currentCat.groupCount);
+    const int_t curVar = hasActiveGroup ? selectedVariant[selectedCategory][curGroup] : 0;
+    const RecipeVariant *activeVariant = (hasActiveGroup && curVar >= 0 && curVar < currentCat.groups[curGroup].variantCount)
+                                             ? &currentCat.groups[curGroup].variants[curVar]
+                                             : nullptr;
+
+    const bool canCraft = m_cachedCanCraft;
+    ItemStack *hoveredStack = nullptr;
+
+    int_t activeSlotX = -1;
+    int_t activeSlotY = -1;
+    int_t activeGroupIdx = -1;
+
+    // =============================================================
+    // PASS 1: 2D Unlit Geometry (Panels, Tabs, Slots, Textures, Labels)
+    // =============================================================
+    renderDisable(RenderCapability::Lighting);
+
+    // 1.1 Main panel drop shadow and outer bevel
     drawRect(panelLeft + 2, panelTop + 2, panelRight + 2, panelBottom + 2, 0x68000000);
     drawRect(panelLeft - 1, panelTop - 1, panelRight + 1, panelBottom + 1, 0xff343434);
     drawRect(panelLeft, panelTop, panelRight, panelBottom, 0xffc6c6c6);
@@ -1894,22 +1994,7 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
     drawRect(panelLeft + 2, panelBottom - 2, panelRight - 2, panelBottom - 1, 0xff858585);
     drawRect(panelRight - 2, panelTop + 2, panelRight - 1, panelBottom - 2, 0xff858585);
 
-    // Setup item rendering context
-    RenderHelper::enableGUIStandardItemLighting();
-    renderPushMatrix();
-    renderTranslate(0.0f, 0.0f, 0.0f);
-    renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-    renderEnable(RenderCapability::RescaleNormal);
-    OpenGlHelper::setLightmapTextureCoords(OpenGlHelper::lightmapTexUnit, 240.0f, 240.0f);
-
-    ItemStack *hoveredStack = nullptr;
-
-    const RecipeCategory *cats = getCategoriesTable(is2x2Mode);
-
-    // -------------------------------------------------------------
-    // Draw Top Tabs
-    // -------------------------------------------------------------
-    renderDisable(RenderCapability::Lighting);
+    // 1.2 Top Tabs backgrounds
     for (int t = 0; t < visibleCategoryCount; ++t)
     {
         const int catIdx = visibleCategoryIndices[t];
@@ -1926,17 +2011,9 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
 
         if (active)
             drawRect(tabX + 1, panelTop, tabX + 27, panelTop + 2, 0xffc6c6c6);
-
-        renderEnable(RenderCapability::Lighting);
-        if (cats[catIdx].iconStack != nullptr)
-        {
-            itemRenderer->renderItemIntoGUI(fontRenderer, mc->renderEngine, cats[catIdx].iconStack,
-                                            tabX + 6, tabY + (active ? 3 : 2));
-        }
-        renderDisable(RenderCapability::Lighting);
     }
 
-    // Shoulder button tab hints
+    // 1.3 Tab shoulder hints & Category Title
     const int_t rHintX = guiLeft + 16 + visibleCategoryCount * 32 + 4;
 #if PLATFORM_PS2
     fontRenderer->drawStringWithShadow("L1", guiLeft + 4, guiTop + 9, 0xffe0e0e0);
@@ -1949,37 +2026,19 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
     fontRenderer->drawStringWithShadow("E", rHintX, guiTop + 9, 0xffe0e0e0);
 #endif
 
-    // Category title
-    const RecipeCategory &currentCat = cats[selectedCategory];
     int_t catTitleW = fontRenderer->getStringWidth(currentCat.name);
     fontRenderer->drawStringWithShadow(currentCat.name, guiLeft + (xSize - catTitleW) / 2, panelTop + 4, 0xffffff00);
 
-    // -------------------------------------------------------------
-    // Horizontal Recipe Carousel
-    // -------------------------------------------------------------
-    const int_t carouselY = panelTop + 16;
-    const int_t visibleCount = 10;
-    const int_t carouselW = visibleCount * 22;
-    const int_t carouselStartX = guiLeft + (xSize - carouselW) / 2;
-
-    const int_t curGroup = selectedGroup[selectedCategory];
-    const int_t scroll = scrollOffset[selectedCategory];
-
-    int_t activeSlotX = -1;
-    int_t activeSlotY = -1;
-    int_t activeGroupIdx = -1;
-
+    // 1.4 Carousel slot backgrounds
     for (int i = 0; i < visibleCount; ++i)
     {
         const int_t gIdx = scroll + i;
         if (gIdx >= currentCat.groupCount) break;
 
-        const RecipeGroup &grp = currentCat.groups[gIdx];
         const int_t gx = carouselStartX + i * 22;
         const int_t gy = carouselY;
         const bool isSelected = (gIdx == curGroup);
 
-        renderDisable(RenderCapability::Lighting);
         drawSlotRect(gx, gy);
 
         if (isSelected)
@@ -1988,115 +2047,43 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
             activeSlotY = gy;
             activeGroupIdx = gIdx;
         }
-
-        renderEnable(RenderCapability::Lighting);
-        const int_t varIdx = selectedVariant[selectedCategory][gIdx];
-        if (grp.variants[varIdx].resultStack != nullptr)
-        {
-            itemRenderer->renderItemIntoGUI(fontRenderer, mc->renderEngine,
-                                            grp.variants[varIdx].resultStack, gx + 1, gy + 1);
-
-            if (mouseX >= gx && mouseX < gx + 18 && mouseY >= gy && mouseY < gy + 18)
-                hoveredStack = grp.variants[varIdx].resultStack;
-        }
     }
 
-    renderDisable(RenderCapability::Lighting);
+    // 1.5 Horizontal divider line
     drawRect(guiLeft + 8, panelTop + 45, guiLeft + xSize - 8, panelTop + 46, 0xff858585);
     drawRect(guiLeft + 8, panelTop + 46, guiLeft + xSize - 8, panelTop + 47, 0xffffffff);
 
-    // -------------------------------------------------------------
-    // Lower Section: Left = Recipe Grid + Result, Right = Inventory
-    // -------------------------------------------------------------
-    if (curGroup >= 0 && curGroup < currentCat.groupCount)
+    // 1.6 Lower Section: Grid & Labels & Result Slot
+    if (activeVariant != nullptr)
     {
-        const RecipeGroup &activeGroup = currentCat.groups[curGroup];
-        const int_t curVar = selectedVariant[selectedCategory][curGroup];
-        const RecipeVariant &activeVariant = activeGroup.variants[curVar];
+        fontRenderer->drawString(activeVariant->name ? activeVariant->name : "Recipe", matrixX, panelTop + 50, 0x303030);
+        fontRenderer->drawString("Inventory", invX, panelTop + 50, 0x303030);
 
-        const int_t matrixX = is2x2Mode ? (guiLeft + 12) : (guiLeft + 9);
-        const int_t matrixY = is2x2Mode ? (panelTop + 68) : (panelTop + 62);
-        const int_t arrowX = is2x2Mode ? (guiLeft + 54) : (guiLeft + 66);
-        const int_t arrowY = is2x2Mode ? (matrixY + 10) : (matrixY + 19);
-        const int_t resultX = is2x2Mode ? (guiLeft + 82) : (guiLeft + 90);
-        const int_t resultY = is2x2Mode ? (matrixY + 7) : (matrixY + 16);
-        const int_t statusY = panelTop + 122;
-
-        fontRenderer->drawString(activeVariant.name ? activeVariant.name : "Recipe", matrixX, panelTop + 50, 0x303030);
-        fontRenderer->drawString("Inventory", guiLeft + 114, panelTop + 50, 0x303030);
-
-        const bool canCraft = canCraftCurrentRecipe();
-
-        if (is2x2Mode)
+        const int rows = is2x2Mode ? 2 : 3;
+        const int cols = is2x2Mode ? 2 : 3;
+        for (int r = 0; r < rows; ++r)
         {
-            for (int r = 0; r < 2; ++r)
+            for (int c = 0; c < cols; ++c)
             {
-                for (int c = 0; c < 2; ++c)
+                const int slot = r * cols + c;
+                const int sx = matrixX + c * 18;
+                const int sy = matrixY + r * 18;
+                drawSlotRect(sx, sy);
+
+                if (activeVariant->gridStacks[slot] != nullptr && !m_cachedSlotHasIngredient[slot])
                 {
-                    const int slot = r * 2 + c;
-                    const int sx = matrixX + c * 18;
-                    const int sy = matrixY + r * 18;
-                    drawSlotRect(sx, sy);
-
-                    if (activeVariant.gridStacks[slot] != nullptr)
-                    {
-                        const bool hasIng = playerHasIngredient(activeVariant.gridItemIds[slot], activeVariant.gridItemDamage[slot]);
-                        if (!hasIng)
-                            drawRect(sx + 1, sy + 1, sx + 17, sy + 17, 0x60cc2020);
-
-                        renderEnable(RenderCapability::Lighting);
-                        itemRenderer->renderItemIntoGUI(fontRenderer, mc->renderEngine, activeVariant.gridStacks[slot], sx + 1, sy + 1);
-                        renderDisable(RenderCapability::Lighting);
-
-                        if (!hasIng)
-                            fontRenderer->drawString("!", sx + 2, sy + 1, 0xffff20);
-
-                        if (mouseX >= sx && mouseX < sx + 18 && mouseY >= sy && mouseY < sy + 18)
-                            hoveredStack = activeVariant.gridStacks[slot];
-                    }
-                }
-            }
-        }
-        else
-        {
-            for (int r = 0; r < 3; ++r)
-            {
-                for (int c = 0; c < 3; ++c)
-                {
-                    const int slot = r * 3 + c;
-                    const int sx = matrixX + c * 18;
-                    const int sy = matrixY + r * 18;
-                    drawSlotRect(sx, sy);
-
-                    if (activeVariant.gridStacks[slot] != nullptr)
-                    {
-                        const bool hasIng = playerHasIngredient(activeVariant.gridItemIds[slot], activeVariant.gridItemDamage[slot]);
-                        if (!hasIng)
-                            drawRect(sx + 1, sy + 1, sx + 17, sy + 17, 0x60cc2020);
-
-                        renderEnable(RenderCapability::Lighting);
-                        itemRenderer->renderItemIntoGUI(fontRenderer, mc->renderEngine, activeVariant.gridStacks[slot], sx + 1, sy + 1);
-                        renderDisable(RenderCapability::Lighting);
-
-                        if (!hasIng)
-                            fontRenderer->drawString("!", sx + 2, sy + 1, 0xffff20);
-
-                        if (mouseX >= sx && mouseX < sx + 18 && mouseY >= sy && mouseY < sy + 18)
-                            hoveredStack = activeVariant.gridStacks[slot];
-                    }
+                    drawRect(sx + 1, sy + 1, sx + 17, sy + 17, 0x60cc2020);
                 }
             }
         }
 
-        // Arrow pointing to result - Disable lighting so texture is not darkly shaded
-        renderDisable(RenderCapability::Lighting);
+        // Arrow texture
         int_t craftTex = mc->renderEngine->getTexture("/gui/crafting.png");
         renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
         mc->renderEngine->bindTexture(craftTex);
         drawTexturedModalRect(arrowX, arrowY, 89, 35, 22, 15);
 
-        // Result Slot
-        renderDisable(RenderCapability::Lighting);
+        // Result Slot frame
         drawRect(resultX, resultY, resultX + 22, resultY + 22, 0xff8b8b8b);
         drawRect(resultX, resultY, resultX + 22, resultY + 1, 0xff373737);
         drawRect(resultX, resultY, resultX + 1, resultY + 22, 0xff373737);
@@ -2110,21 +2097,7 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
         else
             drawRect(resultX + 1, resultY + 1, resultX + 21, resultY + 21, 0x3020c020);
 
-        renderEnable(RenderCapability::Lighting);
-        if (activeVariant.resultStack != nullptr)
-        {
-            itemRenderer->renderItemIntoGUI(fontRenderer, mc->renderEngine, activeVariant.resultStack, resultX + 3, resultY + 3);
-            itemRenderer->renderItemOverlayIntoGUI(fontRenderer, mc->renderEngine, activeVariant.resultStack, resultX + 3, resultY + 3);
-        }
-        renderDisable(RenderCapability::Lighting);
-
-        if (!canCraft)
-            fontRenderer->drawString("!", resultX + 3, resultY + 2, 0xffff20);
-
-        if (mouseX >= resultX && mouseX < resultX + 22 && mouseY >= resultY && mouseY < resultY + 22)
-            hoveredStack = activeVariant.resultStack;
-
-        // Status description text below crafting matrix
+        // Status text
         if (canCraft)
         {
 #if PLATFORM_PS2
@@ -2135,7 +2108,7 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
             fontRenderer->drawString("Ready [Enter]", matrixX, statusY, 0x207820);
 #endif
         }
-        else if (is2x2Mode && activeVariant.requiresWorkbench)
+        else if (is2x2Mode && activeVariant->requiresWorkbench)
         {
             fontRenderer->drawString("Needs Crafting Table", matrixX, statusY, 0x902020);
         }
@@ -2145,10 +2118,97 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
         }
     }
 
-    // Right Area: Player Inventory (4 rows x 9 columns)
-    const int_t invX = guiLeft + 114;
-    const int_t invY = panelTop + 62;
+    // 1.7 Inventory slot rectangles
+    for (int r = 0; r < 4; ++r)
+    {
+        for (int c = 0; c < 9; ++c)
+        {
+            const int sx = invX + c * 18;
+            const int sy = invY + r * 18 + (r == 3 ? 3 : 0);
+            drawSlotRect(sx, sy);
+        }
+    }
 
+    // =============================================================
+    // PASS 2: 3D Item Rendering (Lighting ENABLED once!)
+    // =============================================================
+    RenderHelper::enableGUIStandardItemLighting();
+    renderPushMatrix();
+    renderTranslate(0.0f, 0.0f, 0.0f);
+    renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    renderEnable(RenderCapability::RescaleNormal);
+    OpenGlHelper::setLightmapTextureCoords(OpenGlHelper::lightmapTexUnit, 240.0f, 240.0f);
+
+    // 2.1 Tab icons
+    for (int t = 0; t < visibleCategoryCount; ++t)
+    {
+        const int catIdx = visibleCategoryIndices[t];
+        const int_t tabX = guiLeft + 16 + t * 32;
+        const bool active = (t == selectedVisibleTab);
+        const int_t tabY = active ? (guiTop + 4) : (guiTop + 7);
+        if (cats[catIdx].iconStack != nullptr)
+        {
+            itemRenderer->renderItemIntoGUI(fontRenderer, mc->renderEngine, cats[catIdx].iconStack,
+                                            tabX + 6, tabY + (active ? 3 : 2));
+        }
+    }
+
+    // 2.2 Carousel items
+    for (int i = 0; i < visibleCount; ++i)
+    {
+        const int_t gIdx = scroll + i;
+        if (gIdx >= currentCat.groupCount) break;
+
+        const RecipeGroup &grp = currentCat.groups[gIdx];
+        const int_t gx = carouselStartX + i * 22;
+        const int_t gy = carouselY;
+        const int_t varIdx = selectedVariant[selectedCategory][gIdx];
+
+        if (grp.variants[varIdx].resultStack != nullptr)
+        {
+            itemRenderer->renderItemIntoGUI(fontRenderer, mc->renderEngine,
+                                            grp.variants[varIdx].resultStack, gx + 1, gy + 1);
+
+            if (mouseX >= gx && mouseX < gx + 18 && mouseY >= gy && mouseY < gy + 18)
+                hoveredStack = grp.variants[varIdx].resultStack;
+        }
+    }
+
+    // 2.3 Crafting matrix items
+    if (activeVariant != nullptr)
+    {
+        const int rows = is2x2Mode ? 2 : 3;
+        const int cols = is2x2Mode ? 2 : 3;
+        for (int r = 0; r < rows; ++r)
+        {
+            for (int c = 0; c < cols; ++c)
+            {
+                const int slot = r * cols + c;
+                const int sx = matrixX + c * 18;
+                const int sy = matrixY + r * 18;
+
+                if (activeVariant->gridStacks[slot] != nullptr)
+                {
+                    itemRenderer->renderItemIntoGUI(fontRenderer, mc->renderEngine, activeVariant->gridStacks[slot], sx + 1, sy + 1);
+
+                    if (mouseX >= sx && mouseX < sx + 18 && mouseY >= sy && mouseY < sy + 18)
+                        hoveredStack = activeVariant->gridStacks[slot];
+                }
+            }
+        }
+
+        // 2.4 Result slot item
+        if (activeVariant->resultStack != nullptr)
+        {
+            itemRenderer->renderItemIntoGUI(fontRenderer, mc->renderEngine, activeVariant->resultStack, resultX + 3, resultY + 3);
+            itemRenderer->renderItemOverlayIntoGUI(fontRenderer, mc->renderEngine, activeVariant->resultStack, resultX + 3, resultY + 3);
+
+            if (mouseX >= resultX && mouseX < resultX + 22 && mouseY >= resultY && mouseY < resultY + 22)
+                hoveredStack = activeVariant->resultStack;
+        }
+    }
+
+    // 2.5 Inventory items
     for (int r = 0; r < 4; ++r)
     {
         for (int c = 0; c < 9; ++c)
@@ -2157,17 +2217,13 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
             const int sx = invX + c * 18;
             const int sy = invY + r * 18 + (r == 3 ? 3 : 0);
 
-            drawSlotRect(sx, sy);
-
             ItemStack *st = (inventory != nullptr && inventory->mainInventory != nullptr)
                                 ? inventory->mainInventory[slotIndex]
                                 : nullptr;
             if (st != nullptr && st->isValid())
             {
-                renderEnable(RenderCapability::Lighting);
                 itemRenderer->renderItemIntoGUI(fontRenderer, mc->renderEngine, st, sx + 1, sy + 1);
                 itemRenderer->renderItemOverlayIntoGUI(fontRenderer, mc->renderEngine, st, sx + 1, sy + 1);
-                renderDisable(RenderCapability::Lighting);
 
                 if (mouseX >= sx && mouseX < sx + 18 && mouseY >= sy && mouseY < sy + 18)
                     hoveredStack = st;
@@ -2175,9 +2231,39 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
         }
     }
 
-    // -------------------------------------------------------------
-    // Overlay Pass: Active slot variant popup dropdown (drawn over divider line)
-    // -------------------------------------------------------------
+    renderDisable(RenderCapability::RescaleNormal);
+    RenderHelper::disableStandardItemLighting();
+    renderPopMatrix();
+
+    // =============================================================
+    // PASS 3: Overlays, Missing Markers, Popup & Cursor (Unlit)
+    // =============================================================
+    renderDisable(RenderCapability::Lighting);
+
+    // Missing ingredient exclamation marks
+    if (activeVariant != nullptr)
+    {
+        const int rows = is2x2Mode ? 2 : 3;
+        const int cols = is2x2Mode ? 2 : 3;
+        for (int r = 0; r < rows; ++r)
+        {
+            for (int c = 0; c < cols; ++c)
+            {
+                const int slot = r * cols + c;
+                const int sx = matrixX + c * 18;
+                const int sy = matrixY + r * 18;
+                if (activeVariant->gridStacks[slot] != nullptr && !m_cachedSlotHasIngredient[slot])
+                {
+                    fontRenderer->drawString("!", sx + 2, sy + 1, 0xffff20);
+                }
+            }
+        }
+
+        if (!canCraft)
+            fontRenderer->drawString("!", resultX + 3, resultY + 2, 0xffff20);
+    }
+
+    // Variant dropdown popup
     if (activeGroupIdx >= 0 && activeGroupIdx < currentCat.groupCount)
     {
         const RecipeGroup &grp = currentCat.groups[activeGroupIdx];
@@ -2190,7 +2276,6 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
             const int_t popTop = (curVar > 0) ? (gy - 28) : (gy - 12);
             const int_t popBottom = (curVar < grp.variantCount - 1) ? (gy + 46) : (gy + 28);
 
-            renderDisable(RenderCapability::Lighting);
             // Drop shadow
             drawRect(gx - 2, popTop + 2, gx + 22, popBottom + 4, 0x60000000);
             // Outer dark border
@@ -2210,9 +2295,14 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
             if (curVar > 0 && grp.variants[curVar - 1].resultStack != nullptr)
             {
                 drawSlotRect(gx, gy - 18);
-                renderEnable(RenderCapability::Lighting);
+                RenderHelper::enableGUIStandardItemLighting();
+                renderPushMatrix();
+                renderEnable(RenderCapability::RescaleNormal);
                 itemRenderer->renderItemIntoGUI(fontRenderer, mc->renderEngine,
                                                 grp.variants[curVar - 1].resultStack, gx + 1, gy - 17);
+                renderDisable(RenderCapability::RescaleNormal);
+                RenderHelper::disableStandardItemLighting();
+                renderPopMatrix();
                 renderDisable(RenderCapability::Lighting);
 
                 if (mouseX >= gx && mouseX < gx + 18 && mouseY >= gy - 18 && mouseY < gy)
@@ -2223,9 +2313,14 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
             drawSlotRect(gx, gy);
             if (grp.variants[curVar].resultStack != nullptr)
             {
-                renderEnable(RenderCapability::Lighting);
+                RenderHelper::enableGUIStandardItemLighting();
+                renderPushMatrix();
+                renderEnable(RenderCapability::RescaleNormal);
                 itemRenderer->renderItemIntoGUI(fontRenderer, mc->renderEngine,
                                                 grp.variants[curVar].resultStack, gx + 1, gy + 1);
+                renderDisable(RenderCapability::RescaleNormal);
+                RenderHelper::disableStandardItemLighting();
+                renderPopMatrix();
                 renderDisable(RenderCapability::Lighting);
             }
 
@@ -2233,9 +2328,14 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
             if (curVar < grp.variantCount - 1 && grp.variants[curVar + 1].resultStack != nullptr)
             {
                 drawSlotRect(gx, gy + 18);
-                renderEnable(RenderCapability::Lighting);
+                RenderHelper::enableGUIStandardItemLighting();
+                renderPushMatrix();
+                renderEnable(RenderCapability::RescaleNormal);
                 itemRenderer->renderItemIntoGUI(fontRenderer, mc->renderEngine,
                                                 grp.variants[curVar + 1].resultStack, gx + 1, gy + 19);
+                renderDisable(RenderCapability::RescaleNormal);
+                RenderHelper::disableStandardItemLighting();
+                renderPopMatrix();
                 renderDisable(RenderCapability::Lighting);
 
                 if (mouseX >= gx && mouseX < gx + 18 && mouseY >= gy + 18 && mouseY < gy + 36)
@@ -2247,13 +2347,8 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
         }
 
         // Selection cursor centered on active recipe carousel slot
-        renderDisable(RenderCapability::Lighting);
         legacyDrawSelectionCursorCentered(mc, gx + 9, gy + 9, 20, zLevel + 64.0f);
     }
-
-    renderDisable(RenderCapability::RescaleNormal);
-    RenderHelper::disableStandardItemLighting();
-    renderPopMatrix();
 
     // Tooltip display
     if (hoveredStack != nullptr)
@@ -2287,6 +2382,27 @@ void LegacyCraftingScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
 void LegacyCraftingScreen::updateScreen()
 {
     GuiScreen::updateScreen();
+
+    if (inventory != nullptr)
+    {
+        if (inventory->inventoryChanged || m_craftingStateDirty)
+        {
+            inventory->inventoryChanged = false;
+            updateCraftingState();
+        }
+        else
+        {
+            uint32_t h = computeInventoryHash();
+            if (h != m_cachedInventoryHash)
+            {
+                updateCraftingState();
+            }
+        }
+    }
+    else if (m_craftingStateDirty)
+    {
+        updateCraftingState();
+    }
 
 #if PLATFORM_PS2
     const Ps2PadSnapshot &ps2Pad = ps2PadGetSnapshot(getOwnerPlayerIndex());
@@ -2486,6 +2602,7 @@ void LegacyCraftingScreen::mouseClicked(int_t mouseX, int_t mouseY, int_t button
             selectedVisibleTab = t;
             selectedCategory = visibleCategoryIndices[t];
             ensureSelectionVisible();
+            updateCraftingState();
             if (mc != nullptr && mc->sndManager != nullptr)
                 mc->sndManager->playSoundFX("random.click", 1.0f, 1.0f);
             return;
@@ -2537,6 +2654,7 @@ void LegacyCraftingScreen::mouseClicked(int_t mouseX, int_t mouseY, int_t button
         {
             selectedGroup[selectedCategory] = gIdx;
             ensureSelectionVisible();
+            updateCraftingState();
             if (mc != nullptr && mc->sndManager != nullptr)
                 mc->sndManager->playSoundFX("random.focus", 1.0f, 1.0f);
             return;

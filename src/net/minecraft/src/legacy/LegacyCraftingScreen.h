@@ -39,6 +39,13 @@ private:
     void drawSlotRect(int_t sx, int_t sy);
     void drawTooltip(ItemStack *stack, int_t mouseX, int_t mouseY);
     bool playerHasIngredient(int_t itemId, int_t itemDamage) const;
+    void updateCraftingState();
+    uint32_t computeInventoryHash() const;
+
+    bool m_craftingStateDirty;
+    bool m_cachedCanCraft;
+    bool m_cachedSlotHasIngredient[9];
+    uint32_t m_cachedInventoryHash;
 
     InventoryPlayer *inventory;
     World *world;
