@@ -4293,7 +4293,10 @@ bool World::updatingLighting()
                     const uint64_t nowUs = PlatformCompat::getMonotonicMicros();
                     const double elapsedMs = (nowUs > floodfillStartUs) ? (double)(nowUs - floodfillStartUs) / 1000.0 : 0.0;
                     const int affectedSubsections = world->lightingDirtyRegions.getFlushedCount();
-                    printf("[PERF] Skylight floodfill time: %.2f ms (subsecciones afectadas: %d)\n", elapsedMs, affectedSubsections);
+                    if (affectedSubsections > 0 || elapsedMs >= 0.1)
+                    {
+                        printf("[PERF] Skylight floodfill time: %.2f ms (subsecciones afectadas: %d)\n", elapsedMs, affectedSubsections);
+                    }
                 }
             }
             DirtyBatchScope(const DirtyBatchScope &) = delete;
