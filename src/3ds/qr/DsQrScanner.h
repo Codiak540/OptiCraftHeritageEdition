@@ -31,6 +31,13 @@ namespace DsQrScanner
 // no memory). Idempotent.
 bool start(std::string &outError);
 
+// True once at least one camera frame arrived since the last start(): the
+// scanner is delivering but no QR has decoded yet. Sticky-false after a
+// timeout streak is the "black preview" state (emulator without a camera
+// backend configured, or a service that never answers), and the GUI turns
+// that into a prompt instead of silence.
+bool hasReceivedFrame();
+
 // Release the camera and the decoder. Safe when not started; the camera is
 // a console-wide resource, so every start() owner MUST call this before the
 // screen goes away (onGuiClosed).

@@ -506,8 +506,16 @@ void GuiQrDownload::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick)
 		const int_t previewW = 200;
 		const int_t previewH = 150;
 		drawPreview(centreX - previewW / 2, 30, previewW, previewH);
-		drawCenteredString(fontRenderer, "Point the back camera at a QR code",
-		                   centreX, height - 58, 0xAAAAAA);
+		// no camera frame yet = broken emulation or a camera-less target,
+		// not "keep pointing": the preview would sit black forever without
+		// saying so. After the first frame arrives the hint is pointless.
+		if (DsQrScanner::hasReceivedFrame())
+			drawCenteredString(fontRenderer, "Point the back camera at a QR code",
+			                   centreX, height - 58, 0xAAAAAA);
+		else
+			drawCenteredString(fontRenderer,
+			                   "Waiting for camera frames... (emulator: enable the camera device)",
+			                   centreX, height - 58, 0xFF5555);
 		break;
 	}
 

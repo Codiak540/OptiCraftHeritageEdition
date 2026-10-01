@@ -29,12 +29,21 @@ constexpr int kPreviewHeight = kCamHeight / 2;
 constexpr s64 kCaptureTimeoutNs = 150 * 1000 * 1000LL;
 
 bool g_started = false;
+// Sticky "at least one camera frame arrived": what separates "camera delivering
+// but no QR yet" from the silent black preview of an unsupported emulation.
+bool g_frameArrived = false;
 struct quirc *g_quirc = nullptr;
 
 // The cam service DMAs into this buffer, so it must be linear-heap memory
 // that stays put (CAMU_SetReceiving hands the physical address to the
 // service). YUV422: 2 bytes per pixel, Y in every even byte.
 std::uint8_t *g_capture = nullptr;
+// The transfer unit CAMU_GetMaxBytes reports for this resolution. It must be
+// handed to BOTH CAMU_SetTransferBytes and every CAMU_SetReceiving -- the
+// camera examples do exactly that -- because a mismatched unit makes the
+// receive never complete (the invisible-only-on-hardware variant of a camera
+// that simply never reaches the preview).
+s16 g_transferUnit = 0;
 
 std::uint8_t g_preview[kPreviewWidth * kPreviewHeight * 4];
 
@@ -86,6 +95,7 @@ bool start(std::string &outError)
 	rc = CAMU_GetMaxBytes(&transferUnit, kCamWidth, kCamHeight);
 	if (R_FAILED(rc) || transferUnit == 0)
 		transferUnit = 256; // the unit every published capture example uses
+	g_transferUnit = static_cast<s16>(transferUnit);
 	CAMU_SetTransferBytes(PORT_CAM1, transferUnit, kCamWidth, kCamHeight);
 
 	g_capture = static_cast<std::uint8_t *>(linearAlloc(kCamWidth * kCamHeight * 2));
@@ -160,6 +170,7 @@ void stop()
 		quirc_destroy(g_quirc);
 		g_quirc = nullptr;
 	}
+	g_frameArrived = false;
 	if (g_capture != nullptr)
 	{
 		linearFree(g_capture);
@@ -174,6 +185,11 @@ void stop()
 bool isActive()
 {
 	return g_started;
+}
+
+bool hasReceivedFrame()
+{
+	return g_frameArrived;
 }
 
 bool scan(std::string &outUrl, std::string &outError)
@@ -191,7 +207,7 @@ bool scan(std::string &outUrl, std::string &outError)
 	Handle event = 0;
 	Result rc = CAMU_SetReceiving(&event, g_capture, PORT_CAM1,
 	                              kCamWidth * kCamHeight * 2,
-	                              static_cast<s16>(256));
+	                              g_transferUnit);
 	if (R_FAILED(rc))
 	{
 		outError = "The camera stopped delivering frames";
@@ -201,6 +217,8 @@ bool scan(std::string &outUrl, std::string &outError)
 	svcCloseHandle(event);
 	if (R_FAILED(rc))
 		return false; // no frame in time; the caller keeps scanning
+
+	g_frameArrived = true;
 
 	// The cam service wrote through DMA into memory the CPU may still hold
 	// cached lines for -- invalidate before reading, or a stale line turns

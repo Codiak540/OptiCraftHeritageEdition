@@ -620,6 +620,21 @@
 #undef  PLATFORM_CULL_MISSING_CHUNK_BOUNDARY_FACES
 #define PLATFORM_CULL_MISSING_CHUNK_BOUNDARY_FACES 1
 
+// Simple-opaque-cube fast path (the consoles' mesher win, now wired into the
+// shared updateRenderer() this platform runs): SKIP_ENCLOSED drops buried
+// cubes before any lighting/UV work, FAST_SIMPLE_CUBE emits only the faces a
+// 6-neighbour mask marks as exposed. The eligibility predicate is the one
+// PlatformBlockCollisionInfo computes (opaque, unit bounds, pass 0, default
+// face culling, solid material, render type 0), cached per block id, and the
+// ChunkCache fast reads (FAST_CHUNK_BLOCK_READS, on above) are what make the
+// per-block mask cheap here. Buried-stone sections go from thousands of
+// invisible faces to the shell only; on other consoles the same flags were
+// the biggest single mesher time saver.
+#undef  PLATFORM_SKIP_ENCLOSED_OPAQUE_CUBES
+#define PLATFORM_SKIP_ENCLOSED_OPAQUE_CUBES      1
+#undef  PLATFORM_FAST_SIMPLE_CUBE_RENDER
+#define PLATFORM_FAST_SIMPLE_CUBE_RENDER         1
+
 // Decoration: vegetation and ores written AT generation into the flat block
 // buffer (ChunkProviderGenerateDecorateLocal.cpp) instead of arriving
 // through setBlock on a live chunk. This is the PS2/Wii fast-profile shape

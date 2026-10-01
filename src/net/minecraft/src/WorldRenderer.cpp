@@ -31,6 +31,10 @@
 #if PLATFORM_PS2
 #include "ps2/diagnostics/Ps2OptimizationValidation.h"
 #endif
+#if PLATFORM_3DS
+#include "Material.h"
+#include <cmath>
+#endif
 #include "platform/PlatformCompat.h"
 #include "platform/ExtendedProfiler.h"
 #if PLATFORM_PC_LEGACY
@@ -358,6 +362,57 @@ void WorldRenderer::updateInFrustrum(ICamera *icamera)
 
 
 #if !defined(PS2_PLATFORM) && !defined(WII_PLATFORM) && !PLATFORM_PC_LEGACY
+#if PLATFORM_3DS && (PLATFORM_SKIP_ENCLOSED_OPAQUE_CUBES || PLATFORM_FAST_SIMPLE_CUBE_RENDER)
+namespace
+{
+	// 3DS takes the consoles' simple-cube fast path on the shared one-shot
+	// mesher: the eligibility predicate is the same one the console render-info
+	// tables compute (opaque + unit-bounds + pass 0 + default face culling,
+	// solid normal-render block), cached per block id. The face mask then marks
+	// which of the six neighbours is opaque through the ChunkCache fast reads.
+	bool dsSimpleOpaqueCubeBuilt = false;
+	bool dsSimpleOpaqueCube[Block::BLOCK_REGISTRY_SIZE];
+
+	bool dsIsUnitBounds(const Block *block)
+	{
+		constexpr float epsilon = 0.0000001f;
+		return std::fabs(block->minX) <= epsilon && std::fabs(block->minY) <= epsilon &&
+			std::fabs(block->minZ) <= epsilon && std::fabs(block->maxX - 1.0f) <= epsilon &&
+			std::fabs(block->maxY - 1.0f) <= epsilon && std::fabs(block->maxZ - 1.0f) <= epsilon;
+	}
+
+	bool dsIsSimpleOpaqueCube(int_t blockId)
+	{
+		if (!dsSimpleOpaqueCubeBuilt)
+		{
+			dsSimpleOpaqueCubeBuilt = true;
+			for (int_t id = 0; id < Block::BLOCK_REGISTRY_SIZE; ++id)
+			{
+				Block *block = Block::blocksList[id];
+				dsSimpleOpaqueCube[id] = block != nullptr &&
+					Block::opaqueCubeLookup[id] && Block::usesDefaultFaceCullingLookup[id] &&
+					block->blockMaterial != nullptr && block->blockMaterial->getIsSolid() &&
+					block->renderAsNormalBlock() && block->getRenderType() == 0 &&
+					block->getRenderBlockPass() == 0 && dsIsUnitBounds(block);
+			}
+		}
+		return dsSimpleOpaqueCube[blockId & (Block::BLOCK_REGISTRY_SIZE - 1)];
+	}
+
+	std::uint8_t dsExposedCubeFaceMask(ChunkCache &cache, int_t x, int_t y, int_t z)
+	{
+		std::uint8_t opaqueMask = 0;
+		if (cache.isBlockOpaqueCube(x, y - 1, z)) opaqueMask |= 1u << 0;
+		if (cache.isBlockOpaqueCube(x, y + 1, z)) opaqueMask |= 1u << 1;
+		if (cache.isBlockOpaqueCube(x, y, z - 1)) opaqueMask |= 1u << 2;
+		if (cache.isBlockOpaqueCube(x, y, z + 1)) opaqueMask |= 1u << 3;
+		if (cache.isBlockOpaqueCube(x - 1, y, z)) opaqueMask |= 1u << 4;
+		if (cache.isBlockOpaqueCube(x + 1, y, z)) opaqueMask |= 1u << 5;
+		return static_cast<std::uint8_t>((~opaqueMask) & 0x3fu);
+	}
+}
+#endif
+
 void WorldRenderer::updateRenderer()
 {
 	if (!needsUpdate)
@@ -479,7 +534,30 @@ void WorldRenderer::updateRenderer()
 						continue;
 					}
 
+#if PLATFORM_3DS && (PLATFORM_SKIP_ENCLOSED_OPAQUE_CUBES || PLATFORM_FAST_SIMPLE_CUBE_RENDER)
+					// The consoles' terrain fast path on the shared mesher:
+					// pass-0 opaque unit cubes with all six neighbours opaque
+					// emit nothing at all; the rest emit only exposed faces.
+					const bool simpleCube = pass == 0 && dsIsSimpleOpaqueCube(id);
+					unsigned char exposedFaceMask = 0x3f;
+					if (simpleCube)
+					{
+						exposedFaceMask = dsExposedCubeFaceMask(chunkcache, x, y, z);
+#if PLATFORM_SKIP_ENCLOSED_OPAQUE_CUBES
+						if (exposedFaceMask == 0)
+							continue;
+#endif
+					}
+#endif
+
+#if PLATFORM_3DS && PLATFORM_FAST_SIMPLE_CUBE_RENDER
+					if (simpleCube)
+						drewAnything |= renderblocks.renderSimpleOpaqueCube3ds(block, x, y, z, exposedFaceMask);
+					else
+						drewAnything |= renderblocks.renderBlockByRenderType(block, x, y, z);
+#else
 					drewAnything |= renderblocks.renderBlockByRenderType(block, x, y, z);
+#endif
 				}
 			}
 		}
