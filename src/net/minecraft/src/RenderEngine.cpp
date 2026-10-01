@@ -389,6 +389,22 @@ bool RenderEngine::loadTextureStreamInto(const std::string &s, int_t texture, st
 			{
 				std::vector<unsigned char> srcRgba(BufferedImage::checkedRgbaByteCount(64, 64));
 				image->getRGB(0, 0, 64, 64, srcRgba.data());
+#if PLATFORM_3DS
+				// Las texturas van almacenadas en orientacion MC-3DS (volteadas
+				// en Y respecto a Java, ver DsTexture.cpp): la fila 0 leida aqui
+				// es la Java 63, y sin esta inversion la conversion de debajo
+				// mezclaba la mitad de overlay como base (las texturas 64x64 de
+				// entidades de un pack convertido salian deformadas). Trabajamos
+				// siempre en orden Java y devolvemos el resultado volteado.
+				{
+					std::vector<unsigned char> reversed(srcRgba.size());
+					for (int_t y = 0; y < 64; ++y)
+						std::memcpy(&reversed[static_cast<size_t>(63 - y) * 64 * 4],
+						            &srcRgba[static_cast<size_t>(y) * 64 * 4],
+						            64 * 4);
+					srcRgba.swap(reversed);
+				}
+#endif
 				std::vector<unsigned char> dstRgba(BufferedImage::checkedRgbaByteCount(64, 32), 0);
 				std::memcpy(dstRgba.data(), srcRgba.data(), 64 * 32 * 4);
 
@@ -429,6 +445,18 @@ bool RenderEngine::loadTextureStreamInto(const std::string &s, int_t texture, st
 						dstRgba[(x + y * 64) * 4 + 3] = 255;
 
 				auto retro = std::make_unique<BufferedImage>(64, 32);
+#if PLATFORM_3DS
+				// dstRgba esta en orden Java; la textura almacenada debe quedar
+				// volteada (misma convencion que el pak y los packs convertidos).
+				{
+					std::vector<unsigned char> stored(dstRgba.size());
+					for (int_t y = 0; y < 32; ++y)
+						std::memcpy(&stored[static_cast<size_t>(31 - y) * 64 * 4],
+						            &dstRgba[static_cast<size_t>(y) * 64 * 4],
+						            64 * 4);
+					dstRgba.swap(stored);
+				}
+#endif
 				retro->setRGB(0, 0, 64, 32, dstRgba.data());
 				image = std::move(retro);
 			}

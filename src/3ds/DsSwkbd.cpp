@@ -1,4 +1,5 @@
-// DsSwkbd.cpp -- launches the system software keyboard for one text field.
+// DsSwkbd.cpp -- launches the system software keyboard for one text field,
+// on a helper thread so the game loop keeps running while the applet is up.
 #ifdef CTR_PLATFORM
 
 #include "3ds/DsSwkbd.h"
@@ -6,9 +7,13 @@
 #include <3ds.h>
 
 #include <cstddef>
+#include <mutex>
+#include <utility>
 #include <vector>
 
 #include "platform/Log.h"
+#include "platform/Mutex.h"
+#include "platform/Thread.h"
 
 namespace
 {
@@ -23,9 +28,34 @@ constexpr std::size_t kTerminatorSlack = 8;
 
 // SwkbdState::max_text_len is a u16.
 constexpr int kMaxTextLength = 0xFFFF;
-} // namespace
 
-DsSwkbdResult dsSwkbdOpen(const std::string& initial, int maxLength)
+// The helper runs swkbdInputText() -> aptLaunchLibraryApplet(), which blocks
+// the calling thread until the dialog closes. 32 KiB is the same budget the
+// network reader/writer workers get, and several times what the dialog's
+// SwkbdState (~0.6 KiB) plus the APT call chain needs; priority 64 keeps the
+// almost-always-blocked helper from ever preempting the game thread.
+constexpr std::size_t kHelperStackBytes = 32 * 1024;
+constexpr int kHelperPriority = 64;
+
+struct SwkbdRequest
+{
+	std::string initial;
+	int maxLength = 1;
+};
+
+struct SwkbdSession
+{
+	PlatformMutex mutex;
+	bool active = false;     // applet launched and not yet finished
+	bool resultReady = false;
+	DsSwkbdResult result;
+	PlatformThread thread;
+};
+
+SwkbdSession g_session;
+
+// The old synchronous dialog, verbatim, on whatever thread calls it.
+DsSwkbdResult runSwkbdDialog(const std::string& initial, int maxLength)
 {
 	DsSwkbdResult result;
 
@@ -81,6 +111,80 @@ DsSwkbdResult dsSwkbdOpen(const std::string& initial, int maxLength)
 		result.outcome = DsSwkbdOutcome::Unavailable;
 		return result;
 	}
+}
+
+void* swkbdHelperMain(void* argument)
+{
+	SwkbdRequest request = *static_cast<SwkbdRequest*>(argument);
+	delete static_cast<SwkbdRequest*>(argument);
+
+	DsSwkbdResult result = runSwkbdDialog(request.initial, request.maxLength);
+
+	// The whole hand-over is one lock; once active goes false the result is
+	// guaranteed stored, and nothing below locks again -- dsSwkbdTakeResult()
+	// joins only after this point, so the join can never deadlock against it.
+	{
+		std::lock_guard<PlatformMutex> guard(g_session.mutex);
+		g_session.result = std::move(result);
+		g_session.resultReady = true;
+		g_session.active = false;
+	}
+	return nullptr;
+}
+} // namespace
+
+bool dsSwkbdOpenAsync(const std::string& initial, int maxLength)
+{
+	std::lock_guard<PlatformMutex> guard(g_session.mutex);
+	if (g_session.active)
+		return false; // a dialog is up; its result must be consumed first
+
+	// A finished-but-unconsumed helper: join it now, drop its result, and
+	// let this call start a fresh dialog. The thread is already past its
+	// last lock (resultReady implies that), so joining here is safe.
+	if (g_session.thread.joinable())
+	{
+		g_session.thread.join();
+		g_session.resultReady = false;
+		g_session.result = DsSwkbdResult();
+	}
+
+	auto* request = new SwkbdRequest{initial, maxLength};
+	if (!g_session.thread.start(&swkbdHelperMain, request, kHelperStackBytes,
+	                            kHelperPriority, 0))
+	{
+		delete request;
+		MC_LOG_WARN("input", "3ds: swkbd helper thread could not start\n");
+		return false;
+	}
+
+	g_session.resultReady = false;
+	g_session.result = DsSwkbdResult();
+	g_session.active = true;
+	return true;
+}
+
+bool dsSwkbdActive()
+{
+	std::lock_guard<PlatformMutex> guard(g_session.mutex);
+	return g_session.active;
+}
+
+bool dsSwkbdTakeResult(DsSwkbdResult& outResult)
+{
+	{
+		std::lock_guard<PlatformMutex> guard(g_session.mutex);
+		if (g_session.active || !g_session.resultReady)
+			return false;
+		outResult = std::move(g_session.result);
+		g_session.result = DsSwkbdResult();
+		g_session.resultReady = false;
+	}
+	// Outside the lock: the helper already stored its result, so it holds and
+	// takes no more locks -- joining now only waits for its return.
+	if (g_session.thread.joinable())
+		g_session.thread.join();
+	return true;
 }
 
 #endif // CTR_PLATFORM

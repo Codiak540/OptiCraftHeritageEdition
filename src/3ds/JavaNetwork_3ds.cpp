@@ -201,19 +201,29 @@ public:
 		    closing.load(std::memory_order_acquire))
 			return -1;
 
-		// The Wii's interruptible shape: wait in 100 ms select slices so a
+		// The Wii's interruptible shape: wait in select slices so a
 		// close()/interruptRead() from another thread takes effect promptly
 		// instead of after a whole blocking recv. Because select() says
 		// "readable" only when data or EOF is queued, the recv below returns
 		// without hanging, which also keeps it clear of a close() that lands
 		// while it is in flight.
+		//
+		// The slice is 20 ms, not the 100 ms the Wii path uses: on a 3DS the
+		// reader thread shares the second core with the writer, and this
+		// slice is pure added latency for every inbound packet that arrives
+		// while the socket was idle -- up to a tenth of a second before the
+		// server's entity/chat/keepalive traffic even reaches the decode,
+		// on top of the radio RTT. 20 ms keeps close() responsiveness at a
+		// worst case of one slice while capping that tax at a thirtieth of
+		// a second; the extra wake-ups cost nothing on a core the game
+		// thread never runs on.
 		while (!closing.load(std::memory_order_acquire) &&
 		       !readInterrupted.load(std::memory_order_acquire))
 		{
 			fd_set readSet;
 			struct timeval tv{};
 			tv.tv_sec = 0;
-			tv.tv_usec = 100000; // 100 ms slices
+			tv.tv_usec = 20000; // 20 ms slices
 
 			FD_ZERO(&readSet);
 			FD_SET(socketFd, &readSet);
@@ -379,7 +389,16 @@ protected:
 
 private:
 	Socket &socket;
-	char buffer[512];
+	// 8 KiB, not the 512 bytes this used to be: every underflow() is one
+	// select() + recv() IPC round-trip into the SOC service, and the
+	// istream-driven Packet reader asks in streambuf-sized gulps. A login
+	// burst or a map-chunk packet (Packet51 payloads run to tens of KiB
+	// compressed) crossed that in hundreds of round-trips -- each with its
+	// own kernel context switch -- which was a large slice of the "multi-
+	// player feels far worse than singleplayer" gap on this console. 8 KiB
+	// divides the same traffic by 16, and the istream member lives on the
+	// heap, so the growth is not stack budget.
+	char buffer[8192];
 };
 
 class SocketOutputBuffer final : public std::streambuf

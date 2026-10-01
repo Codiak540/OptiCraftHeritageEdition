@@ -369,20 +369,15 @@ declares."
 #endif
 
 // Backends without a persistent geometry object submit ModelRenderer boxes from
-// their current transform. Wii and PS2 are both excluded: Wii compiles each box
-// once into a native GX display list, PS2 into a captured RAM mesh, and both
-// replay it against the live animated modelview.
-//
-// The 3DS has no display list at all (nothing in ModelRenderer records one for
-// it either), so it submits through the immediate path like the desktop's
-// fallback branch, but without the GL call list behind it: renderImmediate is
-// the only shape the citro3d backend will implement.
+// their current transform. Nobody takes this fallback today: Wii compiles each
+// box once into a native GX display list, PS2 and the 3DS into a captured RAM
+// mesh (PLATFORM_MODEL_PERSISTENT_MESH below), and both replay it against the
+// live animated modelview; the desktop keeps its GL call list. The 3DS used to
+// be the only consumer ("no display list at all" in the citro3d backend) until
+// the PS2's captured-mesh shape landed on it -- the ModelRenderer branches this
+// flag keys stay compiled for the next backend without a capture path.
 #ifndef PLATFORM_MODEL_IMMEDIATE
-#  if PLATFORM_3DS
-#    define PLATFORM_MODEL_IMMEDIATE 1
-#  else
-#    define PLATFORM_MODEL_IMMEDIATE 0
-#  endif
+#  define PLATFORM_MODEL_IMMEDIATE 0
 #endif
 
 // Persistent native meshes are a backend capability. Wii records immutable GX
@@ -396,10 +391,13 @@ declares."
 // keeps its own packed path and must not be routed through the persistent mesh
 // API, but model boxes are invariant geometry worth compiling once: they are
 // held in Ps2ModelGeometryCache and replayed with the live matrix stack, tint
-// and lighting. Kept separate from PLATFORM_PERSISTENT_RENDER_MESH for exactly
-// that reason.
+// and lighting. The 3DS takes the same contract through its own backend-local
+// captured-mesh table (RenderAPI_CTR_3DS.cpp): the per-frame Tessellator pass
+// over every box of every visible entity goes away; bones still animate
+// because the matrix stack is live at replay. Kept separate from
+// PLATFORM_PERSISTENT_RENDER_MESH for exactly that reason.
 #ifndef PLATFORM_MODEL_PERSISTENT_MESH
-#  if PLATFORM_PS2
+#  if PLATFORM_PS2 || PLATFORM_3DS
 #    define PLATFORM_MODEL_PERSISTENT_MESH 1
 #  else
 #    define PLATFORM_MODEL_PERSISTENT_MESH PLATFORM_PERSISTENT_RENDER_MESH

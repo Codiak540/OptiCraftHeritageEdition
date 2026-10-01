@@ -29,6 +29,12 @@ void legacyCreateMainMenuButtons(std::vector<GuiButton *> &controlList, GuiButto
     multiplayerButton = addButton(2, tr->translateKey("menu.multiplayer"));
     addButton(3, uiText("Mods"));
     addButton(6, "Skins");
+#if PLATFORM_3DS
+    // The 3DS's own entry: scan a QR code with the back camera and download
+    // skins, texture packs or mods straight onto the SD card
+    // (src/3ds/qr/GuiQrDownload.cpp).
+    addButton(7, uiText("QR Download"));
+#endif
     addButton(0, uiText("Help & Options"));
     addButton(5, uiText("Language"));
     if (!hideQuitButton)
@@ -53,6 +59,17 @@ void legacyCreateMainMenuButtons(std::vector<GuiButton *> &controlList, GuiButto
         case 0: legacy->setMenuIcon("/terrain.png", 3.0f / 16.0f, 2.0f / 16.0f, 4.0f / 16.0f, 3.0f / 16.0f); break;    // bookshelf
         case 5: legacy->setMenuIcon("/gui/gui.png", 0.0f, 106.0f / 256.0f, 20.0f / 256.0f, 126.0f / 256.0f); break;    // language glyph
         case 4: legacy->setMenuIcon("/terrain.png", 1.0f / 16.0f, 1.0f / 16.0f, 2.0f / 16.0f, 2.0f / 16.0f); break;    // bedrock
+        // The QR entry gets gold ore. Tile coordinates come from the Block
+        // registry itself, not from atlas layout guesses: the tile index is
+        // idx = row*16 + col (verified against hardware-good icons --
+        // grass side texture 3 -> (3,0), bedrock 17 -> (1,1), redstone ore
+        // 51 -> (3,3), tnt 128 -> (8,0)), and Block::oreGold is
+        // BlockOre(14, 32) -> texture 32 -> col 0, row 2. (The previous
+        // (4,1) guess was index 20 = the oak log tile, which is what
+        // rendered on hardware.) Without an icon the label would centre
+        // itself (LegacyGuiButton's iconless branch) and read misaligned
+        // against its neighbours.
+        case 7: legacy->setMenuIcon("/terrain.png", 0.0f, 2.0f / 16.0f, 1.0f / 16.0f, 3.0f / 16.0f); break;    // gold ore
         default: break;
         }
     }

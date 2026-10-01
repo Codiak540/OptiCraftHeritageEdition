@@ -7,6 +7,7 @@ class World;
 class EntityPlayer;
 class RenderItem;
 class ItemStack;
+class Container;
 struct PlatformTextInputSnapshot;
 
 class LegacyCraftingScreen : public GuiScreen
@@ -38,6 +39,13 @@ private:
     void changeCategory(int dir);
     void changeVariant(int dir);
     void craftCurrentRecipe();
+    // Multiplayer: the server is the only authority, so direct mainInventory
+    // mutation (used offline) is invisible to it and gets reverted by the
+    // next window sync. The legacy screen instead emulates the window clicks
+    // a Java mouse user would send for the same craft -- place ingredients
+    // one by one, click the result slot -- which both simulates the result
+    // locally AND queues the Packet102 on the wire.
+    bool craftCurrentRecipeViaContainerClicks();
     bool canCraftCurrentRecipe() const;
     void ensureSelectionVisible();
     void drawSlotRect(int_t sx, int_t sy);
@@ -54,6 +62,13 @@ private:
     void handleInventoryZoneNavigation(int dirX, int dirY);
     void clickStripSlot(int slotIndex);
     static int stripSlotIndex(int row, int col) { return row < 3 ? 9 + row * 9 + col : col; }
+
+    // Close through the player (GuiContainer::keyTyped does the same) instead
+    // of clearing the screen directly: the MP side of closeScreen() emits the
+    // Packet101CloseWindow for a live workbench container and resets
+    // craftingInventory; skipping it left the server's window open and
+    // desynced every later click.
+    void legacyCloseScreen();
 
     // Circle-pad/D-pad hold-repeat (3DS): a held navigation direction steps
     // again on the console's repeat cadence. The deadline lives here so a
@@ -90,6 +105,14 @@ private:
     int_t xSize;
     int_t ySize;
     int ownerPlayerIndex;
+    // Multiplayer workbench (3x3) sessions run through a real server window:
+    // NetClientHandler::handleOpenWindow stamps the server's windowId onto the
+    // player's live container right after showing the screen, so the legacy
+    // screen must own a ContainerWorkbench there just like GuiCrafting does --
+    // otherwise the stamp lands on the vanilla inventory container and
+    // silently desyncs every later click. P2P/singleplayer keep the pure
+    // local-mutation path untouched.
+    Container *mpWorkbenchContainer = nullptr;
 
     static RenderItem *itemRenderer;
 };

@@ -118,7 +118,7 @@ private:
 	void evictWiiMeshCache(EntityLiving *entityliving);
 #endif
 	void enqueueRendererUpdate(WorldRenderer *worldrenderer);
-#if defined(PS2_PLATFORM) || defined(WII_PLATFORM)
+#if defined(PS2_PLATFORM) || defined(WII_PLATFORM) || defined(CTR_PLATFORM)
 	void enqueueRendererUpdatePriority(WorldRenderer *worldrenderer);
 #endif
 	void dequeueRendererUpdate(WorldRenderer *worldrenderer);

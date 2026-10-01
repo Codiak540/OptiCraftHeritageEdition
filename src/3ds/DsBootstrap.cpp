@@ -117,4 +117,20 @@ bool dsHasGameData()
 	return statPath(path);
 }
 
+bool dsIsNew3DS()
+{
+	// Cached for the process lifetime: the answer cannot change while the
+	// title runs, and the caller is a per-tick packet budget.
+	static int cachedModel = -1;
+	if (cachedModel < 0)
+	{
+		bool isNew3ds = false;
+		if (R_FAILED(APT_CheckNew3DS(&isNew3ds)))
+			cachedModel = 0; // fails safe: the Old-3DS profile
+		else
+			cachedModel = isNew3ds ? 1 : 0;
+	}
+	return cachedModel != 0;
+}
+
 #endif // CTR_PLATFORM

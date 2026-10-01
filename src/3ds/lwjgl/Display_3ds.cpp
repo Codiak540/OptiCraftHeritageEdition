@@ -29,6 +29,7 @@
 
 #include <cstddef>
 
+#include "3ds/DsSwkbd.h"
 #include "3ds/input/DsInput.h"
 #include "3ds/render/DsRender.h"
 
@@ -96,6 +97,31 @@ bool isActive()         { return true; }
 
 void processMessages()
 {
+	// While the swkbd applet is up (see 3ds/DsSwkbd.h) the applet owns the
+	// foreground: it holds the APT session from its own helper thread, both
+	// LCDs, and the HID state the player's typing goes through. The 3DS does
+	// NOT suspend this process for a library applet -- the rest of the frame
+	// loop keeps running below -- so what must stand down is exactly these
+	// two foreground services:
+	//
+	//   * aptMainLoop() would race the applet's APT calls on the one APT
+	//     session (and the applet, not this app, is what the OS is talking
+	//     to anyway). Any exit/sleep order the OS wanted to deliver queues
+	//     until the applet closes and this call resumes.
+	//   * dsInputPoll() must not sample the buttons the player is typing
+	//     into the applet with -- those presses belong to the dialog, and
+	//     freezing the poll keeps them out of the game's input snapshot and
+	//     the DsInput edge latches entirely.
+	//
+	// The renderer learned the same fact from here (ds::setAppletForeground),
+	// so frames stop being submitted as well; the world tick, the network
+	// threads and everything else keep running, which is what keeps a server
+	// session alive while the player types a chat line or a login command.
+	const bool appletActive = dsSwkbdActive();
+	ds::setAppletForeground(appletActive);
+	if (appletActive)
+		return;
+
 	// libctru's per-frame pump: it handles sleep mode and HOME-menu jumps and
 	// reports whether the app should keep running. The false case is the
 	// 3DS's "close requested", latched for isCloseRequested() above.

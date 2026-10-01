@@ -163,6 +163,18 @@
 #define PLATFORM_INCREMENTAL_CHUNK_SAVE_LIMIT        2
 #undef  PLATFORM_SAVE_RUNTIME_CHUNK_EDITS_ON_UNLOAD
 #define PLATFORM_SAVE_RUNTIME_CHUNK_EDITS_ON_UNLOAD   1
+// Cap on the Anvil pending-save queue's total bytes. Each queued chunk
+// holds its whole uncompressed NBT vector until the IO worker drains it
+// (ThreadedFileIOBase sleeps 10 ms per item), and nothing else throttles
+// the producers: a save burst that outruns the worker accumulates
+// megabytes of queued NBT on the game thread's heap -- the "std::bad_alloc
+// en autosave" the release sessions reported, because the failing
+// allocation then lands wherever the spike happens to hit, not in the
+// save's own guarded code. Past the cap the queuing thread drains inline
+// (the same work the pause-menu spinner already does through
+// waitForFinish), trading a frame hitch for the OOM. 0 disables the cap.
+#undef  PLATFORM_PENDING_SAVE_QUEUE_BYTES
+#define PLATFORM_PENDING_SAVE_QUEUE_BYTES         (2 * 1024 * 1024)
 
 // The other half of the PS2's new-world answer (Ps2CoreTuning.h): the
 // initial full save serializes the whole spawn area to SD synchronously on
@@ -340,10 +352,22 @@
 // every tick (the view+1 ring singleplayer keeps): a server streams chunks
 // for ITS view distance, not the client's, so without the eviction the
 // client chunk map grows without bound -- the release-session std::bad_alloc.
-// The known cost of the evict-only profile: walking back into an evicted
-// column re-downloads it from the server (a visible hole while the inflate
-// + import run on the game thread), because with the deferred cache gone
-// there is no compressed copy to re-inflate from.
+//
+// What the evict-only profile got WRONG (fix in WorldClient::stashChunkPacket,
+// conf. 2026-10-01 on hardware as "algunos chunks no cargan", reporte PS2):
+// it assumed "walking back into an evicted column re-downloads it from the
+// server". FALSE inside the server's view window -- the beta-1.2.5 protocol
+// has no client->server chunk request packet and the server tracks per-player
+// sent-columns: it resends only AFTER the column left ITS (much larger)
+// window (Packet50 mode=false unwatch, then a fresh watch on re-entry). A
+// locally-trimmed column in between stays a permanent hole. The fix parks a
+// compressed copy of the wire traffic (base column, section deltas and block
+// changes, ~5-15 KB compressed per column) in WorldClient::stashedChunks at
+// receive time, keeps it when trimClientChunkCache drops the live Chunk, and
+// replays it through rematerializeStashedChunks() when the player comes back
+// inside the keep radius. Only the retention half of the rolled-back design:
+// live packets still import immediately on arrival, nothing is promoted,
+// deferred, or reordered.
 //
 // The sizes below are the deferred table the PS2 still runs. They are inert
 // while the flag is 0 and stay here so a future, CraftBukkit-validated
@@ -463,6 +487,15 @@
 #define PLATFORM_POPULATE_SNOW_COLUMNS_PER_STEP      32
 #undef  PLATFORM_STREAMING_FRAME_BUDGET_US
 #define PLATFORM_STREAMING_FRAME_BUDGET_US           8000
+
+// Rain/snow column sweep, the PS2's range (Ps2MeshTuning.h): 4 blocks per
+// axis -- a 9x9 column window against the desktop fancy 21x21 and fast 11x11.
+// Every column in the sweep pays a biome probe and a sky-light lookup per
+// frame and the rainy ones pay the tessellation; at a 32-block fog edge the
+// far half of even the fast sweep is one solid fog wall, so the density loss
+// only shows at the fringe the console screens never resolve.
+#undef  PLATFORM_RAIN_SNOW_RENDER_RANGE
+#define PLATFORM_RAIN_SNOW_RENDER_RANGE             4
 
 // -----------------------------------------------------------------------------
 // World-generation profile: DS_FAST_WORLDGEN
@@ -775,6 +808,50 @@
 // spreading tick); 2 keeps the nearby steering and costs 36. PS2-only.
 #undef  PLATFORM_FLUID_FLOW_SEARCH_DEPTH
 #define PLATFORM_FLUID_FLOW_SEARCH_DEPTH            2
+
+// Tessellation arithmetic and storage [PS2]:
+//
+//   FLOAT_VERTEX_MATH (PS2_FLOAT_VERTEX_MATH) -- vertex positions and UVs
+//     flow through the Tessellator, the display-list captures and
+//     WorldRenderer in float instead of double. Desktop keeps the
+//     exact-double form as the reference profile and PC_LEGACY runs the
+//     float one on this same shared code (PC_LEGACY_FLOAT_VERTEX_MATH), so
+//     both configurations are maintained upstream. The ARM11 does have VFPv2
+//     doubles, but double mul/div cost several times the single-precision
+//     forms on this in-order core, and this is the mesher's hot path.
+//   TESSELLATOR_CONVERT_QUADS 0 (Wii/PS2 value) -- keep quads as quads end
+//     to end. The PICA200 has no quad primitive, but DsRender's arena submit
+//     already fans (0,1,2,0,2,3) at draw time, so converting to triangles
+//     inside the Tessellator only inflates every buffer on the way: 4 stored
+//     vertices per quad instead of 6 through the tessellator, the section
+//     display-list captures and the HUD static meshes -- a third less vertex
+//     RAM and write traffic on a 64 MB machine, at the cost of the same fan
+//     split happening per draw instead of once per build.
+#undef  PLATFORM_FLOAT_VERTEX_MATH
+#define PLATFORM_FLOAT_VERTEX_MATH                  1
+#undef  PLATFORM_TESSELLATOR_CONVERT_QUADS
+#define PLATFORM_TESSELLATOR_CONVERT_QUADS         0
+
+// Tessellation arithmetic and storage [PS2]:
+//
+//   FLOAT_VERTEX_MATH (Ps2Tuning.h) -- vertex positions/UVs flow through the
+//     Tessellator, the display-list captures and WorldRenderer in float
+//     instead of double. Desktop keeps the exact-double form as the reference
+//     profile and PC_LEGACY ships the float one on this same shared code, so
+//     both configurations are maintained upstream. The ARM11 has VFPv2
+//     doubles, but mul/div cost several times the single-precision forms on
+//     this in-order core -- this is the tessellation hot path.
+//   TESSELLATOR_CONVERT_QUADS 0 (Wii/PS2 value) -- keep quads as quads
+//     end to end. The PICA200 has no quad primitive, but DsRender's arena
+//     submit does the (0,1,2,0,2,3) fan split at draw time, so the
+//     tessellator buffers, the section display-list captures and the HUD
+//     static meshes carry 4 vertices per quad instead of 6 -- a third less
+//     vertex RAM and memory-write traffic on a 64 MB machine. Trade: the fan
+//     expansion runs per draw on replayed geometry instead of once at build.
+#undef  PLATFORM_FLOAT_VERTEX_MATH
+#define PLATFORM_FLOAT_VERTEX_MATH                  1
+#undef  PLATFORM_TESSELLATOR_CONVERT_QUADS
+#define PLATFORM_TESSELLATOR_CONVERT_QUADS          0
 
 // Tick scheduling. The line-of-sight shortcut scan behind PathNavigate's
 // current node is the expensive half of path FOLLOWING (the node itself still

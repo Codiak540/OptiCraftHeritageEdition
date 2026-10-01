@@ -15,11 +15,13 @@ class FontRenderer;
 // normal keyTyped() path -- no per-screen wiring needed.
 //
 // The 3DS prefers the SYSTEM keyboard (swkbd, src/3ds/DsSwkbd.h): it opens on
-// the tick after focus arrives, and on OK it fills the field and leaves it
-// unfocused, so a confirm press can then submit it (chat sends on KEY_RETURN,
-// which the menu channel pushes for A). When the applet cannot be used, the
-// panel below draws on the bottom LCD instead of over the top screen and the
-// pad plus touch type as on the other consoles.
+// the tick after focus arrives, runs on a helper thread (the game loop -- and
+// the server session behind it -- keeps running while the applet owns both
+// screens), and on OK it fills the field and leaves it unfocused, so a confirm
+// press can then submit it (chat sends on KEY_RETURN, which the menu channel
+// pushes for A). When the applet cannot be used, the panel below draws on the
+// bottom LCD instead of over the top screen and the pad plus touch type as on
+// the other consoles.
 class VirtualKeyboard : public Gui
 {
 public:
@@ -36,6 +38,13 @@ public:
 	// possibly dangling pointer -- holding text-exclusive input and eating
 	// the platform text snapshot before the container navigator reads it.
 	void dropForeignField(GuiTextField* field);
+	// Called by ~GuiTextField: the focused field is about to be freed. With
+	// the 3DS's async system keyboard the game loop keeps running while the
+	// applet is up, so a screen swap (a server disconnect, a container
+	// closing) can scrap the focused field's screen mid-dialog -- the
+	// keyboard must drop the pointer instead of writing the dialog's result
+	// into freed memory.
+	void fieldDestroyed(GuiTextField* field);
 	bool isActive() const { return focusedField != nullptr; }
 
 	// Per-frame while active: read the pad and inject input events.
@@ -51,6 +60,10 @@ private:
 #if defined(CTR_PLATFORM)
 	// Launch the system keyboard for the focused field (see tick()).
 	void openNativeKeyboard();
+	// Consume a finished system-keyboard dialog (see tick()): applies the
+	// outcome to the field if it is still alive, or discards it, and joins
+	// the applet's helper thread.
+	void pollNativeKeyboard();
 #endif
 
 	GuiTextField*  focusedField = nullptr;
@@ -69,6 +82,11 @@ private:
 	// A focus event launched the system keyboard on the next tick (deferred
 	// so the screen finishes wiring the field first).
 	bool           pendingNativeOpen = false;
+	// The swkbd applet is up right now: launched asynchronously (see
+	// openNativeKeyboard), awaiting its outcome in pollNativeKeyboard().
+	// Input is suspended for the field -- the applet owns the buttons and
+	// both screens -- while the game loop keeps running.
+	bool           nativeAppletOpen = false;
 	// swkbd failed once this session: keep the bottom-screen panel for every
 	// field instead of retrying the launch (see openNativeKeyboard).
 	bool           nativeKeyboardFailed = false;

@@ -48,7 +48,11 @@ void releaseWorldEntryAssets(RenderEngine*)
 
 int panoramaSampleGrid()
 {
-    return 8;
+    // The PS2's 2x2 accumulation (24 draws total): every sample is its own
+    // one-quad Tessellator::draw(), and on this backend each draw is a
+    // staging-arena submit -- the desktop/Wii 8x8 grid bills the menu 384
+    // submits per frame for a blur the 400x240 target cannot resolve anyway.
+    return 2;
 }
 
 void reportCrash(const std::string& description)

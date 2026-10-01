@@ -12,6 +12,7 @@
 #include "ps2/system/Ps2ThreadPriority.h"
 #elif defined(CTR_PLATFORM)
 #include <3ds.h>
+#include "3ds/DsBootstrap.h"
 #endif
 
 #include "NetHandler.h"
@@ -325,7 +326,19 @@ void NetworkManager::processReadPackets()
 	// (debug.log, 2026-09-28). A handful per tick lets the client-side trim
 	// evict behind the flood as it lands; the decoded queue (4 MB) holds
 	// the rest, and TCP backpressure stops the server running away.
-	constexpr int_t MAX_CHUNK_PACKETS_PER_TICK = 6;
+	//
+	// The cap is model-profiled at RUNTIME (this binary runs on both): the
+	// New 3DS's 804 MHz ARM11 imports a column in well under half the time
+	// the Old model's 268 MHz core needs, and it carries twice the RAM for
+	// the transient column, so it can drain a server's chunk stream at
+	// twice the rate without turning the flood back into the burst the cap
+	// exists to prevent. Nothing else in the 3DS networking stack differs
+	// between the models -- soc:U is the same service with the same
+	// behaviour on both.
+	constexpr int_t CHUNK_PACKETS_PER_TICK_OLD3DS = 6;
+	constexpr int_t CHUNK_PACKETS_PER_TICK_NEW3DS = 12;
+	const int_t MAX_CHUNK_PACKETS_PER_TICK =
+	    dsIsNew3DS() ? CHUNK_PACKETS_PER_TICK_NEW3DS : CHUNK_PACKETS_PER_TICK_OLD3DS;
 	#else
 	constexpr int_t MAX_SEND_QUEUE_BYTES = 0x100000;
 	constexpr int_t MAX_PACKETS_PER_TICK = 1000;

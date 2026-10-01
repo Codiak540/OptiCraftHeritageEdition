@@ -66,6 +66,13 @@ else()
     set(3DS_MINIZIP_SOURCES
         "${CMAKE_SOURCE_DIR}/external/zlib/contrib/minizip/ioapi.c"
         "${CMAKE_SOURCE_DIR}/external/zlib/contrib/minizip/unzip.c"
+        # The zip WRITER half of minizip, for the QR download's install step:
+        # a pack downloaded in Java orientation is converted to this
+        # console's disk convention (src/3ds/assets/DsAssetConvert.cpp)
+        # before it lands in texturepacks/, which means rewriting the
+        # archive with the flipped PNGs -- the runtime counterpart of
+        # scripts/texturepack_flip_3ds.py.
+        "${CMAKE_SOURCE_DIR}/external/zlib/contrib/minizip/zip.c"
     )
     list(APPEND 3DS_SOURCES ${3DS_MINIZIP_SOURCES})
 
@@ -98,6 +105,20 @@ else()
         list(APPEND 3DS_ZLIB_SOURCES "${CMAKE_SOURCE_DIR}/external/zlib/${_3ds_zlib_src}.c")
     endforeach()
     list(APPEND 3DS_SOURCES ${3DS_ZLIB_SOURCES})
+
+    # quirc (external/quirc, ISC license) -- the QR decoder behind the
+    # "Descarga QR" screen (src/3ds/qr): the 3DS camera hands it grayscale
+    # frames and it returns the scanned URL. Plain C89 with no dependencies
+    # and no floating point, so it compiles into this target as-is. Only the
+    # 3DS compiles it: it is the only platform with a camera to scan codes
+    # with, so a desktop or console link never drags it in.
+    set(3DS_QUIRC_SOURCES
+        "${CMAKE_SOURCE_DIR}/external/quirc/quirc.c"
+        "${CMAKE_SOURCE_DIR}/external/quirc/decode.c"
+        "${CMAKE_SOURCE_DIR}/external/quirc/identify.c"
+        "${CMAKE_SOURCE_DIR}/external/quirc/version_db.c"
+    )
+    list(APPEND 3DS_SOURCES ${3DS_QUIRC_SOURCES})
 
     # zconf.h is deliberately absent from the source tree -- zlib's own
     # CMakeLists generates it into the build tree -- so regenerate it here
@@ -253,6 +274,8 @@ target_include_directories(OptiCraft PRIVATE
     "${CMAKE_SOURCE_DIR}/src/net/minecraft/src"
     "${CMAKE_SOURCE_DIR}/external/stb"
     "${CMAKE_SOURCE_DIR}/external/zlib/contrib/minizip"
+    # quirc: vendored QR decoder (see the 3DS_QUIRC_SOURCES block above).
+    "${CMAKE_SOURCE_DIR}/external/quirc"
     # zlib itself (see the 3DS_ZLIB_SOURCES block: source dir for zlib.h,
     # build dir for the generated zconf.h).
     "${CMAKE_SOURCE_DIR}/external/zlib"

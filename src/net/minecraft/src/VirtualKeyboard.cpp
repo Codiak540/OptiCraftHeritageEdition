@@ -98,18 +98,51 @@ void VirtualKeyboard::dropForeignField(GuiTextField* field)
 		notifyFocus(focusedField, false);
 }
 
+// The focused field's memory is going away. Unlike dropForeignField this is
+// unconditional: the caller IS the field the keyboard may be holding, so
+// there is nothing to compare against -- clear it, release text-exclusive
+// input, and make sure no deferred native launch still points at it. The
+// 3DS's async system keyboard makes this reachable: the game loop keeps
+// running while the applet is up, so a disconnect (or any screen swap) can
+// scrap the focused field's screen mid-dialog, and the dialog's outcome then
+// has nowhere to go but the discard in pollNativeKeyboard().
+void VirtualKeyboard::fieldDestroyed(GuiTextField* field)
+{
+	if (field == nullptr || focusedField != field)
+		return;
+	focusedField = nullptr;
+#if defined(CTR_PLATFORM)
+	pendingNativeOpen = false;
+#endif
+	platformSetTextInputExclusive(false);
+}
+
 void VirtualKeyboard::tick()
 {
+#if defined(CTR_PLATFORM)
+	// Consume a finished dialog first, before the isActive() gate below: its
+	// field may already be gone (a screen swap mid-dialog clears it through
+	// fieldDestroyed()), and an unconsumed result would block every later
+	// field on the one-dialog-at-a-time contract in DsSwkbd.
+	pollNativeKeyboard();
+#endif
 	if (!isActive())
 		return;
 
 #if defined(CTR_PLATFORM)
+	// While the system keyboard is up the applet owns the buttons and both
+	// screens: nothing to inject and no panel to navigate. The game keeps
+	// ticking behind it -- that is the point (DsSwkbd.h) -- and the outcome
+	// arrives through pollNativeKeyboard() above.
+	if (nativeAppletOpen)
+		return;
+
 	if (pendingNativeOpen)
 	{
 		pendingNativeOpen = false;
 		openNativeKeyboard();
-		if (!isActive())
-			return; // OK or Cancel closed the field along with the keyboard
+		if (nativeAppletOpen || !isActive())
+			return; // dialog launched (async), or its result already closed the field
 	}
 #endif
 
@@ -266,14 +299,50 @@ void VirtualKeyboard::openNativeKeyboard()
 		return;
 	if (nativeKeyboardFailed)
 	{
-		// The applet failed once this session (see dsSwkbdOpen): keep every
-		// field on the bottom-screen panel rather than retrying the launch.
+		// The applet failed once this session (see dsSwkbdOpenAsync): keep
+		// every field on the bottom-screen panel rather than retrying the
+		// launch.
 		bottomMode = true;
 		return;
 	}
 
-	const DsSwkbdResult result =
-		dsSwkbdOpen(focusedField->getText(), focusedField->getMaxStringLength());
+	// Async launch: the dialog runs on DsSwkbd's helper thread, and the game
+	// loop -- world tick, network read/write/dispatch -- keeps running while
+	// the applet owns both screens. That is what keeps a server session
+	// alive while the player types a chat line or a /register command; the
+	// blocking shape this replaced is what froze the client and let the
+	// server time it out. The outcome is consumed by pollNativeKeyboard()
+	// on a later tick.
+	if (!dsSwkbdOpenAsync(focusedField->getText(), focusedField->getMaxStringLength()))
+	{
+		// One dialog at a time (an earlier result is still unconsumed) or the
+		// helper could not start: this field types on the panel instead, and
+		// the stale result is picked up by the poll at the top of tick().
+		bottomMode = true;
+		return;
+	}
+	nativeAppletOpen = true;
+}
+
+void VirtualKeyboard::pollNativeKeyboard()
+{
+	if (!nativeAppletOpen)
+		return;
+	if (dsSwkbdActive())
+		return; // the applet is still up; the player is still typing
+
+	DsSwkbdResult result;
+	if (!dsSwkbdTakeResult(result))
+		return; // dialog closed but the result is not stored yet; try next tick
+	nativeAppletOpen = false;
+
+	if (focusedField == nullptr)
+	{
+		// The focused field's screen was scrapped mid-dialog (see
+		// fieldDestroyed): the outcome has nowhere to go.
+		return;
+	}
+
 	switch (result.outcome)
 	{
 	case DsSwkbdOutcome::Confirmed:
@@ -304,10 +373,11 @@ void VirtualKeyboard::render(FontRenderer* font, int_t screenWidth, int_t screen
 		return;
 
 #if defined(CTR_PLATFORM)
-	// The system keyboard opens on the next tick (notifyFocus defers it):
-	// do not flash this panel for the one frame in between -- the applet
-	// covers the screens as soon as it launches anyway.
-	if (pendingNativeOpen)
+	// The system keyboard opens on the next tick (notifyFocus defers it) and
+	// then covers both screens for as long as it is up: do not flash this
+	// panel for the frame in between, and do not draw it under the applet --
+	// the renderer suspends frames entirely once the applet launches.
+	if (pendingNativeOpen || nativeAppletOpen)
 		return;
 
 	// The fallback panel draws on the bottom LCD in the panel's own pixels,

@@ -46,6 +46,12 @@
 #ifdef PS2_PLATFORM
 #include "java/Resource.h"
 #endif
+#if PLATFORM_3DS
+// The 3DS-only "Descarga QR" entry: back camera + httpc downloader
+// (src/3ds/qr). The class itself is 3DS-only (globbed with src/3ds), so the
+// include and every reference below stay inside the same platform gate.
+#include "3ds/qr/GuiQrDownload.h"
+#endif
 #include <algorithm>
 #include <fstream>
 #include <memory>
@@ -351,6 +357,11 @@ void GuiMainMenu::initGui()
     controlList.push_back(multiplayerButton = new GuiButton(2, width / 2 - 100, y + 24, tr->translateKey("menu.multiplayer")));
     controlList.push_back(new GuiButton(3, width / 2 - 100, y + 48, uiText("Mods")));
     controlList.push_back(new GuiButton(6, width / 2 - 100, y + 72, "Skins"));
+#if PLATFORM_3DS
+    // Below the options row: the legacy column is this port's real menu on
+    // the 3DS, so this Java-style row only has to exist and fit the panel.
+    controlList.push_back(new GuiButton(7, width / 2 - 100, y + 120, uiText("QR Download")));
+#endif
 
     if (mc->hideQuitButton)
     {
@@ -406,6 +417,9 @@ void GuiMainMenu::actionPerformed(GuiButton *button)
     if (button->id == 2) mc->displayGuiScreen(new GuiMultiplayer(this));
     if (button->id == 3) mc->displayGuiScreen(new GuiMods(this));
     if (button->id == 6) mc->displayGuiScreen(new GuiSkinSelector(this));
+#if PLATFORM_3DS
+    if (button->id == 7) mc->displayGuiScreen(new GuiQrDownload(this));
+#endif
     if (button->id == 4) mc->shutdown();
 }
 

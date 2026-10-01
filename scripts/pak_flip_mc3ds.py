@@ -178,10 +178,18 @@ def parse_png(data):
 
     width, height, bit_depth, color_type, _, _, interlace = struct.unpack(
         ">IIBBBBB", chunks[0][1])
-    if bit_depth not in (1, 2, 4, 8):
-        raise SkipPng("bit depth %d (1/2/4/8 supported)" % bit_depth)
-    if interlace != 0:
-        raise SkipPng("interlaced (Adam7 not supported)")
+    # The Y flip below is pure scanline order surgery, so it works at any
+    # bit depth the scanline arithmetic handles; 16-bit/channel PNGs (what
+    # tools like Photoshop emit when exporting without "8 bpc") used to be
+    # copied verbatim here, which shipped them into converted packs still
+    # in Java orientation -- the in-game symptom was individual textures
+    # (often the /mob/* entity sheets, exported by a different tool than
+    # the terrain art) rendering vertically mirrored. Only X flips keep
+    # the 8-bit requirement (pixel-level byte surgery, guarded below).
+    if bit_depth not in (1, 2, 4, 8, 16):
+        raise SkipPng("bit depth %d (1/2/4/8/16 supported)" % bit_depth)
+    if interlace not in (0, 1):
+        raise SkipPng("interlace method %d" % interlace)
     channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}.get(color_type)
     if channels is None:
         raise SkipPng("color type %d" % color_type)
@@ -198,7 +206,7 @@ def parse_png(data):
             transparency = payload
     if not idat:
         raise SkipPng("no IDAT")
-    return width, height, bit_depth, color_type, channels, palette, transparency, bytes(idat)
+    return width, height, bit_depth, color_type, channels, interlace, palette, transparency, bytes(idat)
 
 
 def unfilter_scanlines(raw, stride, height, filter_bpp):
@@ -249,12 +257,106 @@ def unfilter_scanlines(raw, stride, height, filter_bpp):
     return rows
 
 
+# Adam7 de-interlacing. Interlaced PNGs arrive out of handfuls of classic
+# texture tools; refusing them left exactly those entries in Java
+# orientation inside "converted" packs -- the in-game symptom was single
+# textures (often /mob/* entity sheets exported with different tool
+# settings than the terrain art) rendering vertically mirrored on the
+# console. Pure-Python decode: each Adam7 pass is its own little filtered
+# image; we unfilter it with the stock routine and scatter its pixels
+# into a full-size unfiltered row-major buffer.
+
+ADAM7_PASSES = (
+    (0, 0, 8, 8),
+    (4, 0, 8, 8),
+    (0, 4, 8, 8),
+    (2, 0, 4, 8),
+    (0, 2, 4, 4),
+    (1, 0, 2, 4),
+    (0, 1, 2, 2),
+)
+
+
+def get_packed_pixel(row, px, bit_depth, channels):
+    """Extract one pixel from a packed scanline. Sub-byte depths are
+    big-endian-packed per the PNG spec; 8/16-bit are byte-aligned."""
+    if bit_depth == 8:
+        start = px * channels
+        return row[start:start + channels]
+    if bit_depth == 16:
+        start = px * channels * 2
+        return row[start:start + channels * 2]
+    # sub-byte: bit_depth in (1, 2, 4) and channels == 1 (palette/gray)
+    bit_ofs = px * bit_depth
+    byte_ofs = bit_ofs // 8
+    shift = 8 - bit_depth - (bit_ofs % 8)
+    mask = (1 << bit_depth) - 1
+    return bytes([(row[byte_ofs] >> shift) & mask])
+
+
+def put_packed_pixel(row, px, pixel, bit_depth, channels):
+    if bit_depth == 8:
+        start = px * channels
+        row[start:start + channels] = pixel
+        return
+    if bit_depth == 16:
+        start = px * channels * 2
+        row[start:start + channels * 2] = pixel
+        return
+    bit_ofs = px * bit_depth
+    byte_ofs = bit_ofs // 8
+    shift = 8 - bit_depth - (bit_ofs % 8)
+    mask = ((1 << bit_depth) - 1) << shift
+    row[byte_ofs] = (row[byte_ofs] & ~mask) | ((pixel[0] << shift) & mask)
+
+
+def interlace_pass_dims(width, height, x0, y0, dx, dy):
+    pw = (width - x0 + dx - 1) // dx if width > x0 else 0
+    ph = (height - y0 + dy - 1) // dy if height > y0 else 0
+    return pw, ph
+
+
+def adam7_deinterlace(raw, width, height, bit_depth, channels):
+    """Decode an interlaced=1 PNG pixel stream into full packed scanlines."""
+    bpp_bits = bit_depth * channels
+    filter_bpp = max(1, bpp_bits // 8)
+    stride = (width * bpp_bits + 7) // 8
+    rows = [bytearray(stride) for _ in range(height)]
+
+    cursor = 0
+    for x0, y0, dx, dy in ADAM7_PASSES:
+        pw, ph = interlace_pass_dims(width, height, x0, y0, dx, dy)
+        if pw == 0 or ph == 0:
+            continue
+        pass_stride = (pw * bpp_bits + 7) // 8
+        pass_bytes = ph * (1 + pass_stride)
+        if cursor + pass_bytes > len(raw):
+            raise SkipPng("interlaced data short")
+        pass_rows = unfilter_scanlines(raw[cursor:cursor + pass_bytes],
+                                       pass_stride, ph, filter_bpp)
+        cursor += pass_bytes
+        for py, pass_row in enumerate(pass_rows):
+            target_row = rows[y0 + py * dy]
+            for ppx in range(pw):
+                pixel = get_packed_pixel(pass_row, ppx, bit_depth, channels)
+                put_packed_pixel(target_row, x0 + ppx * dx, pixel, bit_depth, channels)
+    if cursor != len(raw):
+        raise SkipPng("interlaced data trailing bytes")
+    return [bytes(r) for r in rows]
+
+
 def flip_png(data, flip_x, flip_y):
-    """Returns a new PNG with the requested axis flips applied."""
-    width, height, bit_depth, color_type, channels, palette, transparency, idat = parse_png(data)
+    """Returns a new PNG with the requested axis flips applied. Adam7
+    interlaced input is decoded pass-by-pass first and re-emitted
+    progressive (the game's loader only cares about row content)."""
+    width, height, bit_depth, color_type, channels, interlace, palette, transparency, idat = parse_png(data)
     stride = (width * bit_depth * channels + 7) // 8
     filter_bpp = max(1, (bit_depth * channels) // 8)
-    rows = unfilter_scanlines(zlib.decompress(idat), stride, height, filter_bpp)
+    if interlace != 0:
+        rows = adam7_deinterlace(zlib.decompress(idat), width, height,
+                                 bit_depth, channels)
+    else:
+        rows = unfilter_scanlines(zlib.decompress(idat), stride, height, filter_bpp)
 
     if flip_y:
         # Scanline order only: no pixel decoding needed, so every bit depth

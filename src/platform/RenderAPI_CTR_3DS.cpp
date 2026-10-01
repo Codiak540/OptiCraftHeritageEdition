@@ -116,6 +116,48 @@ struct DisplayListEntry
 {
 	ds::GpuState state;      // full fixed-function state at capture
 	RenderCapturedMesh mesh; // 32-byte vertices, positions pre-transformed
+
+	// Sections replay many times per second and rewrite their bytes only on
+	// a rebuild, so when the captured mesh carries per-vertex colours
+	// (terrain does; colourless sky/HUD lists do not) the bytes move OUT of
+	// the heap vector into a linear-heap buffer owned by the entry, and
+	// ds::drawLinear submits them in place instead of re-copying them into
+	// the frame arena on every replay. Grow-only: a rebuilt section reuses
+	// the allocation when the new mesh fits (steady-state streaming stops
+	// churning the linear heap), and a bigger mesh allocates BEFORE freeing
+	// the old buffer so a failed growth keeps the previous mesh instead of
+	// losing the section. Colours are required because the linear path
+	// never patches vertex data mid-frame.
+	std::uint8_t* linear = nullptr;
+	std::size_t linearCapacity = 0;
+
+	DisplayListEntry() = default;
+	~DisplayListEntry() { releaseLinearStorage(); }
+	DisplayListEntry(DisplayListEntry&& other) noexcept { *this = std::move(other); }
+	DisplayListEntry& operator=(DisplayListEntry&& other) noexcept
+	{
+		if (this != &other)
+		{
+			releaseLinearStorage();
+			state = other.state;
+			mesh = std::move(other.mesh);
+			linear = other.linear;
+			linearCapacity = other.linearCapacity;
+			other.linear = nullptr;
+			other.linearCapacity = 0;
+		}
+		return *this;
+	}
+	DisplayListEntry(const DisplayListEntry&) = delete;
+	DisplayListEntry& operator=(const DisplayListEntry&) = delete;
+
+	void releaseLinearStorage() noexcept
+	{
+		if (linear != nullptr)
+			ds::freeLinear(linear);
+		linear = nullptr;
+		linearCapacity = 0;
+	}
 };
 
 std::unordered_map<int, std::vector<DisplayListEntry>> s_displayLists;
@@ -158,11 +200,60 @@ bool captureDisplayListMesh(const RenderInterleavedMesh& mesh)
 	entry.mesh.hasBrightness = mesh.hasBrightness;
 	entry.mesh.brightnessOffset = 28;
 	entry.mesh.vertexCount = mesh.count;
-	entry.mesh.raw.resize(static_cast<std::size_t>(mesh.count) * 8u);
 
 	const float* transform = ds::matrix::modelViewTop();
 	const std::int32_t* src = static_cast<const std::int32_t*>(mesh.data) +
 	                          mesh.first * 8;
+	const std::size_t byteCount = static_cast<std::size_t>(mesh.count) * 8u * sizeof(std::int32_t);
+
+	// Linear-resident path (see the entry comment): per-vertex-coloured
+	// meshes -- every terrain section -- leave the heap entirely. The copy
+	// lands in the entry's own linear buffer and is never staged again.
+	if (mesh.hasColor)
+	{
+		if (entry.linearCapacity < byteCount)
+		{
+			std::uint8_t* grown = static_cast<std::uint8_t*>(ds::allocLinear(byteCount));
+			if (grown != nullptr)
+			{
+				entry.releaseLinearStorage();
+				entry.linear = grown;
+				entry.linearCapacity = byteCount;
+			}
+		}
+		if (entry.linear != nullptr)
+		{
+			std::memcpy(entry.linear, src, byteCount);
+			std::int32_t* dst = reinterpret_cast<std::int32_t*>(entry.linear);
+			for (int i = 0; i < mesh.count; ++i)
+			{
+				// v' = M * (x, y, z, 1), column-major GL float[16].
+				float* position = reinterpret_cast<float*>(dst + i * 8);
+				const float x = position[0];
+				const float y = position[1];
+				const float z = position[2];
+				position[0] = transform[0] * x + transform[4] * y + transform[8] * z +
+				              transform[12];
+				position[1] = transform[1] * x + transform[5] * y + transform[9] * z +
+				              transform[13];
+				position[2] = transform[2] * x + transform[6] * y + transform[10] * z +
+				              transform[14];
+			}
+			// The heap vector stops being this entry's storage.
+			std::vector<std::int32_t>().swap(entry.mesh.raw);
+			return true;
+		}
+	}
+	else
+	{
+		// Colourless meshes need the staged path's current-colour fill, so
+		// they stay on the heap vector -- and any linear buffer from an
+		// earlier coloured capture of this slot is dropped with the storage.
+		entry.releaseLinearStorage();
+	}
+
+	entry.mesh.raw.resize(static_cast<std::size_t>(mesh.count) * 8u);
+
 	std::int32_t* dst = entry.mesh.raw.data();
 	std::memcpy(dst, src, entry.mesh.raw.size() * sizeof(std::int32_t));
 	for (int i = 0; i < mesh.count; ++i)
@@ -195,10 +286,15 @@ void replayDisplayList(int displayList)
 		return;
 	for (const DisplayListEntry& entry : it->second)
 	{
-		if (entry.mesh.empty())
+		// Linear-resident entries carry their bytes outside mesh.raw -- the
+		// vertex count is the liveness check for them (raw.empty() would
+		// always be true).
+		const bool linearResident = entry.linear != nullptr && entry.mesh.vertexCount > 0;
+		if (!linearResident && entry.mesh.empty())
 			continue;
 		RenderInterleavedMesh view;
-		view.data = entry.mesh.raw.data();
+		view.data = linearResident ? static_cast<const void*>(entry.linear)
+		                           : static_cast<const void*>(entry.mesh.raw.data());
 		view.stride = 32;
 		view.first = 0;
 		view.count = entry.mesh.vertexCount;
@@ -212,7 +308,14 @@ void replayDisplayList(int displayList)
 		view.normalOffset = entry.mesh.normalOffset;
 		view.hasBrightness = entry.mesh.hasBrightness;
 		view.brightnessOffset = entry.mesh.brightnessOffset;
-		ds::draw(view, entry.state);
+		// A drawLinear() false would mean the layout is unrepresentable, but
+		// the capture side already refuses exactly those meshes -- falling
+		// through to the staged path would double the frame's work for no
+		// gain, so only its colourless-mesh self-fallback matters.
+		if (linearResident)
+			ds::drawLinear(view, entry.state);
+		else
+			ds::draw(view, entry.state);
 	}
 }
 } // namespace
@@ -324,8 +427,56 @@ bool renderDrawCaptured(const RenderCapturedMesh& mesh)
 }
 
 // ---------------------------------------------------------------------------
+// Persistent meshes (model geometry)
+// ---------------------------------------------------------------------------
+// The PICA consumes the staging arena per draw, so there is no native
+// retained-geometry object here either: a "persistent mesh" is a captured
+// RAM mesh held per handle and replayed through renderDrawCaptured, exactly
+// the PS2's Ps2ModelGeometryCache contract. The win is the per-frame
+// tessellation of model boxes -- a ModelRenderer part is invariant geometry
+// (positions bake the compile-time scale); the matrix stack animates it and
+// the live state supplies texture/tint/lighting at replay, so replay must
+// NOT bake the recording transform the way the section display lists do.
+
+// Handle table for the persistent-mesh API. Replay goes through
+// renderDrawCaptured under the LIVE state (unlike the display lists, which
+// snapshot state at record time), because ModelRenderer animates through the
+// matrix stack every frame.
+static std::unordered_map<int, RenderCapturedMesh> s_persistentMeshes;
+
+int renderCreatePersistentMesh()
+{
+	static int s_nextPersistentMesh = 1;
+	const int handle = s_nextPersistentMesh++;
+	s_persistentMeshes[handle];
+	return handle;
+}
+
+void renderDestroyPersistentMesh(int handle)
+{
+	s_persistentMeshes.erase(handle);
+}
+
+bool renderCompilePersistentMesh(int handle, const RenderInterleavedMesh& mesh)
+{
+	const auto it = s_persistentMeshes.find(handle);
+	if (it == s_persistentMeshes.end())
+		return false;
+	return renderCaptureInterleaved(mesh, it->second, false);
+}
+
+bool renderDrawPersistentMesh(int handle)
+{
+	const auto it = s_persistentMeshes.find(handle);
+	if (it == s_persistentMeshes.end() || it->second.empty())
+		return false;
+	return renderDrawCaptured(it->second);
+}
+
+// ---------------------------------------------------------------------------
 // Fixed-function state
 // ---------------------------------------------------------------------------
+
 
 void renderEnable(RenderCapability capability)
 {

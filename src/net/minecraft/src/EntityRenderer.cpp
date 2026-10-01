@@ -2398,8 +2398,9 @@ void EntityRenderer::renderRainSnow(float partialTicks)
     const double renderPosZ = entity->lastTickPosZ + (entity->posZ - entity->lastTickPosZ) * static_cast<double>(partialTicks);
 #endif
     const int_t interpolatedY = MathHelper::floor_double(renderPosY);
-#if PLATFORM_PS2
-    const int_t range = PS2_RAIN_SNOW_RENDER_RANGE;
+#if PLATFORM_RAIN_SNOW_RENDER_RANGE >= 0
+    // Console-pinned range; see the knob in PlatformGameTuning.h.
+    const int_t range = PLATFORM_RAIN_SNOW_RENDER_RANGE;
 #else
     const int_t range = Config::isRainFancy() ? 10 : 5;
 #endif

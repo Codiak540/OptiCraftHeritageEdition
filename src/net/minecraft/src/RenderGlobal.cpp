@@ -121,7 +121,7 @@ inline void applyPs2LegacyAtmosphereRgb(Minecraft *mc, float &red, float &green,
 #endif
 }
 
-#if PLATFORM_PS2
+#if PLATFORM_PS2 || PLATFORM_3DS
 inline bool ps2SectionBeyondFog(WorldRenderer *renderer,
 	float eyeX, float eyeY, float eyeZ, float distance)
 {
@@ -1051,7 +1051,7 @@ void RenderGlobal::enqueueRendererUpdate(WorldRenderer *worldrenderer)
 #endif
 }
 
-#if PLATFORM_PS2 || PLATFORM_WII
+#if PLATFORM_PS2 || PLATFORM_WII || PLATFORM_3DS
 void RenderGlobal::enqueueRendererUpdatePriority(WorldRenderer *worldrenderer)
 {
 	if (worldrenderer == nullptr)
@@ -1455,7 +1455,7 @@ int_t RenderGlobal::renderSortedRenderers(int_t i, int_t j, int_t k, double d)
 #endif
 
 	EntityLiving *entityliving = mc->renderViewEntity;
-#if PLATFORM_PS2
+#if PLATFORM_PS2 || PLATFORM_3DS
 	bool ps2CullTerrainByFog = false;
 	float ps2TerrainCullDistance = 0.0f;
 	float ps2FogEyeX = 0.0f;
@@ -1477,18 +1477,25 @@ int_t RenderGlobal::renderSortedRenderers(int_t i, int_t j, int_t k, double d)
 			// cutoff would become visible, so keep the full pass in those cases.
 			ps2CullTerrainByFog = k == 1 && !Config::isClearWater() &&
 				!entityliving->isPotionActive(Potion::waterBreathing);
+#if PLATFORM_PS2
 			ps2TerrainCullDistance = PS2_UNDERWATER_TRANSLUCENT_CULL_DISTANCE;
+#else
+			// Same 32-block dense-water fog cutoff as the PS2 -- the knob
+			// itself lives in Ps2MeshTuning.h, outside this target's includes.
+			ps2TerrainCullDistance = 32.0f;
+#endif
 		}
 		else if (mc != nullptr && mc->theWorld != nullptr && mc->theWorld->worldProvider != nullptr &&
 			!mc->theWorld->worldProvider->isNether && !Config::isFogOff())
 		{
-			// On the PS2 fixed-grid renderer, EntityRenderer clamps normal
-			// linear fog to the loaded edge. Sections whose entire AABB is past
-			// that edge are fully fogged already, so submitting their expensive
-			// terrain geometry cannot affect the final image. Apply the same
-			// conservative whole-AABB rejection to both opaque and translucent
-			// passes. This matters in villages as well as oceans: pass 0 otherwise
-			// spends several milliseconds drawing sections already replaced by fog.
+			// The PS2 fixed-grid renderer and the 3DS both clamp normal linear
+			// fog to the loaded edge (PLATFORM_VISIBLE_CHUNK_RADIUS). Sections
+			// whose entire AABB is past that edge are fully fogged already, so
+			// submitting their expensive terrain geometry cannot affect the
+			// final image. Apply the same conservative whole-AABB rejection to
+			// both opaque and translucent passes. This matters in villages as
+			// well as oceans: pass 0 otherwise spends several milliseconds
+			// drawing sections already replaced by fog.
 			ps2CullTerrainByFog = true;
 			ps2TerrainCullDistance = static_cast<float>(PLATFORM_VISIBLE_CHUNK_RADIUS * 16);
 		}
@@ -1542,7 +1549,7 @@ int_t RenderGlobal::renderSortedRenderers(int_t i, int_t j, int_t k, double d)
 			(useOcclusion && !sortedRenderer->isVisible))
 			continue;
 
-#if PLATFORM_PS2
+#if PLATFORM_PS2 || PLATFORM_3DS
 		if (ps2CullTerrainByFog &&
 			ps2SectionBeyondFog(sortedRenderer, ps2FogEyeX, ps2FogEyeY, ps2FogEyeZ,
 				ps2TerrainCullDistance))
@@ -3052,11 +3059,14 @@ void RenderGlobal::markRenderersInRange(int_t i, int_t j, int_t k, int_t l, int_
 				int_t k4 = (j4 * renderChunksTall + l3) * renderChunksWide + j3;
 				WorldRenderer *worldrenderer = worldRenderers[k4];
 
-#if PLATFORM_PS2 || PLATFORM_WII
+#if PLATFORM_PS2 || PLATFORM_WII || PLATFORM_3DS
 				// Active builds must observe every mutation so deferred population
 				// can mark one final rebuild without throwing away the current staging
 				// mesh. markDirty() itself decides whether to coalesce or restart; a
-				// light-only mark always coalesces.
+				// light-only mark always coalesces. (On the 3DS there is no partial
+				// build to protect -- isTerrainBuildInProgress() is always false --
+				// but this branch is still what raises the urgent flag and puts the
+				// edited section at the head of the queue.)
 				enqueueRendererUpdatePriority(worldrenderer);
 				const bool playerEdit = worldObj != nullptr && worldObj->isMarkingFromPlayerEdit();
 				if (worldObj != nullptr && (worldObj->isMarkingFromLighting() || !playerEdit))

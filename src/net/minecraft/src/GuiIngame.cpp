@@ -49,7 +49,7 @@
 #include "legacy/LegacyControlTooltipHud.h"
 #include "legacy/LegacyTipHud.h"
 #include "legacy/LegacyHudLayout.h"
-#if PLATFORM_PC_LEGACY || defined(PS2_PLATFORM)
+#if PLATFORM_PC_LEGACY || defined(PS2_PLATFORM) || defined(CTR_PLATFORM)
 #include "pc/render/PcLegacyHudCachePolicy.h"
 #endif
 #if defined(PS2_PLATFORM)
@@ -89,7 +89,7 @@ namespace
 			static_cast<float_t>(texY) * textureScale);
 	}
 
-#if PLATFORM_PC_LEGACY || defined(PS2_PLATFORM)
+#if PLATFORM_PC_LEGACY || defined(PS2_PLATFORM) || defined(CTR_PLATFORM)
 	PcLegacyHudStatusState makeHudStatusState(Minecraft *mc)
 	{
 		PcLegacyHudStatusState state{};
@@ -182,7 +182,7 @@ static int_t hsbToRgb(float_t hue, float_t sat, float_t bri)
 	return 0xff000000 | (ri << 16) | (gi << 8) | bi;
 }
 
-#ifdef PS2_PLATFORM
+#if defined(PS2_PLATFORM) || defined(CTR_PLATFORM)
 struct Ps2HudCache
 {
 	RenderStaticMesh hotbar;
@@ -224,13 +224,13 @@ GuiIngame::GuiIngame(Minecraft *minecraft)
 	, pcLegacyStatusValid(false)
 	, pcLegacyStatusSignature(0)
 #endif
-#ifdef PS2_PLATFORM
+#if defined(PS2_PLATFORM) || defined(CTR_PLATFORM)
 	, ps2HudCache(new Ps2HudCache())
 #endif
 	, damageGuiPartialTime(0.0f)
 	, prevVignetteBrightness(1.0f)
 {
-#ifdef PS2_PLATFORM
+#if defined(PS2_PLATFORM) || defined(CTR_PLATFORM)
 	renderStaticMeshCreate(ps2HudCache->hotbar);
 	renderStaticMeshCreate(ps2HudCache->crosshair);
 	renderStaticMeshCreate(ps2HudCache->status);
@@ -246,7 +246,7 @@ GuiIngame::~GuiIngame()
 		pcLegacyHudDisplayLists = 0;
 	}
 #endif
-#ifdef PS2_PLATFORM
+#if defined(PS2_PLATFORM) || defined(CTR_PLATFORM)
 	if (ps2HudCache != nullptr)
 	{
 		renderStaticMeshDestroy(ps2HudCache->hotbar);
@@ -254,6 +254,13 @@ GuiIngame::~GuiIngame()
 		renderStaticMeshDestroy(ps2HudCache->status);
 		delete ps2HudCache;
 		ps2HudCache = nullptr;
+	}
+#endif
+#if defined(CTR_PLATFORM)
+	if (ctrHotbarListBase != 0)
+	{
+		renderDeleteDisplayLists(ctrHotbarListBase, 9);
+		ctrHotbarListBase = 0;
 	}
 #endif
 	clearChatMessages();
@@ -287,7 +294,11 @@ void GuiIngame::renderFpsOverlay(FontRenderer *fontRenderer)
 #ifdef PS2_PLATFORM
 	fontRenderer->drawString(fpsLine, safeX, safeY, 0xe0e0e0);
 #else
+	// One batch for shadow+glyphs (a no-op on display-list backends):
+	// drawStringWithShadow submits two draws per line otherwise.
+	fontRenderer->beginTextBatch();
 	fontRenderer->drawStringWithShadow(fpsLine, safeX, safeY, 0xffffff);
+	fontRenderer->endTextBatch();
 #endif
 }
 
@@ -338,6 +349,10 @@ void GuiIngame::renderDebugOverlay(FontRenderer *fontRenderer, int_t screenWidth
 	constexpr int_t safeRightMargin = 2;
 #endif
 
+	// The whole overlay is text-only, so one shared batch covers every line
+	// (no-op on display-list backends; on FONT_IMMEDIATE targets it turns
+	// two submits per line -- shadow + glyphs -- into one for the block).
+	fontRenderer->beginTextBatch();
 	fontRenderer->drawStringWithShadow("OptiCraft (" + mc->debug + ")", safeLeft, safeTop, 0xffffff);
 	fontRenderer->drawStringWithShadow(mc->getDebugLine1(), safeLeft, safeTop + 10, 0xffffff);
 	fontRenderer->drawStringWithShadow(mc->getDebugLine2(), safeLeft, safeTop + 20, 0xffffff);
@@ -413,6 +428,7 @@ void GuiIngame::renderDebugOverlay(FontRenderer *fontRenderer, int_t screenWidth
 		}
 	}
 #endif
+	fontRenderer->endTextBatch();
 #endif
 	renderPopMatrix();
 }
@@ -448,6 +464,19 @@ void GuiIngame::renderBossHealth()
 
 void GuiIngame::renderPlayerStatusHudGeometry(int_t sw, int_t sh, Tessellator *captureTessellator)
 {
+#if defined(CTR_PLATFORM)
+	// The whole status cluster emits into ONE batch on this platform: the
+	// old code did startDrawingQuads()/draw() around every single icon,
+	// which is ~60 individual backend submits per frame on the uncached
+	// path -- and in capture mode each start reset the record, so a cached
+	// static mesh kept only the last icon. Emission now appends; the
+	// direct caller opens/closes the batch here, the static-mesh callers
+	// own theirs.
+	Tessellator *const ctrStatusBatch = captureTessellator != nullptr ? captureTessellator : &Tessellator::instance;
+	const bool ctrOwnsBatch = captureTessellator == nullptr;
+	if (ctrOwnsBatch)
+		ctrStatusBatch->startDrawingQuads();
+#endif
 	auto emitRect = [&](int_t x, int_t y, int_t texX, int_t texY, int_t w, int_t h)
 	{
 		if (captureTessellator != nullptr)
@@ -460,23 +489,20 @@ void GuiIngame::renderPlayerStatusHudGeometry(int_t sw, int_t sh, Tessellator *c
 
 #if defined(CTR_PLATFORM)
 	// The status glyphs draw larger on this platform: the 9 px icons scaled
-	// to 14 px with the vanilla UVs, keeping the capture-aware shape of
-	// emitRect (the uncached path has icons.png bound by the caller).
+	// to 14 px with the vanilla UVs, appended to the batch above (the
+	// uncached path has icons.png bound by the caller).
 	auto emitIcon = [&](int_t x, int_t y, int_t texX, int_t texY)
 	{
-		Tessellator *iconTess = captureTessellator != nullptr ? captureTessellator : &Tessellator::instance;
 		constexpr float INV = 1.0f / 256.0f;
 		const float u0 = static_cast<float_t>(texX) * INV;
 		const float v0 = static_cast<float_t>(texY) * INV;
 		const float u1 = u0 + 9.0f * INV;
 		const float v1 = v0 + 9.0f * INV;
-		iconTess->startDrawingQuads();
-		iconTess->setColorOpaque_I(0xffffff);
-		iconTess->addVertexWithUV(x, y + 14.0f, zLevel, u0, v1);
-		iconTess->addVertexWithUV(x + 14.0f, y + 14.0f, zLevel, u1, v1);
-		iconTess->addVertexWithUV(x + 14.0f, y, zLevel, u1, v0);
-		iconTess->addVertexWithUV(x, y, zLevel, u0, v0);
-		iconTess->draw();
+		ctrStatusBatch->setColorOpaque_I(0xffffff);
+		ctrStatusBatch->addVertexWithUV(x, y + 14.0f, zLevel, u0, v1);
+		ctrStatusBatch->addVertexWithUV(x + 14.0f, y + 14.0f, zLevel, u1, v1);
+		ctrStatusBatch->addVertexWithUV(x + 14.0f, y, zLevel, u1, v0);
+		ctrStatusBatch->addVertexWithUV(x, y, zLevel, u0, v0);
 	};
 	constexpr int_t ICON_PITCH = 14;
 #else
@@ -532,25 +558,22 @@ void GuiIngame::renderPlayerStatusHudGeometry(int_t sw, int_t sh, Tessellator *c
 #if defined(CTR_PLATFORM)
 		// Full-width strip: the 182 px bar texture stretched across the
 		// whole top edge and thickened to 8 px; the fill keeps its
-		// proportional UVs.
-		Tessellator *xt = captureTessellator != nullptr ? captureTessellator : &Tessellator::instance;
+		// proportional UVs. Appended to the shared status batch.
 		constexpr float INV = 1.0f / 256.0f;
 		const int_t fillW = static_cast<int_t>(mc->thePlayer->experience * static_cast<float_t>(sw));
 		const float fillU = mc->thePlayer->experience * 182.0f * INV;
-		xt->startDrawingQuads();
-		xt->setColorOpaque_I(0xffffff);
-		xt->addVertexWithUV(0, xpY + 8, zLevel, 0.0f, 69.0f * INV);
-		xt->addVertexWithUV(sw, xpY + 8, zLevel, 182.0f * INV, 69.0f * INV);
-		xt->addVertexWithUV(sw, xpY, zLevel, 182.0f * INV, 64.0f * INV);
-		xt->addVertexWithUV(0, xpY, zLevel, 0.0f, 64.0f * INV);
+		ctrStatusBatch->setColorOpaque_I(0xffffff);
+		ctrStatusBatch->addVertexWithUV(0, xpY + 8, zLevel, 0.0f, 69.0f * INV);
+		ctrStatusBatch->addVertexWithUV(sw, xpY + 8, zLevel, 182.0f * INV, 69.0f * INV);
+		ctrStatusBatch->addVertexWithUV(sw, xpY, zLevel, 182.0f * INV, 64.0f * INV);
+		ctrStatusBatch->addVertexWithUV(0, xpY, zLevel, 0.0f, 64.0f * INV);
 		if (fillW > 0)
 		{
-			xt->addVertexWithUV(0, xpY + 8, zLevel, 0.0f, 74.0f * INV);
-			xt->addVertexWithUV(fillW, xpY + 8, zLevel, fillU, 74.0f * INV);
-			xt->addVertexWithUV(fillW, xpY, zLevel, fillU, 69.0f * INV);
-			xt->addVertexWithUV(0, xpY, zLevel, 0.0f, 69.0f * INV);
+			ctrStatusBatch->addVertexWithUV(0, xpY + 8, zLevel, 0.0f, 74.0f * INV);
+			ctrStatusBatch->addVertexWithUV(fillW, xpY + 8, zLevel, fillU, 74.0f * INV);
+			ctrStatusBatch->addVertexWithUV(fillW, xpY, zLevel, fillU, 69.0f * INV);
+			ctrStatusBatch->addVertexWithUV(0, xpY, zLevel, 0.0f, 69.0f * INV);
 		}
-		xt->draw();
 #else
 		constexpr int_t XP_BAR_WIDTH = 182;
 		const int_t filled = static_cast<int_t>(mc->thePlayer->experience * static_cast<float_t>(XP_BAR_WIDTH + 1));
@@ -631,6 +654,10 @@ void GuiIngame::renderPlayerStatusHudGeometry(int_t sw, int_t sh, Tessellator *c
 				emitIcon(ax, airY, 25, 18);
 		}
 	}
+#if defined(CTR_PLATFORM)
+	if (ctrOwnsBatch)
+		ctrStatusBatch->draw();
+#endif
 }
 
 void GuiIngame::renderPlayerStatusHudUncached(int_t sw, int_t sh)
@@ -746,7 +773,7 @@ void GuiIngame::pcLegacyRenderPlayerStatusHud(int_t sw, int_t sh)
 }
 #endif
 
-#ifdef PS2_PLATFORM
+#if defined(PS2_PLATFORM) || defined(CTR_PLATFORM)
 void GuiIngame::ps2RenderHotbarFrame(int_t sw, int_t sh, int_t currentItem)
 {
 	if (mc != nullptr && mc->isSplitScreenActive())
@@ -933,7 +960,7 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 		renderBlendFunc(RenderBlendFactor::OneMinusDstColor, RenderBlendFactor::OneMinusSrcColor);
 #if PLATFORM_PC_LEGACY
 		pcLegacyRenderCrosshair(sw, sh);
-#elif defined(PS2_PLATFORM)
+#elif defined(PS2_PLATFORM) || defined(CTR_PLATFORM)
 		ps2RenderCrosshair(sw, sh);
 #else
 		drawTexturedModalRect(sw / 2 - 7, sh / 2 - 7, 0, 0, 16, 16);
@@ -950,7 +977,7 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 	{
 #if PLATFORM_PC_LEGACY
 		pcLegacyRenderPlayerStatusHud(sw, hudHeight);
-#elif defined(PS2_PLATFORM)
+#elif defined(PS2_PLATFORM) || defined(CTR_PLATFORM)
 		ps2RenderPlayerStatusHud(sw, hudHeight);
 #else
 		renderPlayerStatusHudUncached(sw, hudHeight);
@@ -1064,8 +1091,17 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 	// status bars by legacyHudBottomInset(), and the chat has to keep sitting
 	// above them rather than on top of the hearts.
 	renderTranslate(0.0f, (float_t)(hudHeight - 48), 0.0f);
-	for (int_t i5 = 0; i5 + chatScroll < (int_t)chatMessageList.size() && i5 < chatLines; i5++)
+
+	// Two passes so every line shares ONE text batch on FONT_IMMEDIATE
+	// backends: the per-line interleave (background rect, then string) can
+	// never batch. Rows do not overlap, so "all backgrounds then all strings"
+	// blends to the same pixels in the same order per pixel.
+	int_t lineAlpha[20];
+	for (int_t i5 = 0; i5 < chatLines; ++i5)
 	{
+		lineAlpha[i5] = 0;
+		if (i5 + chatScroll >= (int_t)chatMessageList.size())
+			continue;
 		ChatLine *line = chatMessageList[i5 + chatScroll];
 		if (line->updateCounter >= 200 && !chatOpen) continue;
 		float d = static_cast<float>(line->updateCounter) / 200.0f;
@@ -1076,15 +1112,20 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 		d *= d;
 		int_t msgAlpha = static_cast<int_t>(255.0f * d);
 		if (chatOpen) msgAlpha = 255;
-		if (msgAlpha > 0)
-		{
-			int_t cx = 2;
-			int_t cy = -i5 * 9;
-			drawRect(cx, cy - 1, cx + 320, cy + 8, JavaArithmetic::intShl(msgAlpha / 2, 24));
-			renderEnable(RenderCapability::Blend);
-			fr->drawStringWithShadow(line->message, cx, cy, JavaArithmetic::intAdd(0xffffff, JavaArithmetic::intShl(msgAlpha, 24)));
-		}
+		if (msgAlpha <= 0)
+			continue;
+		lineAlpha[i5] = msgAlpha;
+		drawRect(2, -i5 * 9 - 1, 2 + 320, -i5 * 9 + 8, JavaArithmetic::intShl(msgAlpha / 2, 24));
 	}
+	fr->beginTextBatch();
+	for (int_t i5 = 0; i5 < chatLines; ++i5)
+	{
+		if (lineAlpha[i5] <= 0)
+			continue;
+		fr->drawStringWithShadow(chatMessageList[i5 + chatScroll]->message, 2, -i5 * 9,
+			JavaArithmetic::intAdd(0xffffff, JavaArithmetic::intShl(lineAlpha[i5], 24)));
+	}
+	fr->endTextBatch();
 	renderPopMatrix();
 
 	EntityClientPlayerMP *clientPlayer = dynamic_cast<EntityClientPlayerMP *>(mc->thePlayer);
@@ -1109,31 +1150,47 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 		const int_t top = 10;
 		drawRect(left - 1, top - 1, left + columnWidth * columns, top + 9 * rows, 0x80000000);
 
+		// Three passes, same reason as the chat: the interleaved
+		// rect/text/icon order per row cannot share one text batch, and the
+		// rows never overlap, so the resequencing blends identically.
 		for (int_t index = 0; index < maxPlayers; ++index)
 		{
 			const int_t x = left + (index % columns) * columnWidth;
 			const int_t y = top + (index / columns) * 9;
 			drawRect(x, y, x + columnWidth - 1, y + 8, 0x20ffffff);
-			renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-			renderEnable(RenderCapability::AlphaTest);
+		}
+		renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+		renderEnable(RenderCapability::AlphaTest);
 
-			if (index < (int_t)players.size() && players[index] != nullptr)
-			{
-				GuiPlayerInfo *info = players[index];
-				fr->drawStringWithShadow(info->name, x, y, 0xffffff);
-				renderBindTexture(mc->renderEngine->getTexture("/gui/icons.png"));
-				int_t pingIcon = 0;
-				if (info->responseTime < 0) pingIcon = 5;
-				else if (info->responseTime < 150) pingIcon = 0;
-				else if (info->responseTime < 300) pingIcon = 1;
-				else if (info->responseTime < 600) pingIcon = 2;
-				else if (info->responseTime < 1000) pingIcon = 3;
-				else pingIcon = 4;
+		fr->beginTextBatch();
+		for (int_t index = 0; index < maxPlayers && index < (int_t)players.size(); ++index)
+		{
+			if (players[index] == nullptr)
+				continue;
+			fr->drawStringWithShadow(players[index]->name,
+				left + (index % columns) * columnWidth,
+				top + (index / columns) * 9, 0xffffff);
+		}
+		fr->endTextBatch();
 
-				zLevel += 100.0f;
-				drawTexturedModalRect(x + columnWidth - 12, y, 0, 176 + pingIcon * 8, 10, 8);
-				zLevel -= 100.0f;
-			}
+		renderBindTexture(mc->renderEngine->getTexture("/gui/icons.png"));
+		for (int_t index = 0; index < maxPlayers && index < (int_t)players.size(); ++index)
+		{
+			if (players[index] == nullptr)
+				continue;
+			GuiPlayerInfo *info = players[index];
+			int_t pingIcon = 0;
+			if (info->responseTime < 0) pingIcon = 5;
+			else if (info->responseTime < 150) pingIcon = 0;
+			else if (info->responseTime < 300) pingIcon = 1;
+			else if (info->responseTime < 600) pingIcon = 2;
+			else if (info->responseTime < 1000) pingIcon = 3;
+			else pingIcon = 4;
+
+			zLevel += 100.0f;
+			drawTexturedModalRect(left + (index % columns) * columnWidth + columnWidth - 12,
+				top + (index / columns) * 9, 0, 176 + pingIcon * 8, 10, 8);
+			zLevel -= 100.0f;
 		}
 	}
 
@@ -1297,7 +1354,7 @@ void GuiIngame::renderGameplayBottomPanel(float_t partialTick)
 	for (int_t slot = 0; slot < 9; ++slot)
 	{
 		const int_t slotW = touchHud::HOTBAR_W / touchHud::HOTBAR_SLOTS;
-		renderInventorySlot(slot, touchHud::HOTBAR_X + slot * slotW + (slotW - 16) / 2,
+		renderTouchHotbarSlot(slot, touchHud::HOTBAR_X + slot * slotW + (slotW - 16) / 2,
 			touchHud::HOTBAR_Y + (touchHud::HOTBAR_H - 16) / 2, partialTick);
 	}
 	RenderHelper::disableStandardItemLighting();
@@ -1423,6 +1480,65 @@ void GuiIngame::renderPortalOverlay(float_t intensity, int_t w, int_t h)
 	renderEnable(RenderCapability::AlphaTest);
 	renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
+
+#if defined(CTR_PLATFORM)
+void GuiIngame::renderTouchHotbarSlot(int_t slot, int_t x, int_t y, float_t partialTick)
+{
+	ItemStack *stack = mc->thePlayer->inventory->mainInventory[slot];
+
+	// Live-only slots: the pickup pop animation scales on the partial tick
+	// and the enchantment glint slides its UVs on the wall clock
+	// (RenderItem::renderGuiItemGlint) -- both must draw every frame, so
+	// they bypass the list cache entirely.
+	const bool dynamic = stack != nullptr &&
+		((static_cast<float_t>(stack->animationsToGo) - partialTick) > 0.0f || stack->hasEffect());
+
+	if (ctrHotbarListBase == 0)
+		ctrHotbarListBase = renderGenerateDisplayLists(9);
+	const int_t list = ctrHotbarListBase + slot;
+
+	if (dynamic)
+	{
+		// Not cached this frame AND force a re-record once it settles.
+		ctrHotbarSignature[slot] = -1;
+		renderInventorySlot(slot, x, y, partialTick);
+		return;
+	}
+
+	// Content signature: everything renderItemIntoGUI / the overlay can
+	// ever draw derives from these three fields (the icon and damage bar
+	// come from itemID+damage, the stack count text from stackSize).
+	long_t signature = 0;
+	if (stack != nullptr)
+	{
+		signature = 1;
+		signature = signature * 1000003 + stack->itemID;
+		signature = signature * 1000003 + stack->getItemDamage();
+		signature = signature * 1000003 + stack->stackSize;
+	}
+
+	if (ctrHotbarSignature[slot] != signature)
+	{
+		// Re-record into the slot's display list: on this backend the
+		// capture is linear-resident and replays with zero per-frame
+		// staging (see DisplayListEntry).
+		renderBeginDisplayList(list);
+		if (stack != nullptr)
+		{
+			itemRenderer->renderItemIntoGUI(mc->fontRenderer, mc->renderEngine, stack, x, y);
+			renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+			renderBlendFunc(RenderBlendFactor::SrcAlpha, RenderBlendFactor::OneMinusSrcAlpha);
+			itemRenderer->renderItemOverlayIntoGUI(mc->fontRenderer, mc->renderEngine, stack, x, y);
+			renderColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+			renderBlendFunc(RenderBlendFactor::SrcAlpha, RenderBlendFactor::OneMinusSrcAlpha);
+		}
+		renderEndDisplayList();
+		ctrHotbarSignature[slot] = signature;
+	}
+	if (stack != nullptr)
+		renderCallDisplayList(list);
+}
+#endif
 
 void GuiIngame::renderInventorySlot(int_t slot, int_t x, int_t y, float_t partialTick)
 {

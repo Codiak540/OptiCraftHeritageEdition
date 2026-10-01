@@ -12,6 +12,11 @@
 #include "net/minecraft/src/InventoryPlayer.h"
 #include "net/minecraft/src/EntityPlayer.h"
 #include "net/minecraft/src/World.h"
+#include "net/minecraft/src/Container.h"
+#include "net/minecraft/src/ContainerWorkbench.h"
+#include "net/minecraft/src/Slot.h"
+#include "net/minecraft/src/SlotCrafting.h"
+#include "net/minecraft/src/PlayerController.h"
 #include "net/minecraft/src/Minecraft.h"
 #include "net/minecraft/src/FontRenderer.h"
 #include "net/minecraft/src/RenderEngine.h"
@@ -1557,10 +1562,34 @@ LegacyCraftingScreen::LegacyCraftingScreen(InventoryPlayer *playerInventory, Wor
 
     if (player != nullptr && mc != nullptr && player == static_cast<EntityPlayer*>(mc->thePlayer2))
         ownerPlayerIndex = 1;
+
+    // 3x3 workbench windows are real server windows on a remote world: the
+    // server creates a ContainerWorkbench when the packet ordering lands in
+    // NetClientHandler::handleOpenWindow and then stamps our container with
+    // its windowId, which only works if a workbench container already lives
+    // in craftingInventory -- the legacy screen never created one, so every
+    // later Packet102 click fell into the player-inventory layout instead.
+    // Mirror what GuiCrafting's ctor hands to GuiContainer.
+    if (!is2x2Mode && worldObj != nullptr && worldObj->multiplayerWorld && player != nullptr)
+    {
+        mpWorkbenchContainer = new ContainerWorkbench(playerInventory, worldObj, x, y, z);
+        player->craftingInventory = mpWorkbenchContainer;
+    }
 }
 
 LegacyCraftingScreen::~LegacyCraftingScreen()
 {
+    // Outlive check: onGuiClosed normally releases the session container, but
+    // a hard world-teardown can skip it.
+    if (mpWorkbenchContainer != nullptr)
+    {
+        EntityPlayer *p = entityPlayer != nullptr ? entityPlayer
+                          : (mc != nullptr ? static_cast<EntityPlayer*>(mc->thePlayer) : nullptr);
+        if (p != nullptr && p->craftingInventory == mpWorkbenchContainer)
+            p->craftingInventory = p->inventorySlots;
+        delete mpWorkbenchContainer;
+        mpWorkbenchContainer = nullptr;
+    }
 }
 
 int LegacyCraftingScreen::getOwnerPlayerIndex() const
@@ -1587,11 +1616,65 @@ void LegacyCraftingScreen::initGui()
     invCursorRow = 0;
     invCursorCol = 0;
     grabbedSlotIndex = -1;
+
+    // Revive path: the screen object may come back from ownedGuiScreens after
+    // onGuiClosed already tore the workbench container down -- rebuild the
+    // container binding, or 3x3 clicks would fall into the inventory layout.
+    if (!is2x2Mode && mpWorkbenchContainer == nullptr && world != nullptr &&
+        world->multiplayerWorld)
+    {
+        EntityPlayer *p = entityPlayer != nullptr ? entityPlayer
+                          : (mc != nullptr ? static_cast<EntityPlayer*>(mc->thePlayer) : nullptr);
+        if (p != nullptr)
+        {
+            mpWorkbenchContainer = new ContainerWorkbench(inventory, world, posX, posY, posZ);
+            p->craftingInventory = mpWorkbenchContainer;
+        }
+    }
     ensureSelectionVisible();
+}
+
+void LegacyCraftingScreen::legacyCloseScreen()
+{
+    EntityPlayer *p = entityPlayer != nullptr ? entityPlayer
+                      : (mc != nullptr ? static_cast<EntityPlayer*>(mc->thePlayer) : nullptr);
+    // Route through the player so multiplayer sends Packet101CloseWindow and
+    // resets craftingInventory -- displayGuiScreen(nullptr) alone left the
+    // server's workbench window open. Singleplayer closeScreen() ends in the
+    // same displayGuiScreen/closePlayerScreen call, so offline behavior is
+    // unchanged.
+    if (p != nullptr)
+    {
+        p->closeScreen();
+        return;
+    }
+    if (mc != nullptr && mc->isSplitScreenActive())
+        mc->closePlayerScreen(getOwnerPlayerIndex());
+    else if (mc != nullptr)
+        mc->displayGuiScreen(nullptr);
 }
 
 void LegacyCraftingScreen::onGuiClosed()
 {
+    // 3x3 multiplayer sessions created a real workbench container for this
+    // screen (see the ctor): run its close semantics (matrix leftovers back to
+    // the player) and hand the live container slot back to the inventory one,
+    // exactly as GuiContainer::onGuiClosed + EntityPlayer::closeScreen do.
+    if (mpWorkbenchContainer != nullptr)
+    {
+        EntityPlayer *p = entityPlayer != nullptr ? entityPlayer
+                          : (mc != nullptr ? static_cast<EntityPlayer*>(mc->thePlayer) : nullptr);
+        if (p != nullptr)
+        {
+            if (mc != nullptr && mc->playerController != nullptr)
+                mc->playerController->closeWindow(mpWorkbenchContainer->windowId, p);
+            mpWorkbenchContainer->onCraftGuiClosed(p);
+            if (p->craftingInventory == mpWorkbenchContainer)
+                p->craftingInventory = p->inventorySlots;
+        }
+        delete mpWorkbenchContainer;
+        mpWorkbenchContainer = nullptr;
+    }
     GuiScreen::onGuiClosed();
 }
 
@@ -1766,6 +1849,63 @@ void LegacyCraftingScreen::clickStripSlot(int slotIndex)
     if (mc != nullptr && mc->sndManager != nullptr)
         mc->sndManager->playSoundFX("random.click", 1.0f, 1.0f);
 
+    // Multiplayer: a local swap is invisible to the server and reverts on the
+    // next window sync. First press leaves a visual grab only; the physical
+    // move runs on the second press as vanilla window clicks, so nothing is
+    // ever held in a cursor the legacy UI cannot draw.
+    if (world != nullptr && world->multiplayerWorld)
+    {
+        EntityPlayer *player = entityPlayer != nullptr ? entityPlayer
+                               : (mc != nullptr ? static_cast<EntityPlayer*>(mc->thePlayer) : nullptr);
+        Container *container = player != nullptr ? player->craftingInventory : nullptr;
+        if (grabbedSlotIndex < 0)
+        {
+            if (inventory->mainInventory[slotIndex] != nullptr)
+                grabbedSlotIndex = slotIndex;
+            return;
+        }
+        if (grabbedSlotIndex == slotIndex || container == nullptr || player == nullptr)
+        {
+            grabbedSlotIndex = -1;
+            return;
+        }
+
+        // map a mainInventory index to the container slot backing it. The
+        // storage region's screen positions are identical in ContainerPlayer
+        // and ContainerWorkbench (hotbar i<9 -> (8+i*18,142); main rows
+        // i>=9 -> (8+((i-9)%9)*18, 84+((i-9)/9)*18)), so match on those --
+        // Slot::slotIndex is private and stack-pointer identity is ambiguous
+        // for empty slots.
+        auto slotForInvIndex = [&](int_t invIndex) -> int_t
+        {
+            const int_t wantX = invIndex < 9 ? 8 + invIndex * 18
+                                             : 8 + ((invIndex - 9) % 9) * 18;
+            const int_t wantY = invIndex < 9 ? 142
+                                             : 84 + ((invIndex - 9) / 9) * 18;
+            for (Slot *slot : container->slots)
+            {
+                if (slot != nullptr && slot->getInventory() == inventory &&
+                    slot->xDisplayPosition == wantX && slot->yDisplayPosition == wantY)
+                    return slot->slotNumber;
+            }
+            return -1;
+        };
+
+        const int_t srcSlot = slotForInvIndex(grabbedSlotIndex);
+        const int_t dstSlot = slotForInvIndex(slotIndex);
+        grabbedSlotIndex = -1;
+        if (srcSlot < 0 || dstSlot < 0)
+            return;
+
+        // Vanilla click semantics: pick A up, click B (swap/merge/place), and
+        // if B partially merged, park the remainder back where it started.
+        delete mc->playerController->windowClick(container->windowId, srcSlot, 0, false, player);
+        delete mc->playerController->windowClick(container->windowId, dstSlot, 0, false, player);
+        if (inventory->getItemStack() != nullptr)
+            delete mc->playerController->windowClick(container->windowId, srcSlot, 0, false, player);
+        return;
+    }
+
     if (grabbedSlotIndex < 0)
     {
         // Nothing held: lift this slot's stack. Lifting an empty slot is a
@@ -1844,8 +1984,187 @@ bool LegacyCraftingScreen::canCraftCurrentRecipe() const
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// Multiplayer crafting
+//
+// The legacy screen never touches the vanilla container: offline it just
+// rewrites mainInventory, which a server knows nothing about and reverts on
+// the next window sync. In multiplayer we instead drive the player's live
+// container through windowClick() (slot pickup / place-one / put-back, then
+// a click on the result slot), exactly what GuiCrafting's mouse handlers do
+// -- each click simulates locally AND emits the Packet102 the server replays
+// on its own mirror of the container. The 3x3 workbench variant additionally
+// installs a real ContainerWorkbench in the player's craftingInventory while
+// the screen is open (see the ctor), so the windowId the server just
+// announced in Packet104 (handleOpenWindow) lands on the right container and
+// window sync packets resolve.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+
+// One container click with the vanilla semantics (mouseButton 1 = place a
+// single unit). The simulated stack copy is dropped.
+void legacyContainerClick(Minecraft *mc, EntityPlayer *player, Container *container,
+                          int_t slotNumber, int_t mouseButton)
+{
+    delete mc->playerController->windowClick(container->windowId, slotNumber,
+                                             mouseButton, false, player);
+}
+
+// The container slot whose backing stack pointer is `stack` inside
+// `inventory` (the player's main inventory/armor pair), or -1.
+int_t legacySlotForStack(Container *container, InventoryPlayer *inventory, ItemStack *stack)
+{
+    if (stack == nullptr)
+        return -1;
+    for (Slot *slot : container->slots)
+    {
+        if (slot == nullptr || slot->getInventory() != inventory)
+            continue;
+        if (slot->getStack() == stack)
+            return slot->slotNumber;
+    }
+    return -1;
+}
+
+// The first storage slot able to receive `stack` (mergeable partial first,
+// then any empty one). -1 if the inventory is full.
+int_t legacyFindDepositSlot(Container *container, InventoryPlayer *inventory, ItemStack *stack)
+{
+    int_t emptySlot = -1;
+    for (Slot *slot : container->slots)
+    {
+        if (slot == nullptr || slot->getInventory() != inventory)
+            continue;
+        if (!slot->isItemValid(stack))
+            continue; // armor slots reject non-armor
+        ItemStack *st = slot->getStack();
+        if (st == nullptr)
+        {
+            if (emptySlot < 0)
+                emptySlot = slot->slotNumber;
+            continue;
+        }
+        if (st->isValid() && st->itemID == stack->itemID &&
+            (!st->getHasSubtypes() || st->getItemDamage() == stack->getItemDamage()) &&
+            st->stackSize + stack->stackSize <= st->getMaxStackSize())
+            return slot->slotNumber;
+    }
+    return emptySlot;
+}
+
+} // namespace
+
+bool LegacyCraftingScreen::craftCurrentRecipeViaContainerClicks()
+{
+    const RecipeCategory *cats = getCategoriesTable(is2x2Mode);
+    const int_t cat = selectedCategory;
+    const int_t grp = selectedGroup[cat];
+    if (grp < 0 || grp >= cats[cat].groupCount) return false;
+    const int_t var = selectedVariant[cat][grp];
+    if (var < 0 || var >= cats[cat].groups[grp].variantCount) return false;
+    const RecipeVariant &recipe = cats[cat].groups[grp].variants[var];
+
+    if (is2x2Mode && recipe.requiresWorkbench)
+        return false;
+
+    EntityPlayer *player = entityPlayer != nullptr ? entityPlayer
+                           : (mc != nullptr ? static_cast<EntityPlayer*>(mc->thePlayer) : nullptr);
+    if (player == nullptr || inventory == nullptr || inventory->mainInventory == nullptr ||
+        mc == nullptr || mc->playerController == nullptr)
+        return false;
+
+    // The screen must be bound to the container the matrix lives in: the
+    // player's own container for 2x2, the session workbench for 3x3 (created
+    // in the ctor for the multiplayer window).
+    Container *container = player->craftingInventory;
+    if (container == nullptr)
+        return false;
+    const int_t gridW = is2x2Mode ? 2 : 3;
+    const int_t matrixFirstSlot = 1; // slot 0 is the crafting result in both containers
+
+    // A held cursor item would be dragged into the sequence; the legacy UI
+    // has no cursor, but a stale one can survive a java-GUI round trip --
+    // refuse rather than corrupting the exchange.
+    if (inventory->getItemStack() != nullptr)
+        return false;
+
+    // Fill the recipe grid cell by cell, one unit each. The source search
+    // runs fresh per placement (some recipes repeat an id across cells) --
+    // the "pick up / place one / put the rest back" dance keeps every cell
+    // stack at size 1 while the result drains exactly one unit each.
+    for (int_t gy = 0; gy < recipe.gridHeight; ++gy)
+    {
+        for (int_t gx = 0; gx < recipe.gridWidth; ++gx)
+        {
+            const int_t wantId = recipe.gridItemIds[gy * recipe.gridWidth + gx];
+            if (wantId <= 0)
+                continue;
+            const int_t wantDamage = recipe.gridItemDamage[gy * recipe.gridWidth + gx];
+
+            int_t srcInvIdx = -1;
+            for (int_t i = 0; i < 36; ++i)
+            {
+                ItemStack *st = inventory->mainInventory[i];
+                if (st != nullptr && st->isValid() && st->stackSize > 0 &&
+                    st->itemID == wantId && (wantDamage == -1 || st->getItemDamage() == wantDamage))
+                {
+                    srcInvIdx = i;
+                    break;
+                }
+            }
+            if (srcInvIdx < 0)
+                return false;
+
+            const int_t srcSlot = legacySlotForStack(container, inventory, inventory->mainInventory[srcInvIdx]);
+            if (srcSlot < 0)
+                return false;
+            const int_t matrixSlot = matrixFirstSlot + gy * gridW + gx;
+
+            legacyContainerClick(mc, player, container, srcSlot, 0);    // pick up
+            legacyContainerClick(mc, player, container, matrixSlot, 1); // place exactly one
+            if (inventory->getItemStack() != nullptr)
+                legacyContainerClick(mc, player, container, srcSlot, 0); // put the rest back
+        }
+    }
+
+    // Take the result (SlotCrafting consumes one unit per filled cell).
+    legacyContainerClick(mc, player, container, 0, 0);
+
+    // Deposit the held result; dropping to -999 mirrors "close the GUI with
+    // an item on the cursor" when the inventory is full.
+    ItemStack *held = inventory->getItemStack();
+    if (held != nullptr)
+    {
+        const int_t dstSlot = legacyFindDepositSlot(container, inventory, held);
+        if (dstSlot >= 0)
+            legacyContainerClick(mc, player, container, dstSlot, 0);
+        else
+            legacyContainerClick(mc, player, container, -999, 0);
+    }
+
+    inventory->inventoryChanged = true;
+    if (mc != nullptr && mc->sndManager != nullptr)
+        mc->sndManager->playSoundFX("random.pop", 1.0f, 1.0f);
+    return true;
+}
+
 void LegacyCraftingScreen::craftCurrentRecipe()
 {
+    // On a remote world only the server's container can craft; the local
+    // mainInventory rewrite used offline would be reverted by the next
+    // window sync. Emulate the GUI's own click sequence instead.
+    if (world != nullptr && world->multiplayerWorld)
+    {
+        if (!craftCurrentRecipeViaContainerClicks())
+        {
+            if (mc != nullptr && mc->sndManager != nullptr)
+                mc->sndManager->playSoundFX("note.bass", 1.0f, 0.8f);
+        }
+        return;
+    }
+
     if (!canCraftCurrentRecipe())
     {
         if (mc != nullptr && mc->sndManager != nullptr)
@@ -2446,8 +2765,8 @@ void LegacyCraftingScreen::handleSpecializedMenuInput()
                 mc->sndManager->playSoundFX("random.back", 1.0f, 1.0f);
             if (mc != nullptr && mc->isSplitScreenActive())
                 mc->closePlayerScreen(getOwnerPlayerIndex());
-            else if (mc != nullptr)
-                mc->displayGuiScreen(nullptr);
+            else
+                legacyCloseScreen();
             return;
         }
 
@@ -2502,8 +2821,8 @@ void LegacyCraftingScreen::handleSpecializedMenuInput()
                 mc->sndManager->playSoundFX("random.back", 1.0f, 1.0f);
             if (mc != nullptr && mc->isSplitScreenActive())
                 mc->closePlayerScreen(getOwnerPlayerIndex());
-            else if (mc != nullptr)
-                mc->displayGuiScreen(nullptr);
+            else
+                legacyCloseScreen();
             return;
         }
 
@@ -2530,8 +2849,8 @@ void LegacyCraftingScreen::keyTyped(char_t c, int_t key)
             mc->sndManager->playSoundFX("random.back", 1.0f, 1.0f);
         if (mc != nullptr && mc->isSplitScreenActive())
             mc->closePlayerScreen(getOwnerPlayerIndex());
-        else if (mc != nullptr)
-            mc->displayGuiScreen(nullptr);
+        else
+            legacyCloseScreen();
         return;
     }
 
@@ -2566,8 +2885,8 @@ void LegacyCraftingScreen::keyTyped(char_t c, int_t key)
                 mc->sndManager->playSoundFX("random.back", 1.0f, 1.0f);
             if (mc != nullptr && mc->isSplitScreenActive())
                 mc->closePlayerScreen(getOwnerPlayerIndex());
-            else if (mc != nullptr)
-                mc->displayGuiScreen(nullptr);
+            else
+                legacyCloseScreen();
             return;
         }
     }

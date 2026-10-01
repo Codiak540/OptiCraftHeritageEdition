@@ -91,4 +91,66 @@ void shutdown()
 	address.clear();
 }
 
+// One ACU_GetWifiStatus round-trip through the ac:u service (ref-counted by
+// libctru, so an init/exit pair per query is cheap and safe even beside
+// another user). 0 is the service's "wireless disabled" answer.
+namespace
+{
+enum class WifiRadioState
+{
+	Unknown,
+	Off,
+	On,
+};
+
+WifiRadioState queryWifiRadioState()
+{
+	u32 wifiStatus = 0;
+	if (R_FAILED(acInit()))
+		return WifiRadioState::Unknown;
+	const Result status = ACU_GetWifiStatus(&wifiStatus);
+	acExit();
+	if (R_FAILED(status))
+		return WifiRadioState::Unknown;
+	return wifiStatus != 0 ? WifiRadioState::On : WifiRadioState::Off;
+}
+} // namespace
+
+std::string wifiPreflightError()
+{
+	const WifiRadioState radio = queryWifiRadioState();
+	if (radio != WifiRadioState::Off)
+		return std::string(); // on, or unknowable -- never block the attempt
+
+	MC_LOG_WARN("3ds", "network: Wi-Fi is switched off\n");
+
+	// svcSetWifiEnabled exists from kernel 2.55 (system 11.4). Older kernels
+	// simply keep the message below, which is all they can do.
+	if (osGetKernelVersion() >= SYSTEM_VERSION(2, 55, 0))
+	{
+		const Result enabledResult = svcSetWifiEnabled(true);
+		if (R_SUCCEEDED(enabledResult))
+		{
+			// Give the radio a moment to come up before believing it.
+			for (int attempt = 0; attempt < 10; ++attempt)
+			{
+				if (queryWifiRadioState() == WifiRadioState::On)
+				{
+					MC_LOG_INFO("3ds", "network: Wi-Fi re-enabled by the game\n");
+					return "Wi-Fi was switched off. It has been turned back on; please connect again.";
+				}
+				svcSleepThread(100 * 1000 * 1000LL);
+			}
+		}
+		else
+		{
+			MC_LOG_WARN("3ds", "network: svcSetWifiEnabled failed (%08lX)\n",
+			            static_cast<unsigned long>(enabledResult));
+		}
+	}
+
+	return "Wi-Fi is switched off. Enable wireless (HOME menu toggle on a New 3DS, "
+	       "the side switch on an Old 3DS) and connect again.";
+}
+
 }

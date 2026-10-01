@@ -413,7 +413,18 @@ void ReiMinimap::updateMapTexture(int_t playerIndex, EntityPlayer *player)
                 a = 255;
             }
 
-            size_t idx = (static_cast<size_t>(dy) * MAP_RES + static_cast<size_t>(dx)) * 4;
+            // El sampler 3DS lee V=0 en la ULTIMA fila almacenada (convencion
+            // MC-3DS, ver DsShader.v.pica / DsRender), mientras que GL lee V=0
+            // en la primera. Guardamos la fila del norte (dy=0) al reves para
+            // que termine en V=0, arriba en pantalla -- sin esto el mapa se
+            // dibujaba con el sur arriba y quedaba invertido respecto de las
+            // etiquetas N/S y de los waypoints, que si van en coordenadas de
+            // pantalla correctas.
+            size_t row = static_cast<size_t>(dy);
+#if PLATFORM_3DS
+            row = static_cast<size_t>(MAP_RES - 1 - dy);
+#endif
+            size_t idx = (row * static_cast<size_t>(MAP_RES) + static_cast<size_t>(dx)) * 4;
             m_pixelData[idx + 0] = static_cast<unsigned char>(r);
             m_pixelData[idx + 1] = static_cast<unsigned char>(g);
             m_pixelData[idx + 2] = static_cast<unsigned char>(b);

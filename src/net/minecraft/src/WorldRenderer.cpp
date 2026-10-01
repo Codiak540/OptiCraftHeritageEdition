@@ -634,7 +634,7 @@ void WorldRenderer::markDirty()
 	needsUpdate = true;
 }
 
-#if WII_PLATFORM || PS2_PLATFORM || PLATFORM_PC_LEGACY
+#if WII_PLATFORM || PS2_PLATFORM || PLATFORM_PC_LEGACY || PLATFORM_3DS
 void WorldRenderer::markDirtyFromLighting()
 {
 #if PLATFORM_COALESCE_MESH_REBUILDS

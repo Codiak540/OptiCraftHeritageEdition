@@ -55,11 +55,14 @@ public:
 #if defined(WII_PLATFORM) || defined(PS2_PLATFORM)
 	void renderExtraTerrainMeshes(int_t pass);
 #endif
-#if defined(WII_PLATFORM) || defined(PS2_PLATFORM) || PLATFORM_PC_LEGACY
+#if defined(WII_PLATFORM) || defined(PS2_PLATFORM) || PLATFORM_PC_LEGACY || PLATFORM_3DS
 	// A dirty mark caused by a light value change. With
 	// PLATFORM_COALESCE_MESH_REBUILDS an active build keeps going and is
 	// rebuilt once more after it completes, instead of restarting on every
-	// frame of a light propagation (a torch is several frames of them).
+	// frame of a light propagation (a torch is several frames of them). The
+	// 3DS shares the shared one-shot path (no incremental build), where this
+	// simply falls through to markDirty() -- the markRenderersInRange guard
+	// that calls it is platform-shared either way.
 	void markDirtyFromLighting();
 #endif
 #if defined(WII_PLATFORM) || defined(PS2_PLATFORM) || PLATFORM_PC_LEGACY || PLATFORM_3DS

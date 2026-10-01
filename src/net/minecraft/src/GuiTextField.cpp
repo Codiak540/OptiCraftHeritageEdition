@@ -43,6 +43,20 @@ GuiTextField::GuiTextField(GuiScreen *parent, FontRenderer *fontrenderer,
     setText(initialText);
 }
 
+GuiTextField::~GuiTextField()
+{
+#if defined(PS2_PLATFORM) || defined(WII_PLATFORM) || defined(CTR_PLATFORM)
+    // The console on-screen keyboard can hold this field as its focused
+    // target. The 3DS's system-keyboard applet runs asynchronously now --
+    // the game loop keeps running while the dialog is up -- so a screen swap
+    // (a server disconnect, a container closing) can scrap this field's
+    // screen at the top of the next runTick before the dialog closes; the
+    // keyboard must drop the pointer instead of writing the dialog's result
+    // into freed memory (VirtualKeyboard::fieldDestroyed).
+    VirtualKeyboard::instance().fieldDestroyed(this);
+#endif
+}
+
 int_t GuiTextField::textLength() const
 {
     return String::utf16Length(text);

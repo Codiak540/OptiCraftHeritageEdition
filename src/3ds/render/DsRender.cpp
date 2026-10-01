@@ -93,8 +93,9 @@
 // into one of a small ring of linear arenas, and the ring is only rewound at
 // C3D_FrameBegin(C3D_FRAME_SYNCDRAW), which by construction waits for the
 // previous frame's queue to finish. Quads -- the Tessellator's primitive --
-// are expanded into triangle pairs on the way in, since the PICA has no quad
-// rasteriser.
+// index through a static (0,1,2,0,2,3) index buffer, since the PICA has no
+// quad rasteriser (the memcpy fan in draw() remains as the no-buffer
+// fallback).
 //
 // == Command-buffer pressure ==================================================
 //
@@ -238,10 +239,20 @@ bool s_inFrame = false;
 u32 s_framesSubmitted = 0;
 u32 s_framesPresented = 0;
 
+// Quads -- the Tessellator's primitive: the PICA has no quad rasteriser, so
+// they arrive as triangles either pre-expanded (the memcpy fan in draw(),
+// kept as the no-IB fallback) or via a static index buffer shared by every
+// quad draw. One arena holds kArenaVertices staged vertices, so one arena of
+// quad data needs (kArenaVertices / 4) * 6 u16 indices; the pattern below is
+// GL's own quad split, (0,1,2) then (0,2,3), so winding and culling see the
+// same faces either way.
+constexpr int kQuadIndexCount = kArenaVertices / 4 * 6;
+
 void* s_arenas[kArenaMaxCount] = {};
 int s_arenaCount = kArenaInitialCount;
 int s_arenaIndex = 0;
 int s_arenaCursor = 0;
+u16* s_quadIndices = nullptr;
 bool s_arenaOverflowLogged = false;
 bool s_arenaGrowthLogged = false;
 
@@ -363,6 +374,20 @@ GPU_CULLMODE picaCullMode(RenderFace face)
 // CPU-side start of the current frame, for endFrame()'s 60 fps VBlank hold.
 static s64 s_frameStartMs = 0;
 
+// True while a system applet (the swkbd text dialog, see 3ds/DsSwkbd.h) owns
+// the foreground. The 3DS does not suspend the app while a library applet
+// runs -- it keeps executing in the background -- but the applet owns both
+// LCDs and the GPU work that reaches them, so the renderer must not open
+// citro3d frames, and the frame loop should be paced by VBlank instead (an
+// unpresented swapBuffers already does exactly that when present() reports
+// no frame).
+bool s_appletForeground = false;
+
+// C3D_TexInit-style texture work is a plain allocation and stays allowed
+// while the applet is up; what must stop is frame work -- frameBegin() is the
+// single choke point every draw and clear already go through, so gating it
+// here is the whole suppression.
+
 void endFrame()
 {
 	if (!s_inFrame)
@@ -410,6 +435,12 @@ void endFrame()
 void frameBegin()
 {
 	if (s_inFrame || s_target == nullptr)
+		return;
+	// A system applet owns the screens while this is set: opening citro3d
+	// frames (and queueing any GPU work into them) is suspended until it
+	// closes -- every draw/clear/bottom-panel pass no-ops because none of
+	// them can get past here.
+	if (s_appletForeground)
 		return;
 	if (!C3D_FrameBegin(C3D_FRAME_SYNCDRAW))
 		return;
@@ -685,6 +716,30 @@ bool init()
 	s_arenaOverflowLogged = false;
 	s_arenaGrowthLogged = false;
 
+	// The quad index pattern is data-independent, so it is built once. The
+	// PICA reads it through the same physical window as the vertex arenas, so
+	// it must come from the linear heap too, and it must outlive every
+	// command queue that references it -- a static allocation freed in
+	// fini() is the only lifetime that can never dangle.
+	s_quadIndices = static_cast<u16*>(linearAlloc(
+		static_cast<std::size_t>(kQuadIndexCount) * sizeof(u16)));
+	if (s_quadIndices == nullptr)
+	{
+		MC_LOG_ERROR("render", "3ds: quad index buffer allocation failed\n");
+		fini();
+		return false;
+	}
+	for (int q = 0; q < kArenaVertices / 4; ++q)
+	{
+		const u16 base = static_cast<u16>(q * 4);
+		s_quadIndices[q * 6 + 0] = base;
+		s_quadIndices[q * 6 + 1] = static_cast<u16>(base + 1);
+		s_quadIndices[q * 6 + 2] = static_cast<u16>(base + 2);
+		s_quadIndices[q * 6 + 3] = base;
+		s_quadIndices[q * 6 + 4] = static_cast<u16>(base + 2);
+		s_quadIndices[q * 6 + 5] = static_cast<u16>(base + 3);
+	}
+
 	MC_LOG_INFO("render",
 		"3ds: citro3d up -- target %dx%d RGBA8/D24S8, %d arenas x %d vertices (growable to %d)\n",
 		kTargetWidth, kTargetHeight, kArenaInitialCount, kArenaVertices, kArenaMaxCount);
@@ -703,6 +758,11 @@ void fini()
 			linearFree(arena);
 			arena = nullptr;
 		}
+	}
+	if (s_quadIndices != nullptr)
+	{
+		linearFree(s_quadIndices);
+		s_quadIndices = nullptr;
 	}
 	texture::resetAll();
 	if (s_bottomTarget != nullptr)
@@ -734,6 +794,16 @@ void fini()
 void submitFrame()
 {
 	endFrame();
+}
+
+void setAppletForeground(bool active)
+{
+	// Idempotent and cheap enough to call every frame from
+	// lwjgl::Display::processMessages(): the applet's lifetime is owned by
+	// DsSwkbd, this only mirrors it into the renderer.
+	if (s_appletForeground == active)
+		return;
+	s_appletForeground = active;
 }
 
 bool present()
@@ -954,7 +1024,16 @@ bool draw(const RenderInterleavedMesh& mesh, const GpuState& state)
 	const int quadCount = quads ? mesh.count / 4 : 0;
 	if (quads && quadCount == 0)
 		return true; // Fewer than four vertices cannot form even one quad.
-	const int outCount = quads ? quadCount * 6 : mesh.count;
+
+	// Indexed quads: with the static index buffer the staged copy keeps the
+	// quad's own 4 vertices and the GPU expands them with (0,1,2,0,2,3), so
+	// the arena traffic and the colour fill below drop from 6 vertices per
+	// quad to 4 -- and meshes replayed every frame (terrain display lists,
+	// persistent model meshes, the HUD) stop re-paying the fan expansion on
+	// every draw. The u16 indices hold because one draw can stage at most
+	// kArenaVertices vertices.
+	const bool indexedQuads = quads && s_quadIndices != nullptr;
+	const int outCount = indexedQuads ? quadCount * 4 : (quads ? quadCount * 6 : mesh.count);
 
 	frameBegin();
 	if (s_target == nullptr || !s_inFrame)
@@ -966,7 +1045,7 @@ bool draw(const RenderInterleavedMesh& mesh, const GpuState& state)
 
 	const u8* src = static_cast<const u8*>(mesh.data) +
 	                static_cast<std::size_t>(mesh.first) * kVertexStride;
-	if (quads)
+	if (quads && !indexedQuads)
 	{
 		// The same fan split GL's GL_QUADS rasterises with -- (0,1,2) and
 		// (0,2,3) -- so winding (and therefore culling) sees identical
@@ -1010,8 +1089,76 @@ bool draw(const RenderInterleavedMesh& mesh, const GpuState& state)
 
 	splitCommandBufferIfNeeded();
 	applyState(state, staging);
-	C3D_DrawArrays(primitive, 0, outCount);
+	if (indexedQuads)
+		C3D_DrawElements(GPU_TRIANGLES, quadCount * 6, C3D_UNSIGNED_SHORT, s_quadIndices);
+	else
+		C3D_DrawArrays(primitive, 0, outCount);
 	return true;
+}
+
+bool drawLinear(const RenderInterleavedMesh& mesh, const GpuState& state)
+{
+	// no per-vertex colours baked => the staged path's current-colour fill is
+	// load-bearing for this mesh; it also copies out of a linear source fine.
+	if (!mesh.hasColor)
+		return draw(mesh, state);
+	if (mesh.data == nullptr || mesh.count <= 0)
+		return true;
+	if (mesh.positionShort || mesh.stride != kVertexStride)
+		return false;
+
+	GPU_Primitive_t primitive = GPU_TRIANGLES;
+	bool quads = false;
+	switch (mesh.primitive)
+	{
+	case RenderPrimitive::Triangles:
+		primitive = GPU_TRIANGLES;
+		break;
+	case RenderPrimitive::TriangleStrip:
+		primitive = GPU_TRIANGLE_STRIP;
+		break;
+	case RenderPrimitive::TriangleFan:
+		primitive = GPU_TRIANGLE_FAN;
+		break;
+	case RenderPrimitive::Quads:
+		primitive = GPU_TRIANGLES;
+		quads = true;
+		break;
+	default:
+		return false;
+	}
+	const int quadCount = quads ? mesh.count / 4 : 0;
+	if (quads && quadCount == 0)
+		return true;
+	// Same expansion math as draw(), minus the copy: quads index the data in
+	// place, everything else submits it raw.
+	const int outCount = quads ? quadCount * 4 : mesh.count;
+
+	frameBegin();
+	if (s_target == nullptr || !s_inFrame)
+		return false;
+
+	// Same split discipline as the staged path: the data here outlives the
+	// whole command buffer by construction (the caller frees it only across
+	// world loads), so a C3D_FrameSplit mid-frame is safe against it.
+	splitCommandBufferIfNeeded();
+	applyState(state, mesh.data);
+	if (quads)
+		C3D_DrawElements(GPU_TRIANGLES, quadCount * 6, C3D_UNSIGNED_SHORT, s_quadIndices);
+	else
+		C3D_DrawArrays(primitive, 0, outCount);
+	return true;
+}
+
+void* allocLinear(std::size_t bytes)
+{
+	return linearAlloc(bytes);
+}
+
+void freeLinear(void* p)
+{
+	if (p != nullptr)
+		linearFree(p);
 }
 
 } // namespace ds

@@ -654,6 +654,12 @@ void NetClientHandler::handleMultiBlockChange(Packet52MultiBlockChange* packet)
 #endif
 #endif
 
+#if PLATFORM_MP_BOUNDED_CHUNK_CACHE && !PLATFORM_MP_DEFERRED_CHUNKS
+        // Same mirroring as handleBlockChange: the live chunk got this
+        // change, the stash needs it for any future trim/re-approach cycle.
+        worldClient->stashBlockChange(JavaArithmetic::intAdd(baseX, localX), y, JavaArithmetic::intAdd(baseZ, localZ), blockId, metadata);
+#endif
+
         worldClient->setBlockAndMetadataAndInvalidate(JavaArithmetic::intAdd(baseX, localX), y, JavaArithmetic::intAdd(baseZ, localZ), blockId, metadata);
     }
 }
@@ -744,7 +750,18 @@ void NetClientHandler::handleMapChunk(Packet51MapChunk* packet)
 #endif
 
     if (chunk == nullptr || chunk->isEmptyChunk())
+    {
+#if PLATFORM_MP_BOUNDED_CHUNK_CACHE && !PLATFORM_MP_DEFERRED_CHUNKS
+        // 3DS evict-only profile (the direct path above): a Packet51 for a
+        // freshly-trimmed column used to DISAPPEAR here. Mirror the wire
+        // into the payload stash instead, so the column can rebuild from
+        // base+deltas when the player walks back -- the protocol has no way
+        // to ask the server for a resend inside its view window.
+        worldClient->stashChunkPacket(packet->xCh, packet->zCh, packet->includeInitialize,
+                                      packet->yChMin, packet->yChMax, packet->takeCompressedData());
+#endif
         return;
+    }
 
     if (!packet->ensureDecompressed() ||
         !chunk->func_48494_a(packet->chunkData.data(), packet->chunkData.size(),
@@ -753,6 +770,14 @@ void NetClientHandler::handleMapChunk(Packet51MapChunk* packet)
         netManager->networkShutdown("disconnect.genericReason", {"Invalid compressed chunk data"});
         return;
     }
+
+#if PLATFORM_MP_BOUNDED_CHUNK_CACHE && !PLATFORM_MP_DEFERRED_CHUNKS
+    // The column is live and now up to date; mirror the wire payload too so
+    // a future trim eviction can rematerialize it without a server resend.
+    // ensureDecompressed() keeps compressedChunk alive on consoles.
+    worldClient->stashChunkPacket(packet->xCh, packet->zCh, packet->includeInitialize,
+                                  packet->yChMin, packet->yChMax, packet->takeCompressedData());
+#endif
 
     // The same Y scoping on the dirty mark (3DS only): func_48494_a
     // imported only the masked sections, so only those renderers need
@@ -781,6 +806,13 @@ void NetClientHandler::handleBlockChange(Packet53BlockChange* packet)
 	if (!worldClient->shouldKeepChunk(JavaArithmetic::intShr(packet->xPosition, 4), JavaArithmetic::intShr(packet->zPosition, 4)))
 		return;
 #endif
+#endif
+#if PLATFORM_MP_BOUNDED_CHUNK_CACHE && !PLATFORM_MP_DEFERRED_CHUNKS
+    // This change applied to the live chunk now, but the stash is the copy
+    // that must survive a future trim eviction -- mirror it there so the
+    // rematerialized column replays it.
+    worldClient->stashBlockChange(packet->xPosition, packet->yPosition,
+        packet->zPosition, packet->type, packet->metadata);
 #endif
     worldClient->setBlockAndMetadataAndInvalidate(
         packet->xPosition,

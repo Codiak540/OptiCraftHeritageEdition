@@ -23,3 +23,11 @@ const char* dsGetAppDir();
 // True when <dsGetAppDir()>/data/assets/font.txt or <dsGetAppDir()>/assets.pak
 // exists -- the loose layout and the scripts/make_pak.py archive.
 bool dsHasGameData();
+
+// True on New 3DS/New 2DS XL hardware (cached: one APT_CheckNew3DS round-trip
+// on the first call). The 3DS networking stack itself is model-independent --
+// soc:U, connect(), select() behave identically on both -- so the only place
+// the model matters is performance profiles: the New 3DS's 804 MHz ARM11
+// spends measurably less time per map-chunk import than the 268 MHz one, and
+// a runtime profile can size per-tick packet budgets accordingly.
+bool dsIsNew3DS();

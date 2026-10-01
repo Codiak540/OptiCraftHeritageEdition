@@ -66,6 +66,12 @@ void fini();
 // asynchronous present as early as the last draw, without waiting for it).
 void submitFrame();
 
+// Mirror "a system applet owns the foreground" (the swkbd dialog, see
+// 3ds/DsSwkbd.h) into the renderer: while set, no citro3d frame is opened, so
+// every draw, clear and bottom-panel pass no-ops and the screens stay the
+// applet's. The game loop keeps running -- only the GPU side stands down.
+void setAppletForeground(bool active);
+
 // Close the open frame if there is one, then report whether a citro3d frame
 // has ended since the last call that returned true. swapBuffers uses the
 // return value to decide its own pacing: a submitted frame is paced by the
@@ -111,5 +117,22 @@ void getViewport(int* values);
 // represented (short positions, or a stride the fixed 32-byte attribute order
 // does not cover) -- the same contract renderDrawInterleaved documents.
 bool draw(const RenderInterleavedMesh& mesh, const GpuState& state);
+
+// draw() variant for meshes ALREADY living in the linear heap and stable for
+// the whole frame (the display-list section buffers allocated through
+// allocLinear below): no arena staging happens at all, so per-frame cost is
+// the state flush and nothing else. Meshes without baked vertex colours are
+// not representable here (there is no staged copy to receive the
+// current-colour fill) -- drawLinear hands those to the staged path itself.
+bool drawLinear(const RenderInterleavedMesh& mesh, const GpuState& state);
+
+// Linear-heap storage for long-lived draw data (display-list sections). The
+// platform surface stays free of console headers, so the PICA-facing
+// allocation contract (the PICA reads linear memory through its physical
+// window; a buffer must outlive the command queue referencing it, and a
+// section buffer's whole frame is submitted after the CPU-side build phase
+// that rewrote it) is owned here.
+void* allocLinear(std::size_t bytes);
+void freeLinear(void* p);
 
 } // namespace ds
