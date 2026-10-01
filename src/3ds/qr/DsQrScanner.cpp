@@ -45,6 +45,15 @@ std::uint8_t *g_capture = nullptr;
 // that simply never reaches the preview).
 s16 g_transferUnit = 0;
 
+// Hardware latches a buffer error and stalls the port the moment a camera
+// frame lands while no receive is armed. Emulated cameras deliver on demand
+// and never trip it, which is why this only shows up on hardware. The fix,
+// taken from FBI's proven camera task (source/core/task/capturecam.c):
+// arm the receive BEFORE starting capture, and keep one armed at all times
+// via this persistent event handle.
+Handle g_bufferErrorEvent = 0;
+Handle g_receiveEvent = 0;
+
 std::uint8_t g_preview[kPreviewWidth * kPreviewHeight * 4];
 
 // quirc's own pixel buffer is the working grayscale image; remember its
@@ -128,6 +137,24 @@ bool start(std::string &outError)
 	rc = CAMU_ClearBuffer(PORT_CAM1);
 	if (R_FAILED(rc))
 		MC_LOG_WARN("3ds", "qr: CAMU_ClearBuffer failed %08lX\n", static_cast<unsigned long>(rc));
+	rc = CAMU_GetBufferErrorInterruptEvent(&g_bufferErrorEvent, PORT_CAM1);
+	if (R_FAILED(rc))
+		MC_LOG_WARN("3ds", "qr: CAMU_GetBufferErrorInterruptEvent failed %08lX\n", static_cast<unsigned long>(rc));
+
+	g_started = true; // early enough for stop() to tear the camera down on any failure below
+
+	// FBI's proven order: the receive is armed FIRST and capture started
+	// after. Starting capture with no armed receive drops the first real
+	// frames and latches a buffer error that stalls the port silently.
+	rc = CAMU_SetReceiving(&g_receiveEvent, g_capture, PORT_CAM1,
+	                       kCamWidth * kCamHeight * 2, g_transferUnit);
+	if (R_FAILED(rc))
+	{
+		outError = "The camera could not receive frames";
+		MC_LOG_WARN("3ds", "qr: CAMU_SetReceiving failed %08lX\n", static_cast<unsigned long>(rc));
+		stop();
+		return false;
+	}
 	rc = CAMU_StartCapture(PORT_CAM1);
 	if (R_FAILED(rc))
 	{
@@ -138,7 +165,6 @@ bool start(std::string &outError)
 	}
 
 	g_scanParity = 0;
-	g_started = true;
 	MC_LOG_INFO("3ds", "qr: scanner ready (%dx%d YUV422 @ 15 fps)\n", kCamWidth, kCamHeight);
 	return true;
 }
@@ -162,6 +188,7 @@ void stop()
 				break;
 			svcSleepThread(10 * 1000 * 1000LL);
 		}
+		CAMU_ClearBuffer(PORT_CAM1); // FBI's teardown also clears, so no latched error survives a restart
 		CAMU_Activate(SELECT_NONE);
 	}
 
@@ -169,6 +196,16 @@ void stop()
 	{
 		quirc_destroy(g_quirc);
 		g_quirc = nullptr;
+	}
+	if (g_receiveEvent != 0)
+	{
+		svcCloseHandle(g_receiveEvent);
+		g_receiveEvent = 0;
+	}
+	if (g_bufferErrorEvent != 0)
+	{
+		svcCloseHandle(g_bufferErrorEvent);
+		g_bufferErrorEvent = 0;
 	}
 	g_frameArrived = false;
 	if (g_capture != nullptr)
@@ -201,22 +238,37 @@ bool scan(std::string &outUrl, std::string &outError)
 		return false;
 	}
 
-	// One receive per frame, the shape of the devkitPro camera examples:
-	// SetReceiving arms the DMA, the event fires when the frame landed,
-	// and the event handle is consumed every single time.
-	Handle event = 0;
-	Result rc = CAMU_SetReceiving(&event, g_capture, PORT_CAM1,
-	                              kCamWidth * kCamHeight * 2,
-	                              g_transferUnit);
-	if (R_FAILED(rc))
-	{
-		outError = "The camera stopped delivering frames";
-		return false;
-	}
-	rc = svcWaitSynchronization(event, kCaptureTimeoutNs);
-	svcCloseHandle(event);
+	// Wait on the already-armed receive (kept perpetual since start()) plus
+	// the buffer-error event, FBI's task_capture_cam shape:
+	// svcWaitSynchronizationN over both handles.
+	Handle events[2] = { g_bufferErrorEvent, g_receiveEvent };
+	s32 signaled = -1;
+	Result rc = svcWaitSynchronizationN(&signaled, events, 2, false, kCaptureTimeoutNs);
 	if (R_FAILED(rc))
 		return false; // no frame in time; the caller keeps scanning
+
+	if (signaled == 0)
+	{
+		// A frame landed with no receive armed and latched the buffer error;
+		// the port stalls until the FBI recovery order: clear the error
+		// flags, re-arm the receive, restart capture.
+		svcCloseHandle(g_receiveEvent);
+		g_receiveEvent = 0;
+		MC_LOG_WARN("3ds", "qr: camera buffer error, recovering\n");
+		CAMU_ClearBuffer(PORT_CAM1);
+		if (R_SUCCEEDED(CAMU_SetReceiving(&g_receiveEvent, g_capture, PORT_CAM1,
+		                                  kCamWidth * kCamHeight * 2, g_transferUnit)))
+			CAMU_StartCapture(PORT_CAM1);
+		return false;
+	}
+
+	// The receive completed: consume the event and re-arm IMMEDIATELY,
+	// before any decode work. The sensor keeps pushing frames at 15 fps and
+	// any frame landing during a disarmed window latches the error above.
+	svcCloseHandle(g_receiveEvent);
+	g_receiveEvent = 0;
+	CAMU_SetReceiving(&g_receiveEvent, g_capture, PORT_CAM1,
+	                  kCamWidth * kCamHeight * 2, g_transferUnit);
 
 	g_frameArrived = true;
 
