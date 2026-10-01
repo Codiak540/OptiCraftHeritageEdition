@@ -106,6 +106,9 @@ void LegacyHeritageOptions::initGui()
     // with Legacy Look. Face-Button Camera goes at the bottom, full width.
     constexpr int_t PAIR_GAP = 16;
     const int_t colW = std::max<int_t>(48, (w - PAIR_GAP) / 2);
+#else
+    // No paired touch toggles outside the 3DS: keep these rows full width.
+    const int_t colW = w;
 #endif
 
 #if PLATFORM_HAS_ASPECT_RATIO_OPTION
