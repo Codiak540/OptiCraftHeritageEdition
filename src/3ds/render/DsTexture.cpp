@@ -261,9 +261,23 @@ void upload(int id, int x, int y, int width, int height, const void* rgba)
 		// --all for the whole-pack recipe, --xflip for skins alone).
 		// The script converts between the two conventions when a pack
 		// must be shared with the other platforms.
+		//
+		// Full-image uploads carry the file's own row order, which matches
+		// the sampler convention (V=0 reads the last stored row; see the
+		// texcoord block of DsShader.v.pica). A SUB-rectangle instead
+		// carries generated content in Java-orientation rows and addressed
+		// by its Java Y -- animated TextureFX tiles (water, lava, portal,
+		// fire, watch, compass) are produced that way -- so it must be
+		// stored at the vertically mirrored row: without the mirror every
+		// animated tile landed flipped and displaced by half the atlas,
+		// mixing contents between neighbouring animation slots (lava
+		// frames showing portal texels, the watch needle never updating).
+		const bool partial = !(x == 0 && y == 0 &&
+			width == record->logicalW && height == record->logicalH);
 		for (int row = 0; row < height; ++row)
 		{
-			const int dstY = y + row;
+			const int dstY = partial ? record->logicalH - 1 - (y + row)
+			                         : (y + row);
 			const std::uint32_t tileRow = static_cast<std::uint32_t>(dstY / 8);
 			const std::uint32_t inTileY = static_cast<std::uint32_t>(dstY & 7);
 			const std::uint32_t* srcRow =
@@ -292,14 +306,20 @@ void upload(int id, int x, int y, int width, int height, const void* rgba)
 	// average fewer samples rather than reading past the caller's buffer.
 	const int shift = record->downshift;
 	const int block = 1 << shift;
+	const bool partialRegion = !(x == 0 && y == 0 &&
+		width == record->logicalW && height == record->logicalH);
 	const int dstX0 = x >> shift;
 	const int dstY0 = y >> shift;
 	const int dstX1 = (x + width + block - 1) >> shift;
 	const int dstY1 = (y + height + block - 1) >> shift;
 	for (int dstY = dstY0; dstY < dstY1 && dstY < record->storedH; ++dstY)
 	{
-		const std::uint32_t tileRow = static_cast<std::uint32_t>(dstY / 8);
-		const std::uint32_t inTileY = static_cast<std::uint32_t>(dstY & 7);
+		// Partial uploads carry Java-oriented rows (see the common path
+		// above): store them at the vertically mirrored destination row,
+		// in downscaled coordinates.
+		const int storedY = partialRegion ? record->storedH - 1 - dstY : dstY;
+		const std::uint32_t tileRow = static_cast<std::uint32_t>(storedY / 8);
+		const std::uint32_t inTileY = static_cast<std::uint32_t>(storedY & 7);
 		for (int dstX = dstX0; dstX < dstX1 && dstX < record->storedW; ++dstX)
 		{
 			// The source block this stored texel represents, clipped to the

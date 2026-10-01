@@ -1432,7 +1432,16 @@ void RenderEngine::rebuildDefaultTerrainFxTiles()
 			{
 				const int_t targetX = tileX * defaultTerrainFxTileWidth + x;
 				const int_t sourceX = targetX * sourceWidth / targetAtlasWidth;
-				const std::size_t src = (static_cast<std::size_t>(sourceY) * static_cast<std::size_t>(sourceWidth) +
+#if PLATFORM_3DS
+				// Decoded pack bytes are stored bottom-row-first on this
+				// platform (MC-3DS convention): mirror the row index here
+				// the same way TextureCompassFX does, or a custom pack's
+				// water/lava base tiles extract from the mirrored slots.
+				const int_t fileSourceY = sourceHeight - 1 - sourceY;
+#else
+				const int_t fileSourceY = sourceY;
+#endif
+				const std::size_t src = (static_cast<std::size_t>(fileSourceY) * static_cast<std::size_t>(sourceWidth) +
 				                         static_cast<std::size_t>(sourceX)) * 4u;
 				const std::size_t dst = (static_cast<std::size_t>(y) * static_cast<std::size_t>(defaultTerrainFxTileWidth) +
 				                         static_cast<std::size_t>(x)) * 4u;

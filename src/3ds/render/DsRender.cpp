@@ -371,8 +371,15 @@ GPU_CULLMODE picaCullMode(RenderFace face)
 	return GPU_CULL_NONE;
 }
 
-// CPU-side start of the current frame, for endFrame()'s 60 fps VBlank hold.
+// CPU-side start of the current frame, for endFrame's 60 fps VBlank hold.
 static s64 s_frameStartMs = 0;
+// How long this frame's frameBegin() blocked inside C3D_FrameBegin
+// (SYNCDRAW), ms. On real hardware the GX queue has normally drained by then
+// (the wait reads ~0), so endFrame's VBlank hold is the only pacer. Wherever
+// the queue signals one refresh late (Azahar), begin() is itself a
+// full-refresh wait and the hold on top doubles the frame period -- those
+// frames skip the hold entirely.
+static s64 s_frameSyncWaitMs = 0;
 
 // True while a system applet (the swkbd text dialog, see 3ds/DsSwkbd.h) owns
 // the foreground. The 3DS does not suspend the app while a library applet
@@ -421,8 +428,12 @@ void endFrame()
 	// disabled the cap precisely where the work was heaviest. A frame
 	// whose CPU side already overran the refresh is NOT delayed further
 	// (no forced ladder); one whose total work genuinely exceeds a refresh
-	// simply presents on every other VBlank.
-	if (s_frameStartMs != 0 && osGetTime() - s_frameStartMs < 15)
+	// simply presents on every other VBlank. The hold is skipped when this
+	// frame's frameBegin() already blocked a full-refresh scale inside
+	// SYNCDRAW (the GX queue pace-setter case -- see the pacing counters):
+	// stacking both waits is what cadences Azahar to every other VBlank
+	// (30 fps with a ~3 ms CPU frame) instead of the refresh.
+	if (s_frameStartMs != 0 && s_frameSyncWaitMs < 4 && osGetTime() - s_frameStartMs < 15)
 		gspWaitForVBlank();
 	s_inFrame = false;
 	s_boundTarget = nullptr;
@@ -442,8 +453,13 @@ void frameBegin()
 	// them can get past here.
 	if (s_appletForeground)
 		return;
+	// SYNCDRAW doubles as the pace-setter where the GX queue signals a
+	// refresh late; the wait length decides below whether endFrame's VBlank
+	// hold may stack on top (measured for exactly that decision).
+	const s64 syncWaitStartMs = osGetTime();
 	if (!C3D_FrameBegin(C3D_FRAME_SYNCDRAW))
 		return;
+	s_frameSyncWaitMs = osGetTime() - syncWaitStartMs;
 	s_frameStartMs = osGetTime();
 	if (!C3D_FrameDrawOn(s_target))
 	{
