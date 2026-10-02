@@ -2542,8 +2542,10 @@ bool RenderGlobal::updateRenderers(EntityLiving *entityliving, bool flag)
 	if (PLATFORM_URGENT_MESH_BUDGET_MS > 0)
 	{
 		long long urgentSpentUs = 0;
+#ifndef CTR_PLATFORM
 		int urgentChunkCount = 0;
 		int urgentVerticesBuilt = 0;
+#endif
 		for (std::size_t i = 0; i < sortedCandidateCount; ++i)
 		{
 			WorldRenderer *candidate = rendererUpdateCandidates[i];
@@ -2566,7 +2568,9 @@ bool RenderGlobal::updateRenderers(EntityLiving *entityliving, bool flag)
 #endif
 			}
 
+#ifndef CTR_PLATFORM
 			urgentChunkCount++;
+#endif
 			attempted++;
 			// Step cap as well as the clock: on a board where the monotonic
 			// clock reads 0 (see PS2_CHUNK_BUILD_BUDGET_MS) the clock alone
@@ -2674,11 +2678,13 @@ bool RenderGlobal::updateRenderers(EntityLiving *entityliving, bool flag)
 #endif
 			}
 		}
+#ifndef CTR_PLATFORM
 		if (urgentChunkCount > 0)
 		{
 			printf("[PERF] Urgent meshing queue: %d chunks | Tiempo total remallado: %.2f ms | Vértices generados: %d\n",
 			       urgentChunkCount, (double)urgentSpentUs / 1000.0, urgentVerticesBuilt);
 		}
+#endif
 	}
 
 	bool madeProgress = true;

@@ -159,6 +159,8 @@ void GameSettings::setDefaults()
     pocketTouch = true;
     // 3DS only; off by default (unlike MCPE's auto-jump, which defaults on).
     autoJump = false;
+    // 3DS only; hold-to-sneak stays the default.
+    toggleShift = false;
     controllerDeadzone = 0.20f;
     wiiDeflicker = true;
     widescreen = ConsoleAspectRatio::getDefaultWidescreen();

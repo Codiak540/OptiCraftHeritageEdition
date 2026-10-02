@@ -4406,12 +4406,16 @@ bool World::updatingLighting()
         struct DirtyBatchScope
         {
             World *world;
+#ifndef CTR_PLATFORM
             uint64_t floodfillStartUs = 0;
             bool hadSkyLight = false;
+#endif
             explicit DirtyBatchScope(World *w) : world(w)
             {
                 world->lightingDirtyRegions.begin();
+#ifndef CTR_PLATFORM
                 floodfillStartUs = PlatformCompat::getMonotonicMicros();
+#endif
             }
             ~DirtyBatchScope()
             {
@@ -4419,6 +4423,7 @@ bool World::updatingLighting()
                 world->lightingDirtyRegions.end(world);
                 world->markingFromLighting = false;
 
+#ifndef CTR_PLATFORM
                 if (hadSkyLight)
                 {
                     const uint64_t nowUs = PlatformCompat::getMonotonicMicros();
@@ -4429,6 +4434,7 @@ bool World::updatingLighting()
                         printf("[PERF] Skylight floodfill time: %.2f ms (subsecciones afectadas: %d)\n", elapsedMs, affectedSubsections);
                     }
                 }
+#endif
             }
             DirtyBatchScope(const DirtyBatchScope &) = delete;
             DirtyBatchScope &operator=(const DirtyBatchScope &) = delete;
@@ -4447,10 +4453,12 @@ bool World::updatingLighting()
 
             MetadataChunkBlock metadataChunkBlock = lightingToUpdate.back();
             lightingToUpdate.pop_back();
+#ifndef CTR_PLATFORM
             if (metadataChunkBlock.skyBlock == EnumSkyBlock::Sky)
             {
                 dirtyBatchScope.hadSkyLight = true;
             }
+#endif
             // Cleared before the job runs, so propagation inside it can queue
             // this cell again exactly as it could when the queue was scanned.
             if (isSingleCellLightingJob(metadataChunkBlock))

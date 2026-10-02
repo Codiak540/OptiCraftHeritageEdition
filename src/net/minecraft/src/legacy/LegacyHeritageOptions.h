@@ -40,5 +40,6 @@ private:
     LegacyOptionCheckbox *touchCoordsCheckbox;
     LegacyOptionCheckbox *autoJumpCheckbox;
     LegacyOptionCheckbox *pocketTouchCheckbox;
+    LegacyOptionCheckbox *toggleShiftCheckbox;
 #endif
 };

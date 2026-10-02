@@ -210,6 +210,8 @@ void GameSettings::loadOptions()
 					autoJump = value == "true";
 				if (key == "pocketTouch")
 					pocketTouch = value == "true";
+				if (key == "toggleShift")
+					toggleShift = value == "true";
 				if (key == "controllerDeadzone" || key == "wiiStickDeadzone")
 					controllerDeadzone = Config::limit(parseFloat(value), 0.05f, 0.35f);
 				platformGameSettingsLoadOption(*this, key, value);
@@ -429,7 +431,7 @@ void GameSettings::saveOptions()
 		"legacyLook", "legacyCrafting", "legacyCreative", "legacyGuiScaleRestore",
 		"alternativeControllerLayout", "wiiAlternativeControls", "controllerDeadzone", "wiiStickDeadzone",
 #if defined(CTR_PLATFORM)
-		"faceButtonCamera", "touchMap", "touchCoords", "autoJump", "pocketTouch",
+		"faceButtonCamera", "touchMap", "touchCoords", "autoJump", "pocketTouch", "toggleShift",
 #endif
 		"ofFogFancy", "ofFogOff", "ofFogStart", "ofLoadFar", "ofPreloadedChunks", "ofOcclusionFancy",
 		"ofSmoothFps", "ofSmoothInput", "ofBrightness", "ofAoLevel", "ofClouds",
@@ -518,6 +520,7 @@ void GameSettings::saveOptions()
 	printwriter << "touchCoords:" << (touchCoords ? "true" : "false") << "\n";
 	printwriter << "autoJump:" << (autoJump ? "true" : "false") << "\n";
 	printwriter << "pocketTouch:" << (pocketTouch ? "true" : "false") << "\n";
+	printwriter << "toggleShift:" << (toggleShift ? "true" : "false") << "\n";
 #endif
 #ifndef PS2_PLATFORM
 	platformGameSettingsWriteOptions(*this, printwriter);

@@ -43,6 +43,9 @@ constexpr int_t BUTTON_AUTO_JUMP = 212;
 // The Pocket-Edition touch gestures toggle (see DsInput.cpp's pad gestures):
 // tap to place/swing, hold to break/use with the stylus. 3DS only.
 constexpr int_t BUTTON_POCKET_TOUCH = 213;
+// The toggle-sneak option (see GameSettings::toggleShift): the option only
+// exists on the 3DS, paired with Pocket Touch in the same row.
+constexpr int_t BUTTON_TOGGLE_SHIFT = 214;
 #endif
 }
 
@@ -94,10 +97,13 @@ void GuiOptiCraftOptions::initGui()
 	by += 24;
 	controlList.push_back(new GuiSmallButton(BUTTON_TOUCH_MAP, width / 2 - 155, by,
 		uiText("Touch Map: ") + std::string(settings->touchMap ? uiText("ON") : uiText("OFF"))));
-	controlList.push_back(new GuiSmallButton(BUTTON_TOUCH_COORDS, width / 2 + 5, by,
-		uiText("Touch Coords: ") + std::string(settings->touchCoords ? uiText("ON") : uiText("OFF"))));
+	// Toggle Shift sits directly under Auto Jump (same column as it).
+	controlList.push_back(new GuiSmallButton(BUTTON_TOGGLE_SHIFT, width / 2 + 5, by,
+		uiText("Toggle Shift: ") + std::string(settings->toggleShift ? uiText("ON") : uiText("OFF"))));
 	by += 24;
-	controlList.push_back(new GuiSmallButton(BUTTON_POCKET_TOUCH, width / 2 - 155, by,
+	controlList.push_back(new GuiSmallButton(BUTTON_TOUCH_COORDS, width / 2 - 155, by,
+		uiText("Touch Coords: ") + std::string(settings->touchCoords ? uiText("ON") : uiText("OFF"))));
+	controlList.push_back(new GuiSmallButton(BUTTON_POCKET_TOUCH, width / 2 + 5, by,
 		uiText("Pocket Touch: ") + std::string(settings->pocketTouch ? uiText("ON") : uiText("OFF"))));
 	by += 24;
 #endif
@@ -290,6 +296,14 @@ void GuiOptiCraftOptions::actionPerformed(GuiButton *button)
 		settings->setPocketTouch(!settings->pocketTouch);
 		button->displayString = uiText("Pocket Touch: ") +
 			std::string(settings->pocketTouch ? uiText("ON") : uiText("OFF"));
+		return;
+	}
+	if (button->id == BUTTON_TOGGLE_SHIFT)
+	{
+		settings->toggleShift = !settings->toggleShift;
+		button->displayString = uiText("Toggle Shift: ") +
+			std::string(settings->toggleShift ? uiText("ON") : uiText("OFF"));
+		settings->saveOptions();
 		return;
 	}
 #endif

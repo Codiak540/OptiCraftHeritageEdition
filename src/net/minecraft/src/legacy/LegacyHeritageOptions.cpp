@@ -43,6 +43,7 @@ constexpr int_t BUTTON_TOUCH_MAP = 611;
 constexpr int_t BUTTON_TOUCH_COORDS = 612;
 constexpr int_t BUTTON_AUTO_JUMP = 613;
 constexpr int_t BUTTON_POCKET_TOUCH = 614;
+constexpr int_t BUTTON_TOGGLE_SHIFT = 615;
 #endif
 
 }
@@ -54,7 +55,7 @@ LegacyHeritageOptions::LegacyHeritageOptions(GuiScreen *parent, GameSettings *se
       alternativeControlsCheckbox(nullptr)
 #if defined(CTR_PLATFORM)
       , faceCameraCheckbox(nullptr), touchMapCheckbox(nullptr), touchCoordsCheckbox(nullptr), autoJumpCheckbox(nullptr),
-      pocketTouchCheckbox(nullptr)
+      pocketTouchCheckbox(nullptr), toggleShiftCheckbox(nullptr)
 #endif
 {
 }
@@ -78,10 +79,9 @@ void LegacyHeritageOptions::initGui()
     ++rowCount;
 #endif
 #if defined(CTR_PLATFORM)
-    // Face-Button Camera at the bottom (full width, one extra row). Touch
-    // Map and Touch Coords share rows with the legacy options above. Pocket
-    // Touch (the pad's tap/hold gestures) gets its own row at the very
-    // bottom; the panel grows past the usual hints band a little for it.
+    // Face Camera/Auto Jump share one row, Pocket Touch/Toggle Shift share
+    // the next. Touch Map and Touch Coords share rows with the legacy
+    // options above.
     rowCount += 2;
 #endif
 #if PLATFORM_HAS_CONTROLLER_CALIBRATION
@@ -165,9 +165,14 @@ void LegacyHeritageOptions::initGui()
         legacyLayout.rowY(row), colW, h, uiText("Auto Jump"), settings->autoJump);
     controlList.push_back(autoJumpCheckbox);
     ++row;
-    pocketTouchCheckbox = new LegacyOptionCheckbox(BUTTON_POCKET_TOUCH, x, legacyLayout.rowY(row++), w, h,
+    pocketTouchCheckbox = new LegacyOptionCheckbox(BUTTON_POCKET_TOUCH, x, legacyLayout.rowY(row), colW, h,
         uiText("Pocket Touch"), settings->pocketTouch);
     controlList.push_back(pocketTouchCheckbox);
+    // Toggle Shift sits under Auto Jump on the same row as Pocket Touch,
+    // so the 3DS panel does not grow an extra row for it.
+    toggleShiftCheckbox = new LegacyOptionCheckbox(BUTTON_TOGGLE_SHIFT, x + colW + PAIR_GAP, legacyLayout.rowY(row++), colW, h,
+        uiText("Toggle Shift"), settings->toggleShift);
+    controlList.push_back(toggleShiftCheckbox);
 #endif
 
 #ifdef WII_PLATFORM
@@ -355,6 +360,14 @@ void LegacyHeritageOptions::actionPerformed(GuiButton *button)
         settings->setPocketTouch(!settings->pocketTouch);
         if (pocketTouchCheckbox != nullptr)
             pocketTouchCheckbox->setChecked(settings->pocketTouch);
+        return;
+    }
+    if (button->id == BUTTON_TOGGLE_SHIFT)
+    {
+        settings->toggleShift = !settings->toggleShift;
+        if (toggleShiftCheckbox != nullptr)
+            toggleShiftCheckbox->setChecked(settings->toggleShift);
+        settings->saveOptions();
         return;
     }
 #endif

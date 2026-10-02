@@ -141,6 +141,11 @@ public:
 	// EntityPlayerSP::queueAutoJump). Off by default. Stored like
 	// faceButtonCamera; meaningless on the other platforms.
 	bool autoJump;
+	// 3DS only: toggle-sneak. When on, a press of the sneak input (SELECT
+	// hold on 3DS, Left Shift on desktop, R3 on PS2) latches crouch until
+	// the next press instead of requiring the button to stay held. Off by
+	// default. Stored like faceButtonCamera; meaningless elsewhere.
+	bool toggleShift;
 	// Platform-neutral controller settings consumed through PlatformUserSettings.
 	float controllerDeadzone;
 	// Wii only: raw button assigned to Jump/Sneak/Drop/Inventory/Attack/Use/
