@@ -47,6 +47,15 @@ public:
     static void decrementThreadsPending();
     static void pollServer(const std::shared_ptr<ServerNBTStorage> &server);
 
+#ifdef CTR_PLATFORM
+    // 3DS QR flow (src/3ds/qr/GuiQrDownload.cpp): add one server straight
+    // into servers.dat without opening the Add Server screen. Appends only
+    // when no stored entry already carries that exact host. False + a
+    // player-readable reason when the file cannot be rewritten.
+    static bool addServerAndSave(const std::string &name, const std::string &host,
+                                 std::string &outError);
+#endif
+
 protected:
     void actionPerformed(GuiButton *button) override;
     void keyTyped(char_t c, int_t key) override;

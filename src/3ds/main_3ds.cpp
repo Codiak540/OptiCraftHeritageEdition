@@ -17,6 +17,15 @@
 #include "3ds/DsBootstrap.h"
 #include "3ds/system/DsEarlyCrash.h"
 
+// Main-thread stack size override: libctru's crt0 ships a weak 32 KiB
+// __stacksize__, and that is not enough for this game's real call chains --
+// minizip's zipOpen3 frames during the QR pack install alone overflowed it
+// on hardware (Luma data abort, write below the mapped stack block,
+// 2026-10-01). A strong definition here wins over the crt0 weak one. The
+// CIA path cannot rely on the exheader's StackSize key for the same job
+// because the .3dsx / Homebrew Launcher loader reads no exheader at all.
+extern "C" std::uint32_t __stacksize__ = 0x80000;
+
 namespace
 {
 

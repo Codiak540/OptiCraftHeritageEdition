@@ -1,32 +1,28 @@
 #pragma once
 
-// DsHttpDownload.h -- an httpc-backed file download for the "Descarga QR"
+// DsHttpDownload.h -- a libcurl-backed file download for the "Descarga QR"
 // screen (src/3ds/qr/GuiQrDownload.h).
 //
-// The download is driven BY THE GAME LOOP, not a worker thread: poll()
-// performs one bounded slice of receive work (~up to 100 ms while data is
-// streaming, one 16 KiB chunk per call) and the GUI calls it once per
-// frame from updateScreen(). That shape is what makes the progress bar
-// update at the menu's own frame rate and B cancel land instantly --
-// httpcCancelConnection plus a context close, no thread join.
+// libcurl (3ds-curl, mbedTLS underneath) instead of the system httpc
+// service: the console's ssl:C stops at TLS 1.1, and every modern host the
+// QR use case actually reaches (Google Drive's uc?export=download flow and
+// its drive.usercontent.google.com target, CDNs behind Cloudflare, ...)
+// requires TLS 1.2+, so the native stack fails the handshake before a
+// single byte moves (rc 0xD8A0A018). curl 8 + mbedTLS also follows
+// redirects itself, which the httpc service never did.
 //
-// httpc semantics this is built on (libctru httpc.h):
-//   * httpcReceiveData returns HTTPC_RESULTCODE_DOWNLOADPENDING while the
-//     body is still streaming -- the wrapper (httpcDownloadData) treats
-//     rc==0 as "the requested size arrived". Each call fills the buffer it
-//     was handed from its start, and httpcGetDownloadSizeState reports the
-//     total delivered so far, so the delta between two reads is exactly
-//     what landed in this call's buffer.
-//   * httpcCloseContext hangs unless the whole content was received --
-//     cancel() runs httpcCancelConnection first, which is the documented
-//     way out for an aborted transfer.
-
-#include <3ds.h>
+// The download is driven BY THE GAME LOOP, not a worker thread: the easy
+// handle lives inside a curl multi handle and poll() runs one
+// curl_multi_perform slice per call, so the progress bar updates at the
+// menu's own frame rate and B cancel is just curl_multi_remove_handle --
+// no thread join.
 
 #include <cstdint>
 #include <cstdio>
 #include <string>
-#include <vector>
+
+typedef void CURL;
+typedef void CURLM;
 
 class DsHttpDownload
 {
@@ -43,44 +39,37 @@ public:
 	~DsHttpDownload();
 
 	// Begin a GET of url into destPath. False + a player-readable reason
-	// when the context cannot even be opened (bad URL, httpc unavailable).
+	// when the transfer cannot even be set up (bad URL, no network stack).
 	bool begin(const std::string &url, const std::string &destPath, std::string &outError);
 
-	// One slice of receive work. Never blocks longer than the slice budget,
-	// so the menu keeps drawing between calls.
+	// One slice of transfer work. Never blocks on purpose, so the menu
+	// keeps drawing between calls.
 	Status poll(std::string &outError);
 
 	// Abort an in-flight transfer (the whole point of B). Removes the
 	// partial file. Safe on a finished or idle download.
 	void cancel();
 
-	std::uint32_t receivedBytes() const { return received; }
-	std::uint32_t totalBytes() const { return total; }
+	std::uint64_t receivedBytes() const { return received; }
+	std::uint64_t totalBytes() const { return total; }
 	bool hasTotalBytes() const { return total != 0; }
 
+	// The filename the final 200 response announced in Content-Disposition
+	// ("" when none): a Drive-style URL has no real name in its path.
+	const std::string &suggestedFileName() const { return suggestedName; }
+
 private:
-	enum class Phase
-	{
-		Idle,
-		Headers,
-		Receiving,
-	};
-
-	void finishContext();
-	void removePartialFile();
 	void fail(const std::string &reason, std::string &outError);
+	void closeHandles();
 
-	Phase phase = Phase::Idle;
-	bool contextOpen = false;
-	bool httpcStarted = false;
+	CURL *easy = nullptr;
+	CURLM *multi = nullptr;
+	bool multiHasEasy = false;
 	std::FILE *file = nullptr;
 	std::string destPath;
-	httpcContext context{};
+	std::string suggestedName;
 
-	std::uint32_t received = 0;
-	std::uint32_t total = 0;
-
-	// One receive buffer for the download's lifetime: poll() runs every
-	// frame, and a per-call 16 KiB heap churn would only age the heap.
-	std::vector<unsigned char> receiveChunk;
+	// Filled from curl_easy_getinfo between multi_perform slices.
+	std::uint64_t received = 0;
+	std::uint64_t total = 0;
 };

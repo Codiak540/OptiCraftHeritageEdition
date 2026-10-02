@@ -83,6 +83,41 @@ CPU_LUT_ENTRY_NAMES = tuple(
     key[len("assets/"):] if key.startswith("assets/") else key
     for key in CPU_LUT_SKIP)
 
+# Mob/item/armor sheets that are 64x32 in this game's (Beta 1.7.3) asset
+# layout. Modern packs (MC 1.8+) ship these SQUARE (64x64, or HD 128x128):
+# the old box UVs keep addressing the top half and the new overlay layers
+# live in the bottom half, so a square sheet sampled by the legacy model
+# reads as garbage (e.g. the zombie of the Modrinth "MC New Textures" pack,
+# whose mob/zombie.png is 64x64, renders as a floating green-and-cyan
+# square). Such an entry is cropped to its top half -- the overlays are not
+# in this game anyway. KEEP IN LOCKSTEP with kLegacySlimSheets in
+# src/3ds/assets/DsAssetConvert.cpp -- that list is the runtime counterpart;
+# both mirror this one. Deliberately absent: mob/snowman.png,
+# mob/villager*.png and mob/villager_golem.png are 64x64/128x128 even in the
+# game's own shipped assets, so a square sheet there is already correct.
+LEGACY_SLIM_SHEETS = frozenset([
+    "mob/char.png", "mob/cavespider.png", "mob/chicken.png",
+    "mob/cow.png", "mob/creeper.png", "mob/enderman.png",
+    "mob/enderman_eyes.png", "mob/fire.png",
+    "mob/ghast.png", "mob/ghast_fire.png", "mob/lava.png",
+    "mob/ozelot.png", "mob/cat_black.png", "mob/cat_red.png",
+    "mob/cat_siamese.png", "mob/pig.png",
+    "mob/pigman.png", "mob/pigzombie.png", "mob/redcow.png",
+    "mob/saddle.png", "mob/sheep.png", "mob/sheep_fur.png",
+    "mob/silverfish.png", "mob/skeleton.png",
+    "mob/slime.png", "mob/spider.png", "mob/spider_eyes.png",
+    "mob/squid.png", "mob/wolf.png", "mob/wolf_angry.png",
+    "mob/wolf_collar.png", "mob/wolf_tame.png",
+    "mob/zombie.png",
+    "armor/chainmail_1.png", "armor/chainmail_2.png",
+    "armor/cloth_1.png", "armor/cloth_2.png",
+    "armor/diamond_1.png", "armor/diamond_2.png",
+    "armor/gold_1.png", "armor/gold_2.png",
+    "armor/iron_1.png", "armor/iron_2.png",
+    "item/boat.png", "item/book.png", "item/cart.png",
+    "item/door.png", "item/sign.png",
+])
+
 
 def normalise_entry_name(name):
     """Lower-cased, forward-slashed, with the optional assets/ prefix
@@ -95,6 +130,10 @@ def normalise_entry_name(name):
 
 def is_cpu_lut(entry_name):
     return normalise_entry_name(entry_name) in CPU_LUT_ENTRY_NAMES
+
+
+def is_legacy_slim_sheet(entry_name):
+    return normalise_entry_name(entry_name) in LEGACY_SLIM_SHEETS
 
 
 def matches(entry_name, patterns):
@@ -182,9 +221,10 @@ def main():
                     continue
 
                 try:
-                    data = flip_png(data, False, True)
+                    slim = is_legacy_slim_sheet(info.filename)
+                    data = flip_png(data, False, True, crop_top_half=slim)
                     flipped += 1
-                    print("flipped %s (Y)" % info.filename)
+                    print("flipped %s (Y%s)" % (info.filename, "+crop" if slim else ""))
                 except SkipPng as reason:
                     left_as_is += 1
                     unflipped_display.append("%s (%s)" % (info.filename, reason))

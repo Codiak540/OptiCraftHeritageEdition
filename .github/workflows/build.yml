@@ -192,7 +192,13 @@ jobs:
       # helper script -- both are gone: the .cia is now a bare makerom call in
       # the Package step below, against the checked-in resources/3ds_cia.rsf.
       - name: Install build dependencies
-        run: apt update && apt install -y git cmake ninja-build ccache pkg-config unzip curl
+        run: |
+          apt update && apt install -y git cmake ninja-build ccache pkg-config unzip curl
+          # 3ds-curl (+3ds-mbedtls, +3ds-zlib portlibs): the QR downloader
+          # (src/3ds/qr) links libcurl because the system ssl:C tops out at
+          # TLS 1.1, which modern hosts (Google Drive, Cloudflare CDNs) no
+          # longer accept. cmake/3ds.cmake FATAL_ERRORs without these.
+          pacman -Sy --noconfirm --needed 3ds-curl
 
       - name: Checkout
         uses: actions/checkout@v7

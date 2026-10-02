@@ -1,5 +1,6 @@
 #include "net/minecraft/src/UiStrings.h"
 #include "GuiIngame.h"
+#include <cstring>
 #include "mods/ModManager.h"
 #include "platform/PlatformTuning.h"
 #include "platform/Profiler.h"
@@ -1369,6 +1370,52 @@ void GuiIngame::renderGameplayBottomPanel(float_t partialTick)
 	drawTouchHudButton(touchHud::BUTTON_PAUSE_Y, nullptr, 0);
 }
 
+void GuiIngame::renderTouchChestIcon(int_t x, int_t y)
+{
+	// 2D front-face icon cropped straight from /item/chest.png (64x64),
+	// never a 3D/tile-entity render on the HUD pass. Two stacked quads
+	// filling the full 24x24 icon cell (same size as the terrain-tile
+	// buttons, e.g. the crafting table), using the same ModelChest UVs
+	// the 3D model uses:
+	//   lid front  = chestLid  front face, u 14..28 / v 14..19 (5px -> 8)
+	//   body front = chestBelow front face, u 14..28 / v 33..43 (10px -> 16)
+	//   latch      = chestKnob front face, u 1..3 / v 1..5 (silver, on top)
+	// -> the classic closed-chest look at 24x24, matching the other icons.
+	// Java-convention UVs, same convention the terrain icons above use.
+	if (mc == nullptr || mc->renderEngine == nullptr)
+		return;
+	renderBindTexture(mc->renderEngine->getTexture("/item/chest.png"));
+	Tessellator *tess = &Tessellator::instance;
+	const float_t inv = 1.0f / 64.0f;
+
+	tess->startDrawingQuads();
+	tess->setColorOpaque_I(0xffffff);
+	tess->addVertexWithUV(x, y + 8, zLevel, 14.0f * inv, 19.0f * inv);
+	tess->addVertexWithUV(x + 24, y + 8, zLevel, 28.0f * inv, 19.0f * inv);
+	tess->addVertexWithUV(x + 24, y, zLevel, 28.0f * inv, 14.0f * inv);
+	tess->addVertexWithUV(x, y, zLevel, 14.0f * inv, 14.0f * inv);
+	tess->draw();
+
+	tess->startDrawingQuads();
+	tess->setColorOpaque_I(0xffffff);
+	tess->addVertexWithUV(x, y + 24, zLevel, 14.0f * inv, 43.0f * inv);
+	tess->addVertexWithUV(x + 24, y + 24, zLevel, 28.0f * inv, 43.0f * inv);
+	tess->addVertexWithUV(x + 24, y + 8, zLevel, 28.0f * inv, 33.0f * inv);
+	tess->addVertexWithUV(x, y + 8, zLevel, 14.0f * inv, 33.0f * inv);
+	tess->draw();
+
+	// chestKnob latch front face: silver pixels at u 1..3 / v 1..5 (2x4),
+	// centred horizontally and straddling the lid seam (row 8), the same
+	// proportion the 3D model gives it (2/14 of the width).
+	tess->startDrawingQuads();
+	tess->setColorOpaque_I(0xffffff);
+	tess->addVertexWithUV(x + 10, y + 11, zLevel, 1.0f * inv, 5.0f * inv);
+	tess->addVertexWithUV(x + 13, y + 11, zLevel, 3.0f * inv, 5.0f * inv);
+	tess->addVertexWithUV(x + 13, y + 5, zLevel, 3.0f * inv, 1.0f * inv);
+	tess->addVertexWithUV(x + 10, y + 5, zLevel, 1.0f * inv, 1.0f * inv);
+	tess->draw();
+}
+
 void GuiIngame::drawTouchHudButton(int_t y, const char *iconTexture, int_t iconTile)
 {
 	zLevel = 0.0f;
@@ -1388,6 +1435,19 @@ void GuiIngame::drawTouchHudButton(int_t y, const char *iconTexture, int_t iconT
 		// Pause: the universal two-bar glyph, plain quads.
 		drawRect(iconX + 6, iconY + 2, iconX + 10, iconY + 22, 0xffffffff);
 		drawRect(iconX + 14, iconY + 2, iconX + 18, iconY + 22, 0xffffffff);
+		return;
+	}
+
+	// The chest button icon (terrain tile 27) is the one cell modern packs
+	// blank out on purpose -- a 1.x+ pack keeps the chest OUT of the
+	// terrain atlas (it is a tile entity with its own sheet), so the
+	// terrain-sampled icon renders as an empty cell. Crop the chest FRONT
+	// from /item/chest.png instead: pack-proof (the sheet always exists,
+	// incl. the vanilla fallback) and no tile-entity render on the HUD pass.
+	if (iconTile == 27 && iconTexture != nullptr &&
+	    std::strcmp(iconTexture, "/terrain.png") == 0)
+	{
+		renderTouchChestIcon(iconX, iconY);
 		return;
 	}
 

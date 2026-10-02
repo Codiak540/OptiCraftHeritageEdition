@@ -345,10 +345,17 @@ def adam7_deinterlace(raw, width, height, bit_depth, channels):
     return [bytes(r) for r in rows]
 
 
-def flip_png(data, flip_x, flip_y):
+def flip_png(data, flip_x, flip_y, crop_top_half=False):
     """Returns a new PNG with the requested axis flips applied. Adam7
     interlaced input is decoded pass-by-pass first and re-emitted
-    progressive (the game's loader only cares about row content)."""
+    progressive (the game's loader only cares about row content).
+
+    crop_top_half keeps only the top half of the source rows (the ignored
+    bottom is a modern pack's overlay/second-layer area): applied BEFORE any
+    flip, since it addresses the source's own row order. Only ever enabled
+    by texturepack_flip_3ds.py for the legacy 64x32 mob/item sheets a square
+    (64x64+) modern sheet would otherwise break on this game -- see
+    LEGACY_SLIM_SHEETS there."""
     width, height, bit_depth, color_type, channels, interlace, palette, transparency, idat = parse_png(data)
     stride = (width * bit_depth * channels + 7) // 8
     filter_bpp = max(1, (bit_depth * channels) // 8)
@@ -357,6 +364,13 @@ def flip_png(data, flip_x, flip_y):
                                  bit_depth, channels)
     else:
         rows = unfilter_scanlines(zlib.decompress(idat), stride, height, filter_bpp)
+
+    if crop_top_half and width == height and width % 64 == 0:
+        # Only square 64x64/128x128... modern sheets carry the legacy
+        # layout in the top half; anything else is left untouched (the
+        # normal flips below still apply).
+        rows = rows[: height // 2]
+        height //= 2
 
     if flip_y:
         # Scanline order only: no pixel decoding needed, so every bit depth

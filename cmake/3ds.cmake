@@ -317,6 +317,26 @@ if(NOT 3DS_BRINGUP)
     message(STATUS "3DS build: citro2d = ${_3DS_CITRO2D}")
     message(STATUS "3DS build: citro3d = ${_3DS_CITRO3D}")
     list(APPEND _3DS_LIBS citro2d citro3d)
+
+    # libcurl + mbedTLS (3ds-curl portlib package): the QR downloader
+    # (src/3ds/qr/DsHttpDownload.cpp) needs TLS 1.2+ and redirect following,
+    # neither of which the system http:C/ssl:C stack provides. zlib comes
+    # from the same portlibs install (3ds-zlib is a 3ds-curl dependency) --
+    # the vendored zlib sources above build the game's SELF, this -lz is
+    # only libcurl's own reference and they never mix (different headers
+    # would be the hazard; kMaxDownloadBytes-level code only).
+    foreach(_3ds_netlib IN ITEMS curl mbedtls mbedx509 mbedcrypto z)
+        find_library(_3DS_NETLIB_${_3ds_netlib} NAMES ${_3ds_netlib}
+            HINTS "${THREEDS_PORTLIBS}/lib"
+            NO_CMAKE_FIND_ROOT_PATH)
+        if(NOT _3DS_NETLIB_${_3ds_netlib})
+            message(FATAL_ERROR
+                "3DS build: lib${_3ds_netlib}.a not found under ${THREEDS_PORTLIBS}/lib.\n"
+                "The QR downloader links libcurl + mbedTLS; install them from the\n"
+                "devkitPro shell with:  dkp-pacman -S 3ds-curl")
+        endif()
+        list(APPEND _3DS_LIBS ${_3ds_netlib})
+    endforeach()
 endif()
 
 list(APPEND _3DS_LIBS ctru m)                                # libctru + libm, last

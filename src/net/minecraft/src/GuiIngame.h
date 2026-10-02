@@ -47,6 +47,11 @@ private:
 #if defined(CTR_PLATFORM)
 	void renderGameplayBottomPanel(float_t partialTick);
 	void drawTouchHudButton(int_t y, const char *iconTexture, int_t iconTile);
+
+	// The inventory button's chest glyph as a 2D front-face crop of
+	// /item/chest.png (pack-proof; see drawTouchHudButton's comment for
+	// why terrain tile 27 cannot be trusted).
+	void renderTouchChestIcon(int_t x, int_t y);
 	// Bottom-panel hotbar slot cache: the untouched-slot case replays a
 	// recorded display list (linear-resident on this backend) instead of
 	// re-tessellating the icon every frame.

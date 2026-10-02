@@ -95,22 +95,26 @@ void GuiMultiplayer::initGui()
 #endif
 }
 
-void GuiMultiplayer::loadServerList()
+namespace
 {
-    serverList.clear();
+// File-level halves of loadServerList()/saveServerList(), free of the GUI
+// instance so the 3DS QR flow can also store a scanned server address
+// (GuiMultiplayer::addServerAndSave below).
+bool readServerListFile(std::vector<std::shared_ptr<ServerNBTStorage>> &out)
+{
+    out.clear();
     File *dataDir = Minecraft::getMinecraftDir();
-    if (mc == nullptr || dataDir == nullptr)
-        return;
-
+    if (dataDir == nullptr)
+        return false;
     const std::string path = PlatformStorage::join(dataDir->toString(), "servers.dat");
     if (!PlatformStorage::exists(path))
-        return;
+        return true; // no list yet is a valid, empty list
     const std::int64_t fileSize = PlatformStorage::getFileSize(path);
     if (fileSize == 0 || fileSize > static_cast<std::int64_t>(MAX_SERVER_LIST_BYTES))
     {
         MC_LOG_WARN("network", "Refusing invalid servers.dat size: %lld bytes\n",
                     static_cast<long long>(fileSize));
-        return;
+        return false;
     }
 
     try
@@ -125,7 +129,7 @@ void GuiMultiplayer::loadServerList()
         std::istringstream input(payload, std::ios::in | std::ios::binary);
         std::unique_ptr<NBTTagCompound> root(CompressedStreamTools::readCompound(input));
         if (root == nullptr || !root->hasKey("servers"))
-            return;
+            return true;
         NBTTagList *list = root->getTagList("servers");
         for (int_t i = 0; i < list->tagCount(); ++i)
         {
@@ -134,31 +138,33 @@ void GuiMultiplayer::loadServerList()
                 continue;
             std::shared_ptr<ServerNBTStorage> server(ServerNBTStorage::createServerNBTStorage(tag));
             if (server != nullptr)
-                serverList.push_back(server);
+                out.push_back(server);
         }
     }
     catch (const std::exception &exception)
     {
         MC_LOG_WARN("network", "Unable to read servers.dat: %s\n", exception.what());
+        return false;
     }
+    return true;
 }
 
-void GuiMultiplayer::saveServerList()
+bool writeServerListFile(const std::vector<std::shared_ptr<ServerNBTStorage>> &list)
 {
     File *dataDir = Minecraft::getMinecraftDir();
-    if (mc == nullptr || dataDir == nullptr)
-        return;
+    if (dataDir == nullptr)
+        return false;
 
     try
     {
         std::unique_ptr<NBTTagCompound> root(new NBTTagCompound());
-        NBTTagList *list = new NBTTagList();
-        for (const auto &server : serverList)
+        NBTTagList *tagList = new NBTTagList();
+        for (const auto &server : list)
         {
             if (server != nullptr)
-                list->appendTag(server->getCompoundTag());
+                tagList->appendTag(server->getCompoundTag());
         }
-        root->setTag("servers", list);
+        root->setTag("servers", tagList);
 
         std::ostringstream output(std::ios::out | std::ios::binary);
         CompressedStreamTools::writeCompound(root.get(), output);
@@ -198,8 +204,57 @@ void GuiMultiplayer::saveServerList()
     catch (const std::exception &exception)
     {
         MC_LOG_WARN("network", "Unable to save servers.dat: %s\n", exception.what());
+        return false;
     }
+    return true;
 }
+} // namespace
+
+void GuiMultiplayer::loadServerList()
+{
+    if (mc == nullptr)
+        return;
+    std::vector<std::shared_ptr<ServerNBTStorage>> loaded;
+    if (readServerListFile(loaded))
+        serverList = loaded;
+    else
+        serverList.clear();
+}
+
+void GuiMultiplayer::saveServerList()
+{
+    if (mc == nullptr)
+        return;
+    writeServerListFile(serverList);
+}
+
+#ifdef CTR_PLATFORM
+bool GuiMultiplayer::addServerAndSave(const std::string &name, const std::string &host,
+                                      std::string &outError)
+{
+    std::vector<std::shared_ptr<ServerNBTStorage>> stored;
+    if (!readServerListFile(stored))
+    {
+        outError = "The server list could not be read";
+        return false;
+    }
+    for (const auto &server : stored)
+    {
+        if (server != nullptr && server->host == host)
+        {
+            outError.clear(); // already stored: nothing to add, nothing to fail
+            return true;
+        }
+    }
+    stored.push_back(std::make_shared<ServerNBTStorage>(name, host));
+    if (!writeServerListFile(stored))
+    {
+        outError = "The server list could not be saved";
+        return false;
+    }
+    return true;
+}
+#endif
 
 void GuiMultiplayer::initGuiControls()
 {

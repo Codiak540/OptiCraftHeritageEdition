@@ -1671,7 +1671,17 @@ SpecialTextureFxResult RenderEngine::updateSpecialTextureFx(TextureFX *texturefx
 
 bool RenderEngine::updateStaticProceduralTextureFx(TextureFX *texturefx)
 {
-	if (texturefx == nullptr || texturefx->tileImage != 0 || dynamicTexturesUpdated || !isDefaultTexturePack())
+	// One painted procedural frame when the category is animated-OFF. The
+	// default-pack gate this used to carry broke down with custom packs the
+	// moment a pack zeroes the fire slots out (the Modrinth 1.0-1.4.2 packs
+	// put a literal "FIRE TILE" placeholder there, expecting vanilla's
+	// always-procedural fire): the console performance profile ships
+	// AnimatedFire/AnimatedPortal OFF, so the placeholder stayed on screen
+	// while with the default pack a static noise frame appeared. A pack that
+	// carries a REAL static fire tile loses it this way, but that is the
+	// same trade the vanilla renderer makes -- and it beats showing the
+	// marker text mid-screen.
+	if (texturefx == nullptr || texturefx->tileImage != 0 || dynamicTexturesUpdated)
 		return false;
 
 	const int_t icon = texturefx->iconIndex;

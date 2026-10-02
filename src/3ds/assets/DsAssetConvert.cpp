@@ -44,6 +44,41 @@ const char *const kCpuLutEntries[] = {
 	"misc/myceliumparticlecolor.png",
 };
 
+// Mob/item/armor sheets that are 64x32 in this game's (Beta 1.7.3) asset
+// layout. Modern packs (MC 1.8+) ship these SQUARE (64x64, or HD 128x128):
+// the old box UVs keep addressing the top half and the new overlay layers
+// live in the bottom half, so a square sheet sampled by the legacy model
+// reads as garbage -- the "zombie is a floating green-and-cyan square"
+// report against the Modrinth 1.0-1.4.2 pack (its mob/zombie.png is 64x64).
+// Cropping such an entry to its top half restores the legacy layout; the
+// overlays are simply not in this game. KEEP IN LOCKSTEP with
+// LEGACY_SLIM_SHEETS in scripts/texturepack_flip_3ds.py -- that list is the
+// authority this mirrors. Excluded on purpose: mob/snowman.png,
+// mob/villager*.png and mob/villager_golem.png are 64x64/128x128 even in the
+// game's own shipped assets, so a square sheet there is already correct.
+const char *const kLegacySlimSheets[] = {
+	"mob/char.png",   "mob/cavespider.png", "mob/chicken.png",
+	"mob/cow.png",    "mob/creeper.png",    "mob/enderman.png",
+	"mob/enderman_eyes.png",                "mob/fire.png",
+	"mob/ghast.png",  "mob/ghast_fire.png", "mob/lava.png",
+	"mob/ozelot.png", "mob/cat_black.png",  "mob/cat_red.png",
+	"mob/cat_siamese.png",                  "mob/pig.png",
+	"mob/pigman.png", "mob/pigzombie.png",  "mob/redcow.png",
+	"mob/saddle.png", "mob/sheep.png",      "mob/sheep_fur.png",
+	"mob/silverfish.png",                   "mob/skeleton.png",
+	"mob/slime.png",  "mob/spider.png",     "mob/spider_eyes.png",
+	"mob/squid.png",  "mob/wolf.png",       "mob/wolf_angry.png",
+	"mob/wolf_collar.png",                  "mob/wolf_tame.png",
+	"mob/zombie.png",
+	"armor/chainmail_1.png", "armor/chainmail_2.png",
+	"armor/cloth_1.png",     "armor/cloth_2.png",
+	"armor/diamond_1.png",   "armor/diamond_2.png",
+	"armor/gold_1.png",      "armor/gold_2.png",
+	"armor/iron_1.png",      "armor/iron_2.png",
+	"item/boat.png", "item/book.png", "item/cart.png",
+	"item/door.png", "item/sign.png",
+};
+
 std::string normaliseEntryName(const char *name)
 {
 	std::string lowered;
@@ -72,16 +107,29 @@ bool isCpuLut(const char *name)
 	return false;
 }
 
+bool isLegacySlimSheet(const char *name)
+{
+	const std::string normalised = normaliseEntryName(name);
+	for (const char *sheet : kLegacySlimSheets)
+	{
+		if (normalised == sheet)
+			return true;
+	}
+	return false;
+}
+
 bool isPngBytes(const std::vector<unsigned char> &data)
 {
 	return data.size() > 8 && std::memcmp(data.data(), kPngSignature, 8) == 0;
 }
 
-// Decode -> reverse the row order -> re-encode, all in memory. stb decodes
-// every PNG form to RGBA8, so the rewritten file loses palette packing but
-// nothing semantic: the console uploads RGBA texels anyway, and the CPU
-// tables never come through here.
-bool flipPngInMemory(const std::vector<unsigned char> &in, std::vector<unsigned char> &out)
+// Decode -> optionally crop to the top half (modern square mob sheets,
+// kLegacySlimSheets) -> reverse the row order -> re-encode, all in memory.
+// stb decodes every PNG form to RGBA8, so the rewritten file loses palette
+// packing but nothing semantic: the console uploads RGBA texels anyway, and
+// the CPU tables never come through here.
+bool flipPngInMemory(const std::vector<unsigned char> &in, std::vector<unsigned char> &out,
+                     bool cropTopHalf)
 {
 	int width = 0;
 	int height = 0;
@@ -95,19 +143,27 @@ bool flipPngInMemory(const std::vector<unsigned char> &in, std::vector<unsigned 
 		return false;
 	}
 
+	// Crop in the source (Java) orientation, before the row reversal: a
+	// square modern sheet keeps the legacy boxes in its top half and the
+	// overlay layers below them, and the legacy layout is what this game's
+	// models sample.
+	int outHeight = height;
+	if (cropTopHalf && width == height && (width & 63) == 0)
+		outHeight = height / 2;
+
 	const int stride = width * 4;
 	std::vector<stbi_uc> swapRow(static_cast<std::size_t>(stride));
-	for (int y = 0; y < height / 2; ++y)
+	for (int y = 0; y < outHeight / 2; ++y)
 	{
 		stbi_uc *top = pixels + static_cast<std::size_t>(y) * stride;
-		stbi_uc *bottom = pixels + static_cast<std::size_t>(height - 1 - y) * stride;
+		stbi_uc *bottom = pixels + static_cast<std::size_t>(outHeight - 1 - y) * stride;
 		std::memcpy(swapRow.data(), top, static_cast<std::size_t>(stride));
 		std::memcpy(top, bottom, static_cast<std::size_t>(stride));
 		std::memcpy(bottom, swapRow.data(), static_cast<std::size_t>(stride));
 	}
 
 	int outLength = 0;
-	unsigned char *encoded = stbi_write_png_to_mem(pixels, stride, width, height, 4, &outLength);
+	unsigned char *encoded = stbi_write_png_to_mem(pixels, stride, width, outHeight, 4, &outLength);
 	stbi_image_free(pixels);
 	if (encoded == nullptr || outLength <= 0)
 	{
@@ -186,7 +242,7 @@ bool convertPng(const std::string &pngPath, std::string &outError)
 	}
 
 	std::vector<unsigned char> flipped;
-	if (!flipPngInMemory(bytes, flipped))
+	if (!flipPngInMemory(bytes, flipped, false))
 	{
 		outError = "the image could not be decoded";
 		return false;
@@ -259,7 +315,7 @@ bool convertTexturePackZip(const std::string &zipPath, std::string &outError)
 			if (isPngBytes(payload) && !isCpuLut(nameBuffer))
 			{
 				std::vector<unsigned char> flippedPng;
-				if (flipPngInMemory(payload, flippedPng))
+				if (flipPngInMemory(payload, flippedPng, isLegacySlimSheet(nameBuffer)))
 				{
 					payload = std::move(flippedPng);
 					++flipped;

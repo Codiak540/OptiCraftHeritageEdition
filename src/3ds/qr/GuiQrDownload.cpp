@@ -20,6 +20,7 @@
 #include "platform/RenderAPI.h"
 #include "platform/Storage.h"
 #include "skin/SkinManager.h"
+#include "GuiMultiplayer.h"
 #include "UiStrings.h"
 #include "unzip.h"
 
@@ -38,16 +39,19 @@ const unsigned char kPngSignature[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '
 constexpr int kButtonWidth = 130;
 constexpr int kButtonHeight = 20;
 
-std::string formatBytes(std::uint32_t bytes)
+std::string formatBytes(std::uint64_t bytes)
 {
 	char buffer[32];
 	if (bytes >= 1024 * 1024)
-		std::snprintf(buffer, sizeof(buffer), "%u.%u MB",
-		              bytes / (1024 * 1024), (bytes % (1024 * 1024)) / (1024 * 100));
+		std::snprintf(buffer, sizeof(buffer), "%llu.%llu MB",
+		              static_cast<unsigned long long>(bytes / (1024 * 1024)),
+		              static_cast<unsigned long long>((bytes % (1024 * 1024)) / (1024 * 100)));
 	else if (bytes >= 1024)
-		std::snprintf(buffer, sizeof(buffer), "%u KB", bytes / 1024);
+		std::snprintf(buffer, sizeof(buffer), "%llu KB",
+		              static_cast<unsigned long long>(bytes / 1024));
 	else
-		std::snprintf(buffer, sizeof(buffer), "%u B", bytes);
+		std::snprintf(buffer, sizeof(buffer), "%llu B",
+		              static_cast<unsigned long long>(bytes));
 	return buffer;
 }
 } // namespace
@@ -98,7 +102,8 @@ void GuiQrDownload::rebuildButtons()
 		break;
 	case State::Confirm:
 		controlList.push_back(new GuiButton(1, width / 2 - kButtonWidth - 5, height - 28,
-		                                    kButtonWidth, kButtonHeight, uiText("Download")));
+		                                    kButtonWidth, kButtonHeight,
+		                                    uiText(scannedKind == Kind::Server ? "Add" : "Download")));
 		controlList.push_back(new GuiButton(0, width / 2 + 5, height - 28,
 		                                    kButtonWidth, kButtonHeight, uiText("Cancel")));
 		break;
@@ -122,18 +127,28 @@ void GuiQrDownload::rebuildButtons()
 void GuiQrDownload::beginConfirm(const std::string &url)
 {
 	scannedUrl = url;
-	// Extension first, as a hint for the confirm line; the real decision is
-	// content-based, after the bytes arrive.
-	const std::string lower = String::toLowerCaseJava(jstring(url));
-	if (lower.size() >= 4 && lower.compare(lower.size() - 4, 4, ".png") == 0)
-		scannedKind = Kind::Skin;
-	else if (lower.size() >= 8 && lower.compare(lower.size() - 8, 8, ".ochpack") == 0)
-		scannedKind = Kind::Mod;
-	else if (lower.size() >= 4 && lower.compare(lower.size() - 4, 4, ".zip") == 0)
-		scannedKind = Kind::TexturePack;
+	// A bare host[:port] is a server address, not a download; everything
+	// else keeps the download flow, where the real decision is made by the
+	// file's content after the bytes arrive.
+	if (isServerAddress(url))
+	{
+		scannedKind = Kind::Server;
+	}
 	else
-		scannedKind = Kind::Unknown;
-	installName = nameFromUrl(url);
+	{
+		// Extension first, as a hint for the confirm line; the real
+		// decision is content-based, after the bytes arrive.
+		const std::string lower = String::toLowerCaseJava(jstring(url));
+		if (lower.size() >= 4 && lower.compare(lower.size() - 4, 4, ".png") == 0)
+			scannedKind = Kind::Skin;
+		else if (lower.size() >= 8 && lower.compare(lower.size() - 8, 8, ".ochpack") == 0)
+			scannedKind = Kind::Mod;
+		else if (lower.size() >= 4 && lower.compare(lower.size() - 4, 4, ".zip") == 0)
+			scannedKind = Kind::TexturePack;
+		else
+			scannedKind = Kind::Unknown;
+		installName = nameFromUrl(url);
+	}
 
 	// The camera has done its job; give it back before the network takes
 	// over so the LED-less sensor is not held through the whole download.
@@ -141,6 +156,59 @@ void GuiQrDownload::beginConfirm(const std::string &url)
 	state = State::Confirm;
 	rebuildButtons();
 	MC_LOG_INFO("3ds", "qr: scanned %s (kind %d)\n", url.c_str(), static_cast<int>(scannedKind));
+}
+
+bool GuiQrDownload::isServerAddress(const std::string &text)
+{
+	// host[:port], nothing else: no scheme, no path, no spaces. Meant to
+	// catch "play.example.com" / "192.168.1.20:25565" while never matching
+	// a URL (the '/' and ':' after the scheme see to that).
+	if (text.empty() || text.size() > 255)
+		return false;
+	const std::size_t colon = text.find(':');
+	const std::string host = text.substr(0, colon);
+	if (host.empty())
+		return false;
+	for (char c : host)
+	{
+		const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+		                (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_';
+		if (!ok)
+			return false;
+	}
+	if (colon != std::string::npos)
+	{
+		const std::string port = text.substr(colon + 1);
+		if (port.empty() || port.size() > 5)
+			return false;
+		for (char c : port)
+			if (c < '0' || c > '9')
+				return false;
+	}
+	return true;
+}
+
+void GuiQrDownload::addScannedServer()
+{
+	DsQrScanner::stop();
+	std::string error;
+	// The address doubles as the list name: scanning a QR gives no room
+	// for a friendlier one, and the list shows both fields anyway.
+	if (GuiMultiplayer::addServerAndSave(scannedUrl, scannedUrl, error))
+	{
+		message = "Server added to the multiplayer list";
+		detail.clear();
+		messageIsError = false;
+		state = State::Done;
+	}
+	else
+	{
+		message = "The server could not be added";
+		detail = error;
+		messageIsError = true;
+		state = State::Failed;
+	}
+	rebuildButtons();
 }
 
 void GuiQrDownload::startDownload()
@@ -259,6 +327,10 @@ void GuiQrDownload::runInstall()
 	detail.clear();
 
 	const Kind kind = classifyDownload();
+	// The server may name the file better than the URL did (Drive links
+	// land on a Content-Disposition filename); prefer it when present.
+	if (!download.suggestedFileName().empty())
+		installName = nameFromUrl(download.suggestedFileName());
 	if (kind == Kind::Skin)
 	{
 		std::string convertError;
@@ -353,7 +425,10 @@ void GuiQrDownload::keyTyped(char_t c, int_t key)
 	}
 	if (key == 28 && state == State::Confirm) // RETURN: the menu channel's A
 	{
-		startDownload();
+		if (scannedKind == Kind::Server)
+			addScannedServer();
+		else
+			startDownload();
 		return;
 	}
 	GuiScreen::keyTyped(c, key);
@@ -369,7 +444,12 @@ void GuiQrDownload::actionPerformed(GuiButton *button)
 	if (button->id == 1)
 	{
 		if (state == State::Confirm)
-			startDownload();
+		{
+			if (scannedKind == Kind::Server)
+				addScannedServer();
+			else
+				startDownload();
+		}
 		else if (state == State::Done || state == State::Failed)
 			closeAndReturn();
 	}
@@ -430,15 +510,15 @@ void GuiQrDownload::drawProgressBar(int_t x, int_t y, int_t w, int_t h)
 {
 	drawRect(x - 1, y - 1, x + w + 1, y + h + 1, 0xFF808080);
 	drawRect(x, y, x + w, y + h, 0xFF202020);
-	std::uint32_t done = 0;
-	std::uint32_t total = 0;
+	std::uint64_t done = 0;
+	std::uint64_t total = 0;
 	if (download.hasTotalBytes() && download.totalBytes() != 0)
 	{
 		total = download.totalBytes();
 		done = download.receivedBytes();
 		if (done > total)
 			done = total;
-		const int_t fill = static_cast<int_t>((static_cast<std::uint64_t>(done) * w) / total);
+		const int_t fill = static_cast<int_t>((done * static_cast<std::uint64_t>(w)) / total);
 		drawRect(x, y, x + fill, y + h, 0xFF55FF55);
 	}
 	else
@@ -462,6 +542,7 @@ std::string GuiQrDownload::kindLabel(Kind kind)
 	case Kind::Skin: return "Skin";
 	case Kind::TexturePack: return "Texture pack";
 	case Kind::Mod: return "Mod";
+	case Kind::Server: return "Minecraft server";
 	default: return "Unknown file";
 	}
 }
@@ -529,8 +610,10 @@ void GuiQrDownload::drawScreen(int_t mouseX, int_t mouseY, float_t partialTick)
 			rest = rest.size() > chunk.size() ? rest.substr(chunk.size()) : std::string();
 			drawCenteredString(fontRenderer, chunk, centreX, 44 + line * 12, 0xCCCCCC);
 		}
-		drawCenteredString(fontRenderer, "(A) Download    (B) Cancel", centreX, height - 52,
-		                   0xAAAAAA);
+		drawCenteredString(fontRenderer,
+		                   scannedKind == Kind::Server ? "(A) Add    (B) Cancel"
+		                                               : "(A) Download    (B) Cancel",
+		                   centreX, height - 52, 0xAAAAAA);
 		break;
 	}
 

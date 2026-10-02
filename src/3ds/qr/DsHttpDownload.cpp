@@ -1,42 +1,134 @@
-// DsHttpDownload.cpp -- httpc file download, driven by the game loop.
+// DsHttpDownload.cpp -- libcurl file download, driven by the game loop.
+// See DsHttpDownload.h for why this is curl instead of http:C.
 #ifdef CTR_PLATFORM
 
 #include "3ds/qr/DsHttpDownload.h"
 
-#include <cstdio>
+// curl's multi.h declares fd_set-taking entry points but does not include
+// the header itself (known 3ds portlibs quirk); provide it first.
+#include <sys/select.h>
+
+#include <curl/curl.h>
+
+#include <cstdlib>
 #include <cstring>
-#include <vector>
 
 #include "platform/Log.h"
 
+#if defined(CTR_ENABLE_NETWORK)
+#include "3ds/DsNetwork.h"
+#else
+#include <3ds.h>
+#include <malloc.h>
+#endif
+
 namespace
 {
-// One receive slice per poll(): 16 KiB lands in ~a frame at the console's
-// real-world Wi-Fi rate, and the timeout bounds what a stalled server can
-// cost the menu per frame.
-constexpr std::uint32_t kReceiveChunkBytes = 16 * 1024;
-constexpr std::uint64_t kSliceTimeoutNs = 100 * 1000 * 1000LL;
-
 // The whole point of a QR download is skins, packs and mods; anything bigger
 // than this is not one, and streaming it to SD anyway would just waste the
 // card's space behind a bar that never seems to end.
-constexpr std::uint32_t kMaxDownloadBytes = 96u * 1024u * 1024u;
+constexpr curl_off_t kMaxDownloadBytes = 96 * 1024 * 1024;
 
-// The system httpc verifies HTTPS against the roots it was issued; these are
-// the public ones in that set. A site whose chain the console does not know
-// fails with a clear error rather than a silent hang -- use an http:// URL
-// for such hosts.
-const SSLC_DefaultRootCert kPublicRootCerts[] = {
-	SSLC_DefaultRootCert_CyberTrust,
-	SSLC_DefaultRootCert_AddTrust_External_CA,
-	SSLC_DefaultRootCert_COMODO,
-	SSLC_DefaultRootCert_USERTrust,
-	SSLC_DefaultRootCert_DigiCert_EV,
-};
+// A stalled server must not own the menu: give up the whole transfer if
+// less than a byte a second moves for this long, and stop waiting for the
+// TCP connect sooner than curl's own default (which is minutes).
+constexpr long kConnectTimeoutSecs = 20;
+constexpr long kLowSpeedLimit = 1;
+constexpr long kLowSpeedTimeSecs = 30;
 
-std::string describeHttpFailure(Result rc)
+std::string describeCurlFailure(CURLcode code)
 {
-	return "the server or the connection failed (" + std::to_string(rc) + ")";
+	return "the server or the connection failed (" +
+	       std::to_string(static_cast<int>(code)) + ": " +
+	       curl_easy_strerror(code) + ")";
+}
+
+std::size_t writeToFile(char *ptr, std::size_t size, std::size_t nmemb, void *userdata)
+{
+	std::FILE *file = static_cast<std::FILE *>(userdata);
+	const std::size_t bytes = size * nmemb;
+	return std::fwrite(ptr, 1, bytes, file);
+}
+
+// Capture Content-Disposition's filename from the FINAL response (curl
+// reports every redirect hop's headers too; keeping the last one is exactly
+// right, the direct file server is the one that knows the real name).
+std::size_t captureHeader(char *buffer, std::size_t size, std::size_t nitems, void *userdata)
+{
+	const std::size_t bytes = size * nitems;
+	std::string header(buffer, bytes);
+	std::string *suggested = static_cast<std::string *>(userdata);
+
+	std::string lower = header;
+	for (char &c : lower)
+		if (c >= 'A' && c <= 'Z')
+			c = static_cast<char>(c - 'A' + 'a');
+	if (lower.compare(0, 19, "content-disposition:") != 0)
+		return bytes;
+
+	const std::size_t marker = lower.find("filename=");
+	if (marker == std::string::npos)
+		return bytes;
+	std::string name = header.substr(marker + 9);
+	if (!name.empty() && name.front() == '"')
+		name.erase(name.begin());
+	const std::size_t quote = name.find('"');
+	if (quote != std::string::npos)
+		name = name.substr(0, quote);
+	const std::size_t end = name.find_first_of(";\r\n");
+	if (end != std::string::npos)
+		name = name.substr(0, end);
+	if (!name.empty())
+		*suggested = name;
+	return bytes;
+}
+
+bool startsWithHttp(const std::string &url)
+{
+	std::string head = url.substr(0, 8);
+	for (char &c : head)
+		if (c >= 'A' && c <= 'Z')
+			c = static_cast<char>(c - 'A' + 'a');
+	return head.compare(0, 7, "http://") == 0 || head.compare(0, 8, "https://") == 0;
+}
+
+// curl rides libctru's sockets, which need the soc:U service up -- the old
+// httpc path never did (it owns its sockets inside the service), which is
+// why the downloader has to bring it up explicitly here. With networking
+// enabled the shared DsNetwork block (also used by multiplayer) does it;
+// otherwise a private segment is taken for the download's lifetime.
+#if !defined(CTR_ENABLE_NETWORK)
+u32 *socSegment = nullptr;
+#endif
+
+bool ensureSockets(std::string &outError)
+{
+#if defined(CTR_ENABLE_NETWORK)
+	// A helpful error before the DNS lookup would answer "couldn't resolve
+	// host" on a console whose radio is simply off.
+	const std::string wifiError = DsNetwork::wifiPreflightError();
+	if (!wifiError.empty())
+	{
+		outError = wifiError;
+		return false;
+	}
+	if (DsNetwork::initialize())
+		return true;
+	outError = "The console's network service did not start";
+	return false;
+#else
+	if (socSegment != nullptr)
+		return true;
+	socSegment = static_cast<u32 *>(memalign(0x1000, 0x100000));
+	if (socSegment == nullptr || socInit(socSegment, 0x100000) != 0)
+	{
+		free(socSegment);
+		socSegment = nullptr;
+		outError = "The console's network service did not start";
+		return false;
+	}
+	return true;
+#endif
 }
 } // namespace
 
@@ -51,45 +143,26 @@ bool DsHttpDownload::begin(const std::string &url, const std::string &destPathVa
 	outError.clear();
 	cancel();
 
-	if (url.rfind("http://", 0) != 0 && url.rfind("https://", 0) != 0)
+	if (!startsWithHttp(url))
 	{
 		outError = "The code does not contain a http(s) web address";
 		return false;
 	}
 
-	Result rc = httpcInit(0);
-	if (R_FAILED(rc))
+	if (!ensureSockets(outError))
+		return false;
+
+	if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK)
 	{
-		outError = "The HTTP service is unavailable (http:C)";
-		MC_LOG_WARN("3ds", "qr: httpcInit failed %08lX\n", static_cast<unsigned long>(rc));
+		outError = "The network stack could not start";
 		return false;
 	}
-	httpcStarted = true;
-
-	rc = httpcOpenContext(&context, HTTPC_METHOD_GET, url.c_str(), 0);
-	if (R_FAILED(rc))
+	easy = curl_easy_init();
+	multi = curl_multi_init();
+	if (easy == nullptr || multi == nullptr)
 	{
-		outError = "The address could not be opened";
-		MC_LOG_WARN("3ds", "qr: httpcOpenContext failed %08lX\n", static_cast<unsigned long>(rc));
-		cancel();
-		return false;
-	}
-	contextOpen = true;
-
-	if (url.rfind("https://", 0) == 0)
-	{
-		for (SSLC_DefaultRootCert cert : kPublicRootCerts)
-			httpcAddDefaultCert(&context, cert);
-	}
-	httpcSetKeepAlive(&context, HTTPC_KEEPALIVE_DISABLED);
-	httpcAddRequestHeaderField(&context, "User-Agent", "OptiCraft-Heritage/3DS");
-	httpcAddRequestHeaderField(&context, "Connection", "close");
-
-	rc = httpcBeginRequest(&context);
-	if (R_FAILED(rc))
-	{
-		outError = "The request could not be sent";
-		cancel();
+		outError = "The network stack could not start";
+		closeHandles();
 		return false;
 	}
 
@@ -97,124 +170,111 @@ bool DsHttpDownload::begin(const std::string &url, const std::string &destPathVa
 	if (file == nullptr)
 	{
 		outError = "The destination file could not be created";
-		cancel();
+		closeHandles();
 		return false;
 	}
 	destPath = destPathValue;
 	received = 0;
 	total = 0;
-	receiveChunk.assign(kReceiveChunkBytes, 0);
-	phase = Phase::Headers;
+	suggestedName.clear();
+
+	curl_easy_setopt(easy, CURLOPT_URL, url.c_str());
+	// Redirects (a Drive uc?export=download link hops to
+	// drive.usercontent.google.com, shorteners hop once more), bounded so a
+	// redirect loop fails instead of spinning.
+	curl_easy_setopt(easy, CURLOPT_FOLLOWLOCATION, 1L);
+	curl_easy_setopt(easy, CURLOPT_MAXREDIRS, 5L);
+	curl_easy_setopt(easy, CURLOPT_USERAGENT, "OptiCraft-Heritage/3DS");
+	// No CA bundle ship with the console build: curl is linked against
+	// mbedTLS with no system cert store, so chain verification has nothing
+	// to verify against and would fail every HTTPS host. Verification off
+	// is what the other 3DS downloaders (Anemone3DS) settled on too -- the
+	// native ssl:C stack this replaces never verified these servers either.
+	curl_easy_setopt(easy, CURLOPT_SSL_VERIFYPEER, 0L);
+	curl_easy_setopt(easy, CURLOPT_SSL_VERIFYHOST, 0L);
+	curl_easy_setopt(easy, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSecs);
+	curl_easy_setopt(easy, CURLOPT_LOW_SPEED_LIMIT, kLowSpeedLimit);
+	curl_easy_setopt(easy, CURLOPT_LOW_SPEED_TIME, kLowSpeedTimeSecs);
+	curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, &writeToFile);
+	curl_easy_setopt(easy, CURLOPT_WRITEDATA, file);
+	curl_easy_setopt(easy, CURLOPT_HEADERFUNCTION, &captureHeader);
+	curl_easy_setopt(easy, CURLOPT_HEADERDATA, &suggestedName);
+
+	if (curl_multi_add_handle(multi, easy) != CURLM_OK)
+	{
+		outError = "The request could not be sent";
+		closeHandles();
+		return false;
+	}
+	multiHasEasy = true;
+	MC_LOG_INFO("3ds", "qr: downloading %s\n", url.c_str());
 	return true;
 }
 
 DsHttpDownload::Status DsHttpDownload::poll(std::string &outError)
 {
 	outError.clear();
-	if (phase == Phase::Idle)
+	if (easy == nullptr)
 		return Status::Idle;
-	if (phase == Phase::Headers)
+
+	int running = 0;
+	const CURLMcode mc = curl_multi_perform(multi, &running);
+	if (mc != CURLM_OK && mc != CURLM_CALL_MULTI_PERFORM)
 	{
-		std::uint32_t statusCode = 0;
-		const Result rc = httpcGetResponseStatusCodeTimeout(&context, &statusCode, kSliceTimeoutNs);
-		if (rc == HTTPC_RESULTCODE_TIMEDOUT)
-			return Status::Busy; // headers not in yet; try again next frame
-		if (R_FAILED(rc))
-		{
-			fail(describeHttpFailure(rc), outError);
-			return Status::Failed;
-		}
-		if (statusCode != 200)
-		{
-			fail("The server answered " + std::to_string(statusCode), outError);
-			return Status::Failed;
-		}
-		std::uint32_t downloaded = 0;
-		std::uint32_t contentSize = 0;
-		httpcGetDownloadSizeState(&context, &downloaded, &contentSize);
-		total = contentSize;
-		if (total > kMaxDownloadBytes)
-		{
-			fail("The file is larger than what this console downloads", outError);
-			return Status::Failed;
-		}
-		phase = Phase::Receiving;
-		return Status::Busy;
-	}
-
-	// Receiving: ask for at most one chunk, or what remains when the size
-	// is known -- never over-request, so rc==0 really means "that much
-	// arrived" and the end is detected by the byte counter, not by parsing
-	// httpc's return codes.
-	std::uint32_t want = kReceiveChunkBytes;
-	if (total != 0 && total - received < want)
-		want = total - received;
-
-	const std::uint32_t before = received;
-	const Result rc = httpcReceiveDataTimeout(&context, receiveChunk.data(), want, kSliceTimeoutNs);
-
-	std::uint32_t downloaded = 0;
-	std::uint32_t contentSize = 0;
-	if (R_FAILED(httpcGetDownloadSizeState(&context, &downloaded, &contentSize)))
-		downloaded = before; // keep the previous counter on a broken query
-	if (contentSize != 0)
-		total = contentSize;
-	received = downloaded;
-
-	const std::uint32_t delta = downloaded >= before ? downloaded - before : 0;
-	if (delta != 0 && std::fwrite(receiveChunk.data(), 1, delta, file) != delta)
-	{
-		fail("The SD card rejected the data", outError);
+		fail("the transfer engine failed (" + std::to_string(static_cast<int>(mc)) + ")",
+		     outError);
 		return Status::Failed;
 	}
-	if (total != 0 && received > kMaxDownloadBytes)
+
+	// Progress between slices, for the GUI's bar.
+	curl_off_t downloaded = 0;
+	curl_off_t contentLength = -1;
+	if (curl_easy_getinfo(easy, CURLINFO_SIZE_DOWNLOAD_T, &downloaded) == CURLE_OK)
+		received = static_cast<std::uint64_t>(downloaded);
+	if (curl_easy_getinfo(easy, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &contentLength) == CURLE_OK &&
+	    contentLength > 0)
+		total = static_cast<std::uint64_t>(contentLength);
+
+	if (total > static_cast<std::uint64_t>(kMaxDownloadBytes) ||
+	    received > static_cast<std::uint64_t>(kMaxDownloadBytes))
 	{
 		fail("The file is larger than what this console downloads", outError);
 		return Status::Failed;
 	}
 
-	if (R_SUCCEEDED(rc))
+	CURLMsg *msg = nullptr;
+	int queued = 0;
+	while ((msg = curl_multi_info_read(multi, &queued)) != nullptr)
 	{
-		if (total != 0)
-		{
-			if (received >= total)
-			{
-				std::fflush(file);
-				std::fclose(file);
-				file = nullptr;
-				finishContext();
-				phase = Phase::Idle;
-				// The file is complete and stays: a later cancel() (the
-				// screen closing, the destructor) must not treat it as a
-				// partial and delete it.
-				destPath.clear();
-				MC_LOG_INFO("3ds", "qr: download complete, %u bytes\n", received);
-				return Status::Done;
-			}
-			return Status::Busy;
-		}
-		// No Content-Length (chunked transfer): a receive that succeeded
-		// without delivering anything is the stream's end. The next frame's
-		// poll lands here once; the first such read is the end because the
-		// previous read already consumed everything.
-		if (delta == 0)
-		{
-			std::fflush(file);
-			std::fclose(file);
-			file = nullptr;
-			finishContext();
-			phase = Phase::Idle;
-			destPath.clear();
-			MC_LOG_INFO("3ds", "qr: download complete (no length), %u bytes\n", received);
-			return Status::Done;
-		}
-		return Status::Busy;
-	}
-	if (rc == HTTPC_RESULTCODE_DOWNLOADPENDING)
-		return Status::Busy;
+		if (msg->msg != CURLMSG_DONE || msg->easy_handle != easy)
+			continue;
 
-	fail(describeHttpFailure(rc), outError);
-	return Status::Failed;
+		if (msg->data.result != CURLE_OK)
+		{
+			fail(describeCurlFailure(msg->data.result), outError);
+			return Status::Failed;
+		}
+		long statusCode = 0;
+		curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &statusCode);
+		if (statusCode != 200)
+		{
+			fail("The server answered " + std::to_string(statusCode), outError);
+			return Status::Failed;
+		}
+
+		std::fflush(file);
+		std::fclose(file);
+		file = nullptr;
+		closeHandles();
+		// The file is complete and stays: a later cancel() (the screen
+		// closing, the destructor) must not treat it as a partial and
+		// delete it.
+		destPath.clear();
+		MC_LOG_INFO("3ds", "qr: download complete, %llu bytes\n",
+		            static_cast<unsigned long long>(received));
+		return Status::Done;
+	}
+	return Status::Busy;
 }
 
 void DsHttpDownload::cancel()
@@ -224,33 +284,31 @@ void DsHttpDownload::cancel()
 		std::fclose(file);
 		file = nullptr;
 	}
-	finishContext();
+	closeHandles();
 	if (!destPath.empty())
-		removePartialFile();
+		std::remove(destPath.c_str());
 	destPath.clear();
-	phase = Phase::Idle;
+	received = 0;
+	total = 0;
 }
 
-void DsHttpDownload::finishContext()
+void DsHttpDownload::closeHandles()
 {
-	if (contextOpen)
+	if (multi != nullptr && easy != nullptr && multiHasEasy)
 	{
-		// httpcCloseContext hangs on an unfinished transfer; cancelling
-		// first is the documented way out of an aborted download.
-		httpcCancelConnection(&context);
-		httpcCloseContext(&context);
-		contextOpen = false;
+		curl_multi_remove_handle(multi, easy);
+		multiHasEasy = false;
 	}
-	if (httpcStarted)
+	if (easy != nullptr)
 	{
-		httpcExit();
-		httpcStarted = false;
+		curl_easy_cleanup(easy);
+		easy = nullptr;
 	}
-}
-
-void DsHttpDownload::removePartialFile()
-{
-	std::remove(destPath.c_str());
+	if (multi != nullptr)
+	{
+		curl_multi_cleanup(multi);
+		multi = nullptr;
+	}
 }
 
 void DsHttpDownload::fail(const std::string &reason, std::string &outError)
@@ -262,10 +320,10 @@ void DsHttpDownload::fail(const std::string &reason, std::string &outError)
 		std::fclose(file);
 		file = nullptr;
 	}
-	finishContext();
-	removePartialFile();
+	closeHandles();
+	if (!destPath.empty())
+		std::remove(destPath.c_str());
 	destPath.clear();
-	phase = Phase::Idle;
 }
 
 #endif // CTR_PLATFORM
