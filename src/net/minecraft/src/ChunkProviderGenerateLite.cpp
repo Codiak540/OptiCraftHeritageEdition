@@ -342,19 +342,32 @@ void ChunkProviderGenerate::generateTerrainHeightmap(int_t i, int_t j, byte_t *a
 				{
 					// Central land: elevate terrestrial ground to Y=68..74 (MCPE 0.6.0 authentic elevation)
 					// and ensure interior land stays above sea level (63).
+#if PLATFORM_PS2
+					// On PS2, normalize surface terrain to settle at Y=62..64 (within subchunk 3: Y=48..63)
+					// avoiding crossing the subchunk seam at Y=64 unless it's a hill/mountain.
+					if (biome.baseHeight >= 0.0f && rawHeight < 62.0f)
+					{
+						rawHeight = 62.0f + (rawHeight - 58.0f) * 0.25f;
+					}
+#else
 					if (biome.baseHeight >= 0.0f)
 					{
 						rawHeight += 4.5f;
 						if (rawHeight < 64.0f)
 							rawHeight = 64.0f + (rawHeight - 60.0f) * 0.25f;
 					}
+#endif
 				}
 				else if (distSq < rOuterSq)
 				{
 					// Coastal slope down to beach (Y=64..65) and shallow water
 					const float dist = std::sqrt(distSq);
 					const float t = (dist - rInner) * (1.0f / 30.0f);
+#if PLATFORM_PS2
+					const float targetLand = rawHeight;
+#else
 					const float targetLand = rawHeight + 4.5f * (1.0f - t);
+#endif
 					const float targetOcean = 54.0f + detail * 2.0f;
 					rawHeight = targetLand * (1.0f - t) + targetOcean * t;
 				}

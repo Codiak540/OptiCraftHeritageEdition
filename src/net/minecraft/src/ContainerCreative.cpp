@@ -102,7 +102,16 @@ static int_t getCreativeCategory(ItemStack *stack)
         return CREATIVE_TAB_REDSTONE_TRANSPORT;
     }
 
-    // Food, Tools, Weapons, Armor
+    // Decoration items (including dyes)
+    if ((Item::dyePowder != nullptr && id == Item::dyePowder->shiftedIndex) ||
+        (Item::painting != nullptr && id == Item::painting->shiftedIndex) ||
+        (Item::sign != nullptr && id == Item::sign->shiftedIndex) ||
+        (Item::bed != nullptr && id == Item::bed->shiftedIndex))
+    {
+        return CREATIVE_TAB_DECORATION;
+    }
+
+    // Food & Alchemy
     if ((Item::appleRed != nullptr && id == Item::appleRed->shiftedIndex) ||
         (Item::appleGold != nullptr && id == Item::appleGold->shiftedIndex) ||
         (Item::bread != nullptr && id == Item::bread->shiftedIndex) ||
@@ -119,7 +128,25 @@ static int_t getCreativeCategory(ItemStack *stack)
         (Item::chickenCooked != nullptr && id == Item::chickenCooked->shiftedIndex) ||
         (Item::rottenFlesh != nullptr && id == Item::rottenFlesh->shiftedIndex) ||
         (Item::bowlSoup != nullptr && id == Item::bowlSoup->shiftedIndex) ||
-        (Item::swordWood != nullptr && id == Item::swordWood->shiftedIndex) ||
+        (Item::spiderEye != nullptr && id == Item::spiderEye->shiftedIndex) ||
+        (Item::fermentedSpiderEye != nullptr && id == Item::fermentedSpiderEye->shiftedIndex) ||
+        (Item::potion != nullptr && id == Item::potion->shiftedIndex) ||
+        (Item::glassBottle != nullptr && id == Item::glassBottle->shiftedIndex) ||
+        (Item::brewingStand != nullptr && id == Item::brewingStand->shiftedIndex) ||
+        (Item::cauldron != nullptr && id == Item::cauldron->shiftedIndex) ||
+        (Item::blazePowder != nullptr && id == Item::blazePowder->shiftedIndex) ||
+        (Item::blazeRod != nullptr && id == Item::blazeRod->shiftedIndex) ||
+        (Item::magmaCream != nullptr && id == Item::magmaCream->shiftedIndex) ||
+        (Item::ghastTear != nullptr && id == Item::ghastTear->shiftedIndex) ||
+        (Item::speckledMelon != nullptr && id == Item::speckledMelon->shiftedIndex) ||
+        (Item::eyeOfEnder != nullptr && id == Item::eyeOfEnder->shiftedIndex) ||
+        (Item::netherStalkSeeds != nullptr && id == Item::netherStalkSeeds->shiftedIndex))
+    {
+        return CREATIVE_TAB_FOOD;
+    }
+
+    // Tools, Weapons & Armor
+    if ((Item::swordWood != nullptr && id == Item::swordWood->shiftedIndex) ||
         (Item::swordStone != nullptr && id == Item::swordStone->shiftedIndex) ||
         (Item::swordSteel != nullptr && id == Item::swordSteel->shiftedIndex) ||
         (Item::swordDiamond != nullptr && id == Item::swordDiamond->shiftedIndex) ||
@@ -173,15 +200,7 @@ static int_t getCreativeCategory(ItemStack *stack)
         (Item::legsGold != nullptr && id == Item::legsGold->shiftedIndex) ||
         (Item::bootsGold != nullptr && id == Item::bootsGold->shiftedIndex))
     {
-        return CREATIVE_TAB_FOOD_COMBAT;
-    }
-
-    // Decoration items
-    if ((Item::painting != nullptr && id == Item::painting->shiftedIndex) ||
-        (Item::sign != nullptr && id == Item::sign->shiftedIndex) ||
-        (Item::bed != nullptr && id == Item::bed->shiftedIndex))
-    {
-        return CREATIVE_TAB_DECORATION;
+        return CREATIVE_TAB_COMBAT_TOOLS;
     }
 
     return CREATIVE_TAB_MATERIALS;
@@ -258,14 +277,21 @@ ContainerCreative::ContainerCreative(EntityPlayer *player)
     for (int_t id = 256; id < Item::ITEM_LIST_SIZE; ++id)
     {
         Item *item = Item::itemsList[id];
-        if (item != nullptr && item != Item::potion && item != Item::monsterPlacer)
+        if (item != nullptr && item != Item::potion && item != Item::monsterPlacer && item != Item::dyePowder)
             addItemStack(new ItemStack(item));
     }
 
     if (Item::dyePowder != nullptr)
     {
-        for (int_t damage = 1; damage < 16; ++damage)
+        for (int_t damage = 0; damage < 16; ++damage)
             addItemStack(new ItemStack(Item::dyePowder, 1, damage));
+    }
+
+    if (Item::potion != nullptr)
+    {
+        const int_t potionMetas[] = { 0, 16, 8193, 8194, 8195, 8196, 8197, 8200, 8201, 8202, 8204, 16385, 16386, 16388, 16389, 16392 };
+        for (int_t meta : potionMetas)
+            addItemStack(new ItemStack(Item::potion, 1, meta));
     }
 
     if (Item::monsterPlacer != nullptr)

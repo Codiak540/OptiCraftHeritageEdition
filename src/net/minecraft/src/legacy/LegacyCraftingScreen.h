@@ -11,6 +11,8 @@ class ItemStack;
 class LegacyCraftingScreen : public GuiScreen
 {
 public:
+    static const int_t kCategoryCount = 5;
+
     LegacyCraftingScreen(InventoryPlayer *playerInventory, World *world, int_t x, int_t y, int_t z,
                          bool is2x2 = false, EntityPlayer *player = nullptr);
     virtual ~LegacyCraftingScreen();
@@ -37,6 +39,13 @@ private:
     void drawSlotRect(int_t sx, int_t sy);
     void drawTooltip(ItemStack *stack, int_t mouseX, int_t mouseY);
     bool playerHasIngredient(int_t itemId, int_t itemDamage) const;
+    void updateCraftingState();
+    uint32_t computeInventoryHash() const;
+
+    bool m_craftingStateDirty;
+    bool m_cachedCanCraft;
+    bool m_cachedSlotHasIngredient[9];
+    uint32_t m_cachedInventoryHash;
 
     InventoryPlayer *inventory;
     World *world;
@@ -45,9 +54,12 @@ private:
     EntityPlayer *entityPlayer;
 
     int_t selectedCategory;
-    int_t selectedGroup[4];
-    int_t selectedVariant[4][32];
-    int_t scrollOffset[4];
+    int_t visibleCategoryIndices[kCategoryCount];
+    int_t visibleCategoryCount;
+    int_t selectedVisibleTab;
+    int_t selectedGroup[kCategoryCount];
+    int_t selectedVariant[kCategoryCount][32];
+    int_t scrollOffset[kCategoryCount];
 
     int_t craftHoldTicks;
     bool ps2ActionReleaseLatch;

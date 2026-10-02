@@ -371,6 +371,11 @@ bool BiomeDecorator::advanceDecoration()
                         treeCount = PLATFORM_POPULATE_TREES_PER_CHUNK_MAX;
                     if (randomGenerator->nextInt(10) == 0) ++treeCount;
                 }
+
+                // Enforce platform tree limit unconditionally across all world types (Infinite, 256x256, 864x864)
+                if (PLATFORM_POPULATE_TREES_PER_CHUNK_MAX >= 0 && treeCount > PLATFORM_POPULATE_TREES_PER_CHUNK_MAX)
+                    treeCount = PLATFORM_POPULATE_TREES_PER_CHUNK_MAX;
+
                 nextStage(DecorationStage::Trees); break;
             case DecorationStage::Trees:
                 if (decorationIndex < treeCount)
@@ -420,10 +425,14 @@ bool BiomeDecorator::advanceDecoration()
                     int_t maxFlowers = flowersPerChunk;
                     if (currentWorld != nullptr && currentWorld->isLimitedWorld())
                     {
+#if PLATFORM_CONSOLE_LOW || PLATFORM_WII
+                        maxFlowers = 1;
+#else
                         if (biome == BiomeGenBase::extremeHills || biome == BiomeGenBase::extremeHillsEdge)
                             maxFlowers = 2; // MCPE 0.6.0 mountain wildflowers
                         else if (biome == BiomeGenBase::plains)
                             maxFlowers = 4;
+#endif
                     }
                     if (decorationIndex < maxFlowers)
                     {
@@ -449,10 +458,14 @@ bool BiomeDecorator::advanceDecoration()
                     int_t maxGrass = grassPerChunk;
                     if (currentWorld != nullptr && currentWorld->isLimitedWorld())
                     {
+#if PLATFORM_CONSOLE_LOW || PLATFORM_WII
+                        maxGrass = 2;
+#else
                         if (biome == BiomeGenBase::extremeHills || biome == BiomeGenBase::extremeHillsEdge)
                             maxGrass = 4; // MCPE 0.6.0 mountain grass
                         else if (biome == BiomeGenBase::plains)
                             maxGrass = 8;
+#endif
                     }
                     if (decorationIndex < maxGrass &&
                         (PLATFORM_POPULATE_GRASS_PER_CHUNK_MAX < 0 || decorationIndex < PLATFORM_POPULATE_GRASS_PER_CHUNK_MAX))
