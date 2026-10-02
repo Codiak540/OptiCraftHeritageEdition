@@ -7,6 +7,7 @@
 #ifdef CTR_PLATFORM
 
 #include <3ds.h>
+#include <citro3d.h>
 
 #include <cstdio>
 
@@ -59,8 +60,21 @@ void waitForDismissal()
 // unbalance. consoleInit() has no teardown of its own in this libctru
 // (there is no consoleExit() in 3ds/console.h); the console framebuffer dies
 // with gfxExit().
+//
+// Before tearing down the GPU we must ensure all queued frames have finished
+// executing. The normal frame loop paces via C3D_FrameBegin(SYNCDRAW) at the
+// start of the *next* frame, but on shutdown there is no next frame. Without
+// an explicit sync the last swapBuffers() may leave a frame in flight, and
+// gfxExit() tearing down the context while the GPU is still reading the
+// command buffer causes the intermittent "exit crash" observed on hardware.
 void shutdownServices()
 {
+	// Flush any pending GPU work by doing a dummy SYNCDRAW frame.
+	// C3D_FrameBegin(C3D_FRAME_SYNCDRAW) waits for the GX queue to drain.
+	if (C3D_FrameBegin(C3D_FRAME_SYNCDRAW))
+	{
+		C3D_FrameEnd(0);
+	}
 	gfxExit();
 	fsExit();
 }

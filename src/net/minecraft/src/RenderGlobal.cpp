@@ -1791,7 +1791,25 @@ void RenderGlobal::renderSky(float f)
 	renderColor3f(f1, f2, f3);
 	if (Config::isSkyEnabled()) // OptiFine: Sky OFF (sol/luna/estrellas siguen visibles)
 	{
-#if defined(PS2_PLATFORM) || defined(WII_PLATFORM) || defined(CTR_PLATFORM)
+#if defined(CTR_PLATFORM)
+		// The 3DS far plane (~64 blocks) is far smaller than the sky mesh
+		// radius (384 blocks). Render the sky as a full-screen quad at the
+		// far plane with depth test disabled, so it always covers the entire
+		// view frustum regardless of the far plane distance. This matches the
+		// PS2/Wii behavior where the sky renders at "infinite" distance.
+		renderDisable(RenderCapability::DepthTest);
+		renderPushMatrix();
+		{
+			// Move to far plane and scale to cover full frustum
+			const float farPlane = static_cast<float>(Config::getRenderDistanceFine()) * 2.0f;
+			renderTranslate(0.0f, 16.0f, -farPlane);
+			const float skyScale = farPlane * 1.5f; // Cover full frustum at far plane
+			renderScale(skyScale, skyScale, skyScale);
+			renderStaticMeshDraw(skyMesh);
+		}
+		renderPopMatrix();
+		renderEnable(RenderCapability::DepthTest);
+#elif defined(PS2_PLATFORM) || defined(WII_PLATFORM)
 		renderStaticMeshDraw(skyMesh);
 #else
 		renderCallDisplayList(glSkyList);
@@ -1811,6 +1829,14 @@ void RenderGlobal::renderSky(float f)
 		renderDisable(RenderCapability::Texture2D);
 		renderShadeModel(RenderShadeModel::Smooth);
 		renderPushMatrix();
+#if defined(CTR_PLATFORM)
+		// Render sunrise/sunset glow at far plane with depth test disabled
+		renderDisable(RenderCapability::DepthTest);
+		const float farPlane = static_cast<float>(Config::getRenderDistanceFine()) * 2.0f;
+		renderTranslate(0.0f, 100.0f, -farPlane);
+		const float celestialScale = farPlane * 1.2f;
+		renderScale(celestialScale, celestialScale, celestialScale);
+#endif
 		renderRotate(90.0f, 1.0f, 0.0f, 0.0f);
 
 		renderRotate(MathHelper::sin(worldObj->getCelestialAngleRadians(f)) < 0.0f ? 180.0f : 0.0f, 0.0f, 0.0f, 1.0f);
@@ -1857,32 +1883,31 @@ void RenderGlobal::renderSky(float f)
 
 		tessellator->draw();
 		renderPopMatrix();
+#if defined(CTR_PLATFORM)
+		renderEnable(RenderCapability::DepthTest);
+#endif
 		renderShadeModel(RenderShadeModel::Flat);
 	}
 
 	renderEnable(RenderCapability::Texture2D);
 	renderBlendFunc(RenderBlendFactor::SrcAlpha, RenderBlendFactor::One);
 	renderPushMatrix();
-#if defined(CTR_PLATFORM)
-	// Vanilla parks the sun, the moon and the star sphere 100 units out --
-	// inside a desktop far plane, but far beyond the 3DS's 64-block one,
-	// which clipped the whole celestial group away: no sun and no moon,
-	// ever. Pull the group inside the active far plane, the same fit the
-	// sky-plane geometry gets by being drawn small.
-	{
-		const float celestialFit = std::min(1.0f,
-			static_cast<float>(Config::getRenderDistanceFine()) * 0.7f / 100.0f);
-		renderScale(celestialFit, celestialFit, celestialFit);
-	}
-#endif
-
-	float f6 = 1.0f - worldObj->getRainStrengthInterpolated(f);
+float f6 = 1.0f - worldObj->getRainStrengthInterpolated(f);
 	float f9 = 0.0f;
 	float f11 = 0.0f;
 	float f13 = 0.0f;
 
 	renderColor4f(1.0f, 1.0f, 1.0f, f6);
+#if defined(CTR_PLATFORM)
+	// Render celestial bodies (sun/moon/stars) at far plane with depth test disabled
+	renderDisable(RenderCapability::DepthTest);
+	const float farPlane = static_cast<float>(Config::getRenderDistanceFine()) * 2.0f;
+	renderTranslate(f9, f11, -farPlane);
+	const float celestialScale = farPlane * 1.2f;
+	renderScale(celestialScale, celestialScale, celestialScale);
+#else
 	renderTranslate(f9, f11, f13);
+#endif
 	renderRotate(-90.0f, 0.0f, 1.0f, 0.0f);
 	renderRotate(worldObj->getCelestialAngle(f) * 360.0f, 1.0f, 0.0f, 0.0f);
 
@@ -1935,6 +1960,9 @@ void RenderGlobal::renderSky(float f)
 	renderDisable(RenderCapability::Blend);
 	renderEnable(RenderCapability::AlphaTest);
 	renderEnable(RenderCapability::Fog);
+#if defined(CTR_PLATFORM)
+	renderEnable(RenderCapability::DepthTest);
+#endif
 	renderPopMatrix();
 
 	renderDisable(RenderCapability::Texture2D);
@@ -1945,10 +1973,20 @@ void RenderGlobal::renderSky(float f)
 	if (Config::isSkyEnabled() && horizonOffset < 0.0)
 	{
 		renderPushMatrix();
+#if defined(CTR_PLATFORM)
+		// Render horizon band at far plane with depth test disabled
+		renderDisable(RenderCapability::DepthTest);
+		const float farPlane = static_cast<float>(Config::getRenderDistanceFine()) * 2.0f;
+		renderTranslate(0.0f, 12.0f, -farPlane);
+		const float skyScale = farPlane * 1.5f;
+		renderScale(skyScale, skyScale, skyScale);
+		renderStaticMeshDraw(skyMesh2);
+		renderEnable(RenderCapability::DepthTest);
+#elif defined(PS2_PLATFORM) || defined(WII_PLATFORM)
 		renderTranslate(0.0f, 12.0f, 0.0f);
-#if defined(PS2_PLATFORM) || defined(WII_PLATFORM) || defined(CTR_PLATFORM)
 		renderStaticMeshDraw(skyMesh2);
 #else
+		renderTranslate(0.0f, 12.0f, 0.0f);
 		renderCallDisplayList(glSkyList2);
 #endif
 		renderPopMatrix();
@@ -1989,10 +2027,20 @@ void RenderGlobal::renderSky(float f)
 	if (Config::isSkyEnabled()) // OptiFine: Sky OFF (plano del horizonte/void)
 	{
 		renderPushMatrix();
+#if defined(CTR_PLATFORM)
+		// Render horizon band at far plane with depth test disabled
+		renderDisable(RenderCapability::DepthTest);
+		const float farPlane = static_cast<float>(Config::getRenderDistanceFine()) * 2.0f;
+		renderTranslate(0.0f, -((float)(horizonOffset - 16.0)), -farPlane);
+		const float skyScale = farPlane * 1.5f;
+		renderScale(skyScale, skyScale, skyScale);
+		renderStaticMeshDraw(skyMesh2);
+		renderEnable(RenderCapability::DepthTest);
+#elif defined(PS2_PLATFORM) || defined(WII_PLATFORM)
 		renderTranslate(0.0f, -((float)(horizonOffset - 16.0)), 0.0f);
-#if defined(PS2_PLATFORM) || defined(WII_PLATFORM) || defined(CTR_PLATFORM)
 		renderStaticMeshDraw(skyMesh2);
 #else
+		renderTranslate(0.0f, -((float)(horizonOffset - 16.0)), 0.0f);
 		renderCallDisplayList(glSkyList2);
 #endif
 		renderPopMatrix();

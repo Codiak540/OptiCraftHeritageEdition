@@ -14,6 +14,7 @@
 #include "pc/CrashHandler.h"
 
 #include <3ds.h>
+#include <citro3d.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -88,6 +89,12 @@ void Crash(const std::string &message, const std::string &stackTrace)
 	// Same teardown order and exit code as CrashHandler_wii.cpp (std::exit(1)
 	// after the services are down); the service order matches
 	// main_3ds.cpp's shutdownServices().
+	// Flush any pending GPU work before tearing down the context (see
+	// shutdownServices() in main_3ds.cpp for the same rationale).
+	if (C3D_FrameBegin(C3D_FRAME_SYNCDRAW))
+	{
+		C3D_FrameEnd(0);
+	}
 	gfxExit();
 	fsExit();
 	std::exit(1);

@@ -241,11 +241,42 @@ bool convertPng(const std::string &pngPath, std::string &outError)
 		return false;
 	}
 
-	std::vector<unsigned char> flipped;
-	if (!flipPngInMemory(bytes, flipped, false))
+	// Check if power-of-2 first (stb gives dimensions without full decode)
+	int width = 0, height = 0, components = 0;
+	stbi_uc *header = stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()),
+	                                         &width, &height, &components, 0);
+	if (header == nullptr)
 	{
 		outError = "the image could not be decoded";
 		return false;
+	}
+	stbi_image_free(header);
+
+	// Power-of-2 textures don't need manual flip: the PICA shader handles
+	// non-power-of-2 via texScale.z (1 - ratioY), but for power-of-2
+	// ratioY=1.0 so texScale.z=0 (no flip). Flipping here would invert them.
+	const bool isPowerOf2 = (width > 0 && height > 0 &&
+	                         (width & (width - 1)) == 0 &&
+	                         (height & (height - 1)) == 0);
+
+	std::vector<unsigned char> flipped;
+	if (isPowerOf2)
+	{
+		// Keep as-is: power-of-2 textures render correctly without manual flip
+		flipped = std::move(bytes);
+		MC_LOG_INFO("3ds", "asset convert: power-of-2 %s kept as-is (%ux%u)\n",
+		            pngPath.c_str(), width, height);
+	}
+	else
+	{
+		// Non-power-of-2: flip rows so shader's V-flip produces correct result
+		if (!flipPngInMemory(bytes, flipped, false))
+		{
+			outError = "the image could not be decoded";
+			return false;
+		}
+		MC_LOG_INFO("3ds", "asset convert: flipped non-power-of-2 %s (%ux%u)\n",
+		            pngPath.c_str(), width, height);
 	}
 
 	file = std::fopen(pngPath.c_str(), "wb");
@@ -261,9 +292,6 @@ bool convertPng(const std::string &pngPath, std::string &outError)
 		outError = "the file could not be written";
 		return false;
 	}
-	MC_LOG_INFO("3ds", "asset convert: flipped %s (%u bytes -> %u)\n",
-	            pngPath.c_str(), static_cast<unsigned>(bytes.size()),
-	            static_cast<unsigned>(flipped.size()));
 	return true;
 }
 
