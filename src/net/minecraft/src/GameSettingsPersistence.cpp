@@ -206,6 +206,10 @@ void GameSettings::loadOptions()
 					touchMap = value == "true";
 				if (key == "touchCoords")
 					touchCoords = value == "true";
+				if (key == "autoJump")
+					autoJump = value == "true";
+				if (key == "pocketTouch")
+					pocketTouch = value == "true";
 				if (key == "controllerDeadzone" || key == "wiiStickDeadzone")
 					controllerDeadzone = Config::limit(parseFloat(value), 0.05f, 0.35f);
 				platformGameSettingsLoadOption(*this, key, value);
@@ -369,6 +373,10 @@ void GameSettings::loadOptions()
 	// to reach it immediately so the first frame of gameplay already honours
 	// it.
 	dsInputSetFaceButtonCamera(faceButtonCamera);
+	// Same reason as the camera toggle: the pad gestures read this per
+	// contact, so the loaded value has to be in the input layer before the
+	// first touch of the session.
+	dsInputSetPocketTouch(pocketTouch);
 #endif
 
 	if (particleSetting < 0 || particleSetting > 2)
@@ -421,7 +429,7 @@ void GameSettings::saveOptions()
 		"legacyLook", "legacyCrafting", "legacyCreative", "legacyGuiScaleRestore",
 		"alternativeControllerLayout", "wiiAlternativeControls", "controllerDeadzone", "wiiStickDeadzone",
 #if defined(CTR_PLATFORM)
-		"faceButtonCamera", "touchMap", "touchCoords",
+		"faceButtonCamera", "touchMap", "touchCoords", "autoJump", "pocketTouch",
 #endif
 		"ofFogFancy", "ofFogOff", "ofFogStart", "ofLoadFar", "ofPreloadedChunks", "ofOcclusionFancy",
 		"ofSmoothFps", "ofSmoothInput", "ofBrightness", "ofAoLevel", "ofClouds",
@@ -508,6 +516,8 @@ void GameSettings::saveOptions()
 	printwriter << "faceButtonCamera:" << (faceButtonCamera ? "true" : "false") << "\n";
 	printwriter << "touchMap:" << (touchMap ? "true" : "false") << "\n";
 	printwriter << "touchCoords:" << (touchCoords ? "true" : "false") << "\n";
+	printwriter << "autoJump:" << (autoJump ? "true" : "false") << "\n";
+	printwriter << "pocketTouch:" << (pocketTouch ? "true" : "false") << "\n";
 #endif
 #ifndef PS2_PLATFORM
 	platformGameSettingsWriteOptions(*this, printwriter);

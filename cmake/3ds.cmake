@@ -402,7 +402,7 @@ if(3DS_SMDHTOOL AND 3DSXTOOL AND _3DS_ICON)
     add_custom_command(TARGET OptiCraft POST_BUILD
         COMMAND "${3DS_SMDHTOOL}" --create
                 "OptiCraft Heritage"
-                "Minecraft Beta 1.7.3 clean-room C++ port"
+                "Minecraft 1.2.5 clean-room C++ port"
                 "OptiJuegos"
                 "${_3DS_ICON}"
                 "${CMAKE_SOURCE_DIR}/bin/3ds/OptiCraft.smdh"

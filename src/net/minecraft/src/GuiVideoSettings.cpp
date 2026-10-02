@@ -30,7 +30,11 @@ void GuiVideoSettings::initGui()
 	// HD textures which are out of this port's scope. AO_LEVEL (OptiFine slider)
 	// replaces the vanilla AMBIENT_OCCLUSION toggle, as in OptiFine.
 	EnumOptions *shownOptions[] = {
+#if !defined(CTR_PLATFORM)
+		// Fancy Graphics is hidden on 3DS (black screen); LegacyVideoOptions hides
+		// its checkbox the same way.
 		EnumOptions::GRAPHICS,        // k
+#endif
 		EnumOptions::RENDER_DISTANCE_FINE, // OptiFine fine-distance slider
 		EnumOptions::AO_LEVEL,        // OptiFine smooth-lighting slider
 		EnumOptions::FRAMERATE_LIMIT, // i

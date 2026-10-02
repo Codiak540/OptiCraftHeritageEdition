@@ -37,6 +37,12 @@ constexpr int_t BUTTON_FACE_CAMERA = 209;
 // coordinates strip.
 constexpr int_t BUTTON_TOUCH_MAP = 210;
 constexpr int_t BUTTON_TOUCH_COORDS = 211;
+// The auto-jump toggle (see EntityPlayerSP::queueAutoJump): the option only
+// exists on the 3DS, paired with the face-button camera in the same row.
+constexpr int_t BUTTON_AUTO_JUMP = 212;
+// The Pocket-Edition touch gestures toggle (see DsInput.cpp's pad gestures):
+// tap to place/swing, hold to break/use with the stylus. 3DS only.
+constexpr int_t BUTTON_POCKET_TOUCH = 213;
 #endif
 }
 
@@ -83,11 +89,16 @@ void GuiOptiCraftOptions::initGui()
 #if defined(CTR_PLATFORM)
 	controlList.push_back(new GuiSmallButton(BUTTON_FACE_CAMERA, width / 2 - 155, by,
 		uiText("Face-Button Camera: ") + std::string(settings->faceButtonCamera ? uiText("ON") : uiText("OFF"))));
+	controlList.push_back(new GuiSmallButton(BUTTON_AUTO_JUMP, width / 2 + 5, by,
+		uiText("Auto Jump: ") + std::string(settings->autoJump ? uiText("ON") : uiText("OFF"))));
 	by += 24;
 	controlList.push_back(new GuiSmallButton(BUTTON_TOUCH_MAP, width / 2 - 155, by,
 		uiText("Touch Map: ") + std::string(settings->touchMap ? uiText("ON") : uiText("OFF"))));
 	controlList.push_back(new GuiSmallButton(BUTTON_TOUCH_COORDS, width / 2 + 5, by,
 		uiText("Touch Coords: ") + std::string(settings->touchCoords ? uiText("ON") : uiText("OFF"))));
+	by += 24;
+	controlList.push_back(new GuiSmallButton(BUTTON_POCKET_TOUCH, width / 2 - 155, by,
+		uiText("Pocket Touch: ") + std::string(settings->pocketTouch ? uiText("ON") : uiText("OFF"))));
 	by += 24;
 #endif
 
@@ -264,6 +275,21 @@ void GuiOptiCraftOptions::actionPerformed(GuiButton *button)
 		button->displayString = uiText("Touch Coords: ") +
 			std::string(settings->touchCoords ? uiText("ON") : uiText("OFF"));
 		settings->saveOptions();
+		return;
+	}
+	if (button->id == BUTTON_AUTO_JUMP)
+	{
+		settings->autoJump = !settings->autoJump;
+		button->displayString = uiText("Auto Jump: ") +
+			std::string(settings->autoJump ? uiText("ON") : uiText("OFF"));
+		settings->saveOptions();
+		return;
+	}
+	if (button->id == BUTTON_POCKET_TOUCH)
+	{
+		settings->setPocketTouch(!settings->pocketTouch);
+		button->displayString = uiText("Pocket Touch: ") +
+			std::string(settings->pocketTouch ? uiText("ON") : uiText("OFF"));
 		return;
 	}
 #endif

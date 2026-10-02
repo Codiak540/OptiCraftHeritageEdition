@@ -38,5 +38,7 @@ private:
     LegacyOptionCheckbox *faceCameraCheckbox;
     LegacyOptionCheckbox *touchMapCheckbox;
     LegacyOptionCheckbox *touchCoordsCheckbox;
+    LegacyOptionCheckbox *autoJumpCheckbox;
+    LegacyOptionCheckbox *pocketTouchCheckbox;
 #endif
 };

@@ -43,6 +43,10 @@ void LegacyVideoOptions::initGui()
     const int_t rowCount = 7;
 #elif PLATFORM_PS2
     const int_t rowCount = 6;
+#elif defined(CTR_PLATFORM)
+    // Fancy Graphics is hidden on 3DS (it blacks the screen out), matching the
+    // common GuiVideoSettings menu — one row fewer.
+    const int_t rowCount = 7;
 #else
     const int_t rowCount = 8;
 #endif
@@ -52,14 +56,19 @@ void LegacyVideoOptions::initGui()
     const int_t h = legacyLayout.rowHeight;
     int_t row = 0;
 
+#if defined(CTR_PLATFORM)
+    // Fancy Graphics is hidden on 3DS (it blacks the screen out).
+    graphicsCheckbox = nullptr;
+#else
     graphicsCheckbox = new LegacyOptionCheckbox(BUTTON_GRAPHICS, x, legacyLayout.rowY(row++), w, h,
         uiText("Fancy Graphics"), settings->fancyGraphics);
+    controlList.push_back(graphicsCheckbox);
+#endif
     smoothLightingCheckbox = new LegacyOptionCheckbox(BUTTON_SMOOTH_LIGHTING, x, legacyLayout.rowY(row++), w, h,
         uiText("Smooth Lighting"), legacySmoothLightingChecked(settings->ofAoLevel));
     viewBobbingCheckbox = new LegacyOptionCheckbox(BUTTON_VIEW_BOBBING, x, legacyLayout.rowY(row++), w, h,
         uiText("View Bobbing"), settings->viewBobbing);
 
-    controlList.push_back(graphicsCheckbox);
     controlList.push_back(smoothLightingCheckbox);
     controlList.push_back(viewBobbingCheckbox);
 
@@ -98,7 +107,8 @@ void LegacyVideoOptions::initGui()
 
 void LegacyVideoOptions::syncCheckboxes()
 {
-    graphicsCheckbox->setChecked(settings->fancyGraphics);
+    if (graphicsCheckbox != nullptr)
+        graphicsCheckbox->setChecked(settings->fancyGraphics);
     smoothLightingCheckbox->setChecked(legacySmoothLightingChecked(settings->ofAoLevel));
     viewBobbingCheckbox->setChecked(settings->viewBobbing);
     if (cloudsCheckbox != nullptr)

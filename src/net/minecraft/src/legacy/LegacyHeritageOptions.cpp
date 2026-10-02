@@ -36,10 +36,13 @@ constexpr int_t BUTTON_LEGACY_CREATIVE = 609;
 #if defined(CTR_PLATFORM)
 // The face-button camera toggle lives in both options screens (this legacy
 // one is the screen the 3DS actually shows; GuiOptiCraftOptions is the
-// non-legacy twin). The three dual-screen HUD toggles below it too.
+// non-legacy twin). The three dual-screen HUD toggles below it and the
+// auto-jump toggle beside it too.
 constexpr int_t BUTTON_FACE_CAMERA = 610;
 constexpr int_t BUTTON_TOUCH_MAP = 611;
 constexpr int_t BUTTON_TOUCH_COORDS = 612;
+constexpr int_t BUTTON_AUTO_JUMP = 613;
+constexpr int_t BUTTON_POCKET_TOUCH = 614;
 #endif
 
 }
@@ -50,7 +53,8 @@ LegacyHeritageOptions::LegacyHeritageOptions(GuiScreen *parent, GameSettings *se
       legacyLookCheckbox(nullptr), legacyCraftingCheckbox(nullptr), legacyCreativeCheckbox(nullptr),
       alternativeControlsCheckbox(nullptr)
 #if defined(CTR_PLATFORM)
-      , faceCameraCheckbox(nullptr), touchMapCheckbox(nullptr), touchCoordsCheckbox(nullptr)
+      , faceCameraCheckbox(nullptr), touchMapCheckbox(nullptr), touchCoordsCheckbox(nullptr), autoJumpCheckbox(nullptr),
+      pocketTouchCheckbox(nullptr)
 #endif
 {
 }
@@ -75,8 +79,10 @@ void LegacyHeritageOptions::initGui()
 #endif
 #if defined(CTR_PLATFORM)
     // Face-Button Camera at the bottom (full width, one extra row). Touch
-    // Map and Touch Coords share rows with the legacy options above.
-    ++rowCount;
+    // Map and Touch Coords share rows with the legacy options above. Pocket
+    // Touch (the pad's tap/hold gestures) gets its own row at the very
+    // bottom; the panel grows past the usual hints band a little for it.
+    rowCount += 2;
 #endif
 #if PLATFORM_HAS_CONTROLLER_CALIBRATION
     ++rowCount;
@@ -150,9 +156,18 @@ void LegacyHeritageOptions::initGui()
     controlList.push_back(legacyCreativeCheckbox);
 
 #if defined(CTR_PLATFORM)
-    faceCameraCheckbox = new LegacyOptionCheckbox(BUTTON_FACE_CAMERA, x, legacyLayout.rowY(row++), w, h,
-        uiText("Face-Button Camera"), settings->faceButtonCamera);
+    // Face-Button Camera and Auto Jump share the bottom row (the label is
+    // shortened to "Face Camera" so both fit the legacy half-width column).
+    faceCameraCheckbox = new LegacyOptionCheckbox(BUTTON_FACE_CAMERA, x, legacyLayout.rowY(row), colW, h,
+        uiText("Face Camera"), settings->faceButtonCamera);
     controlList.push_back(faceCameraCheckbox);
+    autoJumpCheckbox = new LegacyOptionCheckbox(BUTTON_AUTO_JUMP, x + colW + PAIR_GAP,
+        legacyLayout.rowY(row), colW, h, uiText("Auto Jump"), settings->autoJump);
+    controlList.push_back(autoJumpCheckbox);
+    ++row;
+    pocketTouchCheckbox = new LegacyOptionCheckbox(BUTTON_POCKET_TOUCH, x, legacyLayout.rowY(row++), w, h,
+        uiText("Pocket Touch"), settings->pocketTouch);
+    controlList.push_back(pocketTouchCheckbox);
 #endif
 
 #ifdef WII_PLATFORM
@@ -325,6 +340,21 @@ void LegacyHeritageOptions::actionPerformed(GuiButton *button)
         if (touchCoordsCheckbox != nullptr)
             touchCoordsCheckbox->setChecked(settings->touchCoords);
         settings->saveOptions();
+        return;
+    }
+    if (button->id == BUTTON_AUTO_JUMP)
+    {
+        settings->autoJump = !settings->autoJump;
+        if (autoJumpCheckbox != nullptr)
+            autoJumpCheckbox->setChecked(settings->autoJump);
+        settings->saveOptions();
+        return;
+    }
+    if (button->id == BUTTON_POCKET_TOUCH)
+    {
+        settings->setPocketTouch(!settings->pocketTouch);
+        if (pocketTouchCheckbox != nullptr)
+            pocketTouchCheckbox->setChecked(settings->pocketTouch);
         return;
     }
 #endif

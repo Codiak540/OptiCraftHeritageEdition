@@ -35,6 +35,9 @@ public:
 	void saveOptions();
 	void setLegacyUiEnabled(bool enabled);
 	void setFaceButtonCamera(bool enabled);
+	// Pushes the 3DS "Pocket Touch" toggle to the input layer (see
+	// dsInputSetPocketTouch) and persists it, mirroring setFaceButtonCamera.
+	void setPocketTouch(bool enabled);
 	void setAllAnimations(bool flag);
 	// Wii only: pushes the per-family (GameCube/Wiimote/Classic) raw button
 	// assignments so WiiGameCubePad/WiiRemote read the configured button
@@ -130,6 +133,14 @@ public:
 	// faceButtonCamera; meaningless on the other platforms.
 	bool touchMap;
 	bool touchCoords;
+	// 3DS only: the Pocket-Edition touch gestures on the camera pad (tap to
+	// place/swing, hold to break/use). On by default — that is how the pad
+	// shipped. Stored like faceButtonCamera; meaningless on other platforms.
+	bool pocketTouch;
+	// 3DS only: auto-jump one-block ledges while walking forward (see
+	// EntityPlayerSP::queueAutoJump). Off by default. Stored like
+	// faceButtonCamera; meaningless on the other platforms.
+	bool autoJump;
 	// Platform-neutral controller settings consumed through PlatformUserSettings.
 	float controllerDeadzone;
 	// Wii only: raw button assigned to Jump/Sneak/Drop/Inventory/Attack/Use/

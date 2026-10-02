@@ -54,6 +54,14 @@ public:
 private:
 	bool isBlockTranslucent(int_t i, int_t j, int_t k);
 	bool pushOutOfBlocks(double d, double d1, double d2) override;
+#if defined(CTR_PLATFORM)
+	// 3DS auto-jump (the "Auto Jump" toggle in both OptiCraft Options screens):
+	// detection runs right after this tick's move, consumption on the next
+	// tick's input pass so the jump itself still goes through EntityLiving's
+	// own isJumping/jumpTicks path.
+	void queueAutoJump(double prevX, double prevZ, double moveX, double moveZ);
+	int_t autoJumpTime;
+#endif
 
 public:
 	MovementInput *movementInput;

@@ -36,6 +36,46 @@
 #include "NBTTagCompound.h"
 #include "Potion.h"
 #include "PotionEffect.h"
+#include "Block.h"
+
+#if defined(CTR_PLATFORM)
+namespace
+{
+// Auto-jump probes (see EntityPlayerSP::queueAutoJump). The step block must be
+// genuinely solid — leaves, plants, circuits and liquids report a non-solid
+// material — and the two blocks above it must be clear.
+bool autoJumpIsSolidTile(World *world, int_t x, int_t y, int_t z)
+{
+	if (world == nullptr)
+		return false;
+	const int_t blockId = world->getBlockId(x, y, z);
+	if (blockId <= 0 || blockId >= Block::BLOCK_REGISTRY_SIZE)
+		return false;
+	const Block *block = Block::blocksList[blockId];
+	return block != nullptr && block->blockMaterial != nullptr && block->blockMaterial->isSolid();
+}
+
+// Whether it is worth auto-jumping onto this block. Slabs (stairSingle) and
+// stairs are walked up by the 0.5 stepHeight already, and fences, panes, signs
+// and trapdoors have no usable top surface to land on.
+bool autoJumpIsJumpable(World *world, int_t x, int_t y, int_t z)
+{
+	if (world == nullptr)
+		return false;
+	const int_t blockId = world->getBlockId(x, y, z);
+	if (blockId <= 0 || blockId >= Block::BLOCK_REGISTRY_SIZE)
+		return false;
+	Block *block = Block::blocksList[blockId];
+	if (block == nullptr)
+		return false;
+	if (block == Block::fence || block == Block::fenceIron || block == Block::fenceGate ||
+		block == Block::stairSingle || block == Block::trapdoor ||
+		block == Block::signPost || block == Block::signWall)
+		return false;
+	return block->getRenderType() != 10; // 10 == SHAPE_STAIRS
+}
+} // namespace
+#endif
 
 EntityPlayerSP::EntityPlayerSP(Minecraft *minecraft, World *world, Session *session, int_t i)
 	: EntityPlayer(world)
@@ -50,6 +90,9 @@ EntityPlayerSP::EntityPlayerSP(Minecraft *minecraft, World *world, Session *sess
 {
 	ensureEntityInit();
 	dimension = i;
+#if defined(CTR_PLATFORM)
+	autoJumpTime = 0;
+#endif
 	if (session != nullptr)
 	{
 		if (!session->username.empty())
@@ -72,7 +115,14 @@ EntityPlayerSP::~EntityPlayerSP()
 
 void EntityPlayerSP::moveEntity(double d, double d1, double d2)
 {
+#if defined(CTR_PLATFORM)
+	const double prevX = posX;
+	const double prevZ = posZ;
+#endif
 	EntityPlayer::moveEntity(d, d1, d2);
+#if defined(CTR_PLATFORM)
+	queueAutoJump(prevX, prevZ, d, d2);
+#endif
 }
 
 void EntityPlayerSP::updatePlayerActionState()
@@ -88,7 +138,72 @@ void EntityPlayerSP::updatePlayerActionState()
 		renderArmPitch += (rotationPitch - renderArmPitch) * 0.5f;
 		renderArmYaw += (rotationYaw - renderArmYaw) * 0.5f;
 	}
+#if defined(CTR_PLATFORM)
+	// Consume the jump armed by queueAutoJump on the previous tick: the real hop
+	// still goes through EntityLiving's isJumping/jumpTicks path, so all this
+	// does is hold isJumping for as long as the armed window lasts.
+	if (autoJumpTime > 0)
+	{
+		const bool stillArmed = mc != nullptr && mc->gameSettings != nullptr && mc->gameSettings->autoJump &&
+			onGround && !capabilities.isFlying && !isSneaking() && moveForward > 0.0f;
+		if (stillArmed)
+		{
+			isJumping = true;
+			--autoJumpTime;
+		}
+		else
+		{
+			autoJumpTime = 0;
+		}
+	}
+#endif
 }
+
+#if defined(CTR_PLATFORM)
+// Arm an auto-jump when this tick's move crossed the middle of a tile and the
+// tile ahead is a one-block step with two clear blocks above it. Detection runs
+// right after the move (so the crossing is known) and consumption on the next
+// tick's input pass; the small window absorbs one missed condition (a fresh
+// jump, a frame of sneak) without swallowing the hop.
+void EntityPlayerSP::queueAutoJump(double prevX, double prevZ, double moveX, double moveZ)
+{
+	if (autoJumpTime > 0)
+		return;
+	if (mc == nullptr || mc->gameSettings == nullptr || !mc->gameSettings->autoJump)
+		return;
+	if (!onGround || capabilities.isFlying || isSneaking() || moveForward <= 0.0f)
+		return;
+	// Only when the move crossed the middle of a tile (a half-block boundary).
+	if (MathHelper::floor_double(prevX * 2.0) == MathHelper::floor_double(posX * 2.0) &&
+		MathHelper::floor_double(prevZ * 2.0) == MathHelper::floor_double(posZ * 2.0))
+		return;
+
+	const double dist = MathHelper::sqrt_double(moveX * moveX + moveZ * moveZ);
+	if (dist <= 0.0)
+		return;
+	// One block ahead along the movement direction, as in the reference.
+	const int_t blockX = MathHelper::floor_double(posX + moveX / dist);
+	const int_t blockZ = MathHelper::floor_double(posZ + moveZ / dist);
+	// posY is EYE height, not the feet: EntityPlayer sets yOffset = 1.62 and
+	// Entity::setPosition puts the box's minY at posY - yOffset. That is the
+	// reference's Entity::y convention verbatim, so its (int)(y-1)/(int)y/
+	// (int)(y+1) map straight across — (int)(y-1) is the step block, the other
+	// two are the headroom above it. Reading floor(posY) as the step instead
+	// lands one block too high, which made a 1-block step read as air and only
+	// fire on 2-block walls.
+	const int_t stepY = MathHelper::floor_double(posY - 1.0);
+	if (!autoJumpIsSolidTile(worldObj, blockX, stepY, blockZ))
+		return;
+	// Two blocks of headroom above the step.
+	if (autoJumpIsSolidTile(worldObj, blockX, stepY + 1, blockZ) ||
+		autoJumpIsSolidTile(worldObj, blockX, stepY + 2, blockZ))
+		return;
+	if (!autoJumpIsJumpable(worldObj, blockX, stepY, blockZ))
+		return;
+
+	autoJumpTime = 2;
+}
+#endif
 
 void EntityPlayerSP::onLivingUpdate()
 {

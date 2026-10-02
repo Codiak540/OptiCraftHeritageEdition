@@ -197,6 +197,9 @@ int g_padStartX = 0;
 int g_padStartY = 0;
 bool g_padTapArmed = false;
 bool g_padBreakActive = false;
+// The "Pocket Touch" toggle: while false the PE gestures above never arm, so
+// the pad degrades to the plain camera drag it was before they existed.
+bool g_pocketTouch = true;
 int g_prevTouchX = 0;
 int g_prevTouchY = 0;
 
@@ -813,6 +816,19 @@ void dsInputSetFaceButtonCamera(bool enabled)
 	g_faceButtonCamera = enabled;
 }
 
+void dsInputSetPocketTouch(bool enabled)
+{
+	g_pocketTouch = enabled;
+	// Turning it off mid-gesture must not leave a tap armed or a break running
+	// on the old setting: the pad would keep placing/holding until that finger
+	// lifted. Contacts still in progress degrade to a plain camera drag.
+	if (!g_pocketTouch)
+	{
+		g_padTapArmed = false;
+		g_padBreakActive = false;
+	}
+}
+
 void dsInputPoll(bool inMenu)
 {
 	// The scan lives here so the poll is self-contained: HID state is latched
@@ -919,8 +935,9 @@ void dsInputPoll(bool inMenu)
 			// a drag before that threshold is the camera alone, and a
 			// short stationary contact stays armed as a tap whose verdict
 			// the lift decides (the game side turns it into place or
-			// swing from the crosshair target).
-			if (!g_inMenu && !typing)
+			// swing from the crosshair target). Skipped entirely when the
+			// "Pocket Touch" toggle is off: the pad stays a camera drag.
+			if (!g_inMenu && !typing && g_pocketTouch)
 			{
 				if (!g_prevTouchDown || g_prevTextExclusive)
 				{
@@ -988,8 +1005,9 @@ void dsInputPoll(bool inMenu)
 		releaseTouchHudWidget();
 		// The pad gesture's verdict on lift: a short stationary contact
 		// taps (the game side decides place vs swing); anything longer or
-		// dragged already acted, or was the camera all along.
-		if (!g_inMenu && !typing && g_padTapArmed &&
+		// dragged already acted, or was the camera all along. An off
+		// "Pocket Touch" never arms g_padTapArmed, so this stays quiet.
+		if (!g_inMenu && !typing && g_pocketTouch && g_padTapArmed &&
 		    osGetTime() - g_padContactStartMs < 180)
 			g_touchPadTapRequested = true;
 		g_padTapArmed = false;

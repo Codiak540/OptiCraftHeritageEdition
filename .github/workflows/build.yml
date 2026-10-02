@@ -198,7 +198,16 @@ jobs:
           # (src/3ds/qr) links libcurl because the system ssl:C tops out at
           # TLS 1.1, which modern hosts (Google Drive, Cloudflare CDNs) no
           # longer accept. cmake/3ds.cmake FATAL_ERRORs without these.
-          pacman -Sy --noconfirm --needed 3ds-curl
+          # Debian-based devkitPro images expose their pacman fork as
+          # dkp-pacman -- plain `pacman` is the Arch name only and is NOT on
+          # PATH here (2026-10-02: `pacman: not found`). --needed keeps the
+          # step a no-op if a future image bakes the portlibs in.
+          DKP_PACMAN="$(command -v dkp-pacman || command -v pacman || true)"
+          if [ -z "$DKP_PACMAN" ]; then
+            echo "::error::the devkitpro/devkitarm image ships neither dkp-pacman nor pacman"
+            exit 1
+          fi
+          "$DKP_PACMAN" -Sy --noconfirm --needed 3ds-curl
 
       - name: Checkout
         uses: actions/checkout@v7
@@ -255,11 +264,12 @@ jobs:
         run: |
           set -eux
           # makerom is pinned to v0.18.3, NOT the latest: this job runs inside
-          # the devkitpro/devkitarm container (Ubuntu 22.04 base, glibc 2.35)
-          # and the v0.19.0 ubuntu_x86_64 binary is linked against GLIBC_2.38,
-          # which that container does not provide -- the ubuntu-26.04 runner
-          # image is irrelevant, the steps execute against the container's
-          # libc (v0.18.3 needs at most GLIBC_2.14). The tool version is NOT
+          # the devkitpro/devkitarm container (Debian 12 bookworm base, glibc
+          # 2.36) and the v0.19.0 ubuntu_x86_64 binary is linked against
+          # GLIBC_2.38, which that container does not provide -- the
+          # ubuntu-26.04 runner image is irrelevant, the steps execute
+          # against the container's libc (v0.18.3 needs at most GLIBC_2.14).
+          # The tool version is NOT
           # the variable that decides whether the .cia launches on real
           # hardware -- both v0.18.3 and v0.19.0 were verified on an Old 2DS
           # (2026-09-28) under this repo's packaging posture (fully

@@ -177,9 +177,13 @@ void BlockPistonBase::playBlock(World *world, int_t i, int_t j, int_t k, int_t l
 				{
 					if (tileentitypiston1->getOrientation() == j1 && tileentitypiston1->isExtending())
 					{
-						tileentitypiston1->clearPistonTileEntity();
+						// clearPistonTileEntity() can free tileentitypiston1
+						// (World::removeBlockTileEntity owns the delete on this
+						// path), so take the stored block before retiring the
+						// moving tile entity, never after.
 						j2 = tileentitypiston1->getStoredBlockID();
 						k2 = tileentitypiston1->getBlockMetadata();
+						tileentitypiston1->clearPistonTileEntity();
 						flag = true;
 					}
 				}

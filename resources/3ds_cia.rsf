@@ -27,7 +27,7 @@
 # cmake/3ds.cmake builds, and is deliberately NOT repeated here:
 #
 #     smdhtool --create "OptiCraft Heritage"
-#                      "Minecraft Beta 1.7.3 clean-room C++ port"
+#                      "Minecraft 1.2.5 clean-room C++ port"
 #                      "OptiJuegos" <icon> bin/3ds/OptiCraft.smdh
 #
 # so re-supplying a title would only risk the two disagreeing. What is unique

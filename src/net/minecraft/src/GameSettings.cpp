@@ -154,6 +154,11 @@ void GameSettings::setDefaults()
     faceButtonCamera = true;
     touchMap = true;
     touchCoords = true;
+    // The PE pad gestures ship enabled (owner call): the tap/hold on the
+    // camera pad is how touch-only play places and breaks blocks.
+    pocketTouch = true;
+    // 3DS only; off by default (unlike MCPE's auto-jump, which defaults on).
+    autoJump = false;
     controllerDeadzone = 0.20f;
     wiiDeflicker = true;
     widescreen = ConsoleAspectRatio::getDefaultWidescreen();
@@ -519,6 +524,19 @@ void GameSettings::setFaceButtonCamera(bool enabled)
     faceButtonCamera = enabled;
 #if defined(CTR_PLATFORM)
     dsInputSetFaceButtonCamera(faceButtonCamera);
+#endif
+    saveOptions();
+}
+
+void GameSettings::setPocketTouch(bool enabled)
+{
+    if (enabled == pocketTouch)
+        return;
+    pocketTouch = enabled;
+#if defined(CTR_PLATFORM)
+    // The input layer reads this per contact, so it must be pushed the moment
+    // the toggle flips rather than only on the next load.
+    dsInputSetPocketTouch(pocketTouch);
 #endif
     saveOptions();
 }
