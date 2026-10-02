@@ -144,8 +144,8 @@ void GameSettings::setDefaults()
     selectedSkinP2 = "TennisSteve";
     legacyUI = legacyUiDefaultEnabled();
     legacyLook = legacyLookDefaultEnabled();
-    legacyCrafting = true;
-    legacyCreative = true;
+    legacyCrafting = false;
+    legacyCreative = false;
     alternativeControllerLayout = false;
     // On by default (owner call, 2026-09-30): the face-button camera is the
     // 3DS's second camera control and the dual-screen HUD assumes it. An
