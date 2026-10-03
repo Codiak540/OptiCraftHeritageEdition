@@ -61,6 +61,10 @@ int panoramaSampleGrid()
     return 8;
 }
 
+void shutdownFlush()
+{
+    // The desktop GL driver serializes deletes against the queue itself.
+}
 
 void reportCrash(const std::string& description)
 {

@@ -35,8 +35,9 @@ public:
 	void saveOptions();
 	void setLegacyUiEnabled(bool enabled);
 	void setFaceButtonCamera(bool enabled);
-	// Pushes the 3DS "Pocket Touch" toggle to the input layer (see
-	// dsInputSetPocketTouch) and persists it, mirroring setFaceButtonCamera.
+	// Pushes the 3DS "Touch Click" toggle (stored settings key pocketTouch)
+	// to the input layer (see dsInputSetPocketTouch) and persists it,
+	// mirroring setFaceButtonCamera.
 	void setPocketTouch(bool enabled);
 	void setAllAnimations(bool flag);
 	// Wii only: pushes the per-family (GameCube/Wiimote/Classic) raw button

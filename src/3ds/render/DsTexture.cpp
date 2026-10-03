@@ -109,6 +109,24 @@ Record* find(int id)
 	return it == s_records.end() ? nullptr : &it->second;
 }
 
+// The ARM11 data caches are not coherent with the PICA200's texture
+// fetches: a texel written by the CPU can sit dirty in L1 (Old 3DS) or the
+// L2 bypass (New 3DS) while the GPU samples the DRAM copy straight through
+// the physical address baked into the frame's command list. The sampler
+// then reads whatever previously occupied the freshly recycled linear-heap
+// block -- audio PCM, old mesh floats, a previous texture -- which renders
+// as garbage pixels of random colours: the intermittent entity/skin
+// corruption of the 2026-10 multiplayer report, fed by the constant
+// linear-heap churn of server chunk streaming and the mid-session uploads
+// of first-seen entity/armor/item textures. Flush the data cache after
+// every CPU write into texel storage: one GSP syscall, negligible against
+// the upload it follows.
+void flushAfterWrite(Record& record)
+{
+	if (record.valid)
+		C3D_TexFlush(&record.tex);
+}
+
 void destroyFallback()
 {
 	if (s_fallbackReady)
@@ -128,6 +146,10 @@ void ensureFallback()
 	for (std::uint32_t y = 0; y < 8; ++y)
 		for (std::uint32_t x = 0; x < 8; ++x)
 			dst[mortonInTile(x, y)] = 0xFFFFFFFFu;
+	// Same coherency rule as upload(): the ARM11 data cache is not shared
+	// with the PICA200, so a CPU-written texel is only visible to the
+	// sampler after C3D_TexFlush.
+	C3D_TexFlush(&s_fallback);
 	C3D_TexSetFilter(&s_fallback, GPU_NEAREST, GPU_NEAREST);
 	C3D_TexSetWrap(&s_fallback, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
 	s_fallbackReady = true;
@@ -295,6 +317,9 @@ void upload(int id, int x, int y, int width, int height, const void* rgba)
 				dst[word] = __builtin_bswap32(srcRow[col]);
 			}
 		}
+		// CPU-written texels are not visible to the PICA200 until the data
+		// cache is flushed (see flushAfterWrite).
+		flushAfterWrite(*record);
 		return;
 	}
 
@@ -360,6 +385,7 @@ void upload(int id, int x, int y, int width, int height, const void* rgba)
 			dst[word] = __builtin_bswap32((a << 24) | (b << 16) | (g << 8) | r);
 		}
 	}
+	flushAfterWrite(*record);
 }
 
 void bind(int id, float (&uvScale)[2])

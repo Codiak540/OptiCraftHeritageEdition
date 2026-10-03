@@ -44,9 +44,13 @@ void LegacyVideoOptions::initGui()
 #elif PLATFORM_PS2
     const int_t rowCount = 6;
 #elif defined(CTR_PLATFORM)
-    // Fancy Graphics is hidden on 3DS (it blacks the screen out), matching the
-    // common GuiVideoSettings menu — one row fewer.
-    const int_t rowCount = 7;
+    // Fancy Graphics is hidden on 3DS (it blacks the screen out), matching
+    // the common GuiVideoSettings menu; the Fog checkbox and the Brightness
+    // slider are hidden with it -- the console has no PICA fog unit (the
+    // RenderAPI/RenderTerrainAPI fog calls are stubs in this backend), and
+    // the brightness table the slider writes never re-enters the mesh-baked
+    // lighting. Three rows fewer than the desktop layout.
+    const int_t rowCount = 5;
 #else
     const int_t rowCount = 8;
 #endif
@@ -80,11 +84,12 @@ void LegacyVideoOptions::initGui()
     cloudsCheckbox = nullptr;
 #endif
 
-#if !(PLATFORM_PS2 || PLATFORM_WII)
+#if !(PLATFORM_PS2 || PLATFORM_WII || defined(CTR_PLATFORM))
     fogCheckbox = new LegacyOptionCheckbox(BUTTON_FOG, x, legacyLayout.rowY(row++), w, h,
         uiText("Fog"), legacyFogChecked(settings->ofFogOff));
     controlList.push_back(fogCheckbox);
 #else
+    // Dead on the 3DS as well: no PICA fog unit behind the toggle.
     fogCheckbox = nullptr;
 #endif
 
@@ -100,8 +105,10 @@ void LegacyVideoOptions::initGui()
 
     controlList.push_back(new LegacyOptionSlider(BUTTON_RENDER_DISTANCE, x, legacyLayout.rowY(row++), w, h,
         settings, EnumOptions::RENDER_DISTANCE_FINE));
+#if !defined(CTR_PLATFORM)
     controlList.push_back(new LegacyOptionSlider(BUTTON_BRIGHTNESS, x, legacyLayout.rowY(row++), w, h,
         settings, EnumOptions::BRIGHTNESS));
+#endif
     controlList.push_back(new LegacyGuiButton(BUTTON_DONE, x, legacyLayout.rowY(row), w, h, uiText("Done")));
 }
 

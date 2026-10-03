@@ -49,6 +49,36 @@ bool g_created = false;
 // processMessages() is void (Display.h), so the quit request cannot be
 // returned -- it is recorded here and read back through isCloseRequested().
 bool g_closeRequested = false;
+
+// APT applet-lifecycle hook: while an applet owns the foreground the game
+// thread is parked inside aptMainLoop(), but the app's other threads keep
+// running on core 1 at the share main_3ds.cpp's APT_SetAppCpuTimeLimit(80)
+// granted -- and on Old 3DS the HOME menu applet runs on that same core
+// with only the remainder, which is why the menu felt so laggy while a
+// chunk-generation job was in flight. Suspending the share hands the whole
+// core to the applet for the duration of the menu; restoring on the way
+// back puts the workers beside the game thread again. swkbd is exempt:
+// its dialog keeps the network session alive through exactly the threads
+// the share feeds (see DsSwkbd.h), so throttling it mid-chat would kick
+// the player off servers.
+aptHookCookie g_aptHookCookie;
+u32 g_suspendRestoreLimit = 0;
+
+void aptStateHook(APT_HookType hook, void *)
+{
+	if (g_suspendRestoreLimit == 0)
+		return; // no core-1 share was granted at boot; nothing to move
+	if (hook == APTHOOK_ONSUSPEND)
+	{
+		if (dsSwkbdActive())
+			return;
+		APT_SetAppCpuTimeLimit(0);
+	}
+	else if (hook == APTHOOK_ONRESTORE)
+	{
+		APT_SetAppCpuTimeLimit(g_suspendRestoreLimit);
+	}
+}
 } // namespace
 
 namespace lwjgl
@@ -74,6 +104,15 @@ void create()
 	// with the reason in the log rather than hanging.
 	ds::init();
 	dsInputInit(kScreenWidth, kScreenHeight);
+
+	// Give the applet core back to the system while an applet (the HOME
+	// menu) owns the foreground, and take the boot-granted share back on
+	// resume -- see aptStateHook() above. The boot value is read, not
+	// assumed, so a refused APT_SetAppCpuTimeLimit keeps this a no-op.
+	u32 bootCpuLimit = 0;
+	if (R_SUCCEEDED(APT_GetAppCpuTimeLimit(&bootCpuLimit)))
+		g_suspendRestoreLimit = bootCpuLimit;
+	aptHook(&g_aptHookCookie, aptStateHook, nullptr);
 
 	g_created = true;
 }

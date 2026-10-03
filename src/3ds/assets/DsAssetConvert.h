@@ -1,6 +1,6 @@
 #pragma once
 
-// DsAssetConvert.h -- converts Java-Edition asset files to the disk
+// DsAssetConvert.h -- converts a Java-Edition texture pack zip to the disk
 // orientation this console renders, at install time.
 //
 // The 3DS backend samples texture rows in the file's own order (see
@@ -23,6 +23,11 @@
 //     flipped grasscolor.png makes biome colour lookups sample the wrong
 //     row.
 //
+// Skins do NOT come through here: SkinManager::installCustomSkin writes
+// its skins-dir files in this convention directly (both the main file and
+// the derived retro/preview PNGs), so a downloaded skin needs no separate
+// conversion pass.
+//
 // The exclusion list is kept in lockstep with the scripts: any name added
 // to CPU_LUT_SKIP in scripts/pak_flip_mc3ds.py must reach this table too.
 
@@ -30,11 +35,6 @@
 
 namespace DsAssetConvert
 {
-
-// Flip a single Java-orientation PNG in place (a skin). Rewrites the file
-// as an 8-bit RGBA PNG; false + a player-readable reason when it cannot be
-// decoded or written.
-bool convertPng(const std::string &pngPath, std::string &outError);
 
 // Convert a Java-orientation texture pack zip in place: every display PNG
 // Y-flipped, the CPU colour tables and every non-PNG entry copied verbatim.

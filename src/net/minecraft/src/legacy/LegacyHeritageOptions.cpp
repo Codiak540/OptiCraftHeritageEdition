@@ -79,7 +79,7 @@ void LegacyHeritageOptions::initGui()
     ++rowCount;
 #endif
 #if defined(CTR_PLATFORM)
-    // Face Camera/Auto Jump share one row, Pocket Touch/Toggle Shift share
+    // Face Camera/Auto Jump share one row, Touch Click/Toggle Shift share
     // the next. Touch Map and Touch Coords share rows with the legacy
     // options above.
     rowCount += 2;
@@ -166,9 +166,9 @@ void LegacyHeritageOptions::initGui()
     controlList.push_back(autoJumpCheckbox);
     ++row;
     pocketTouchCheckbox = new LegacyOptionCheckbox(BUTTON_POCKET_TOUCH, x, legacyLayout.rowY(row), colW, h,
-        uiText("Pocket Touch"), settings->pocketTouch);
+        uiText("Touch Click"), settings->pocketTouch);
     controlList.push_back(pocketTouchCheckbox);
-    // Toggle Shift sits under Auto Jump on the same row as Pocket Touch,
+    // Toggle Shift sits under Auto Jump on the same row as Touch Click,
     // so the 3DS panel does not grow an extra row for it.
     toggleShiftCheckbox = new LegacyOptionCheckbox(BUTTON_TOGGLE_SHIFT, x + colW + PAIR_GAP, legacyLayout.rowY(row++), colW, h,
         uiText("Toggle Shift"), settings->toggleShift);

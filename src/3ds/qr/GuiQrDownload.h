@@ -6,12 +6,13 @@
 // of a skin PNG, a texture pack zip or a .ochpack mod, or a bare
 // "host[:port]" server address -> the player confirms -> a URL downloads
 // over libcurl with a progress bar (B cancels; TLS 1.2+ and redirects, see
-// DsHttpDownload.h) -> the file is converted to this console's asset
-// orientation (a Java-orientation skin or pack would render vertically
-// mirrored here -- see src/3ds/assets/DsAssetConvert.h, the runtime
-// counterpart of scripts/texturepack_flip_3ds.py) -> it is installed
-// through the same entry points the device/USB loaders use; a server
-// address instead lands straight in the multiplayer list (servers.dat):
+// DsHttpDownload.h) -> it is written in this console's asset orientation
+// (a Java-orientation skin or pack would render vertically mirrored here:
+// packs are converted by DsAssetConvert, the runtime counterpart of
+// scripts/texturepack_flip_3ds.py, and skins by SkinManager itself at
+// write time) -> it is installed through the same entry points the
+// device/USB loaders use; a server address instead lands straight in the
+// multiplayer list (servers.dat):
 //
 //   skin            SkinManager::installCustomSkin   (also selects it)
 //   texture pack    copied into .minecraft/texturepacks, list refreshed

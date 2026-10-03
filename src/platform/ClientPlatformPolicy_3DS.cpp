@@ -3,6 +3,8 @@
 #include "net/minecraft/src/GameResources.h"
 #include "pc/CrashHandler.h"
 
+#include <citro3d.h>
+
 namespace ClientPlatformPolicy
 {
 int initialWidth()
@@ -44,6 +46,24 @@ void preloadStartupTextures(RenderEngine*)
 
 void releaseWorldEntryAssets(RenderEngine*)
 {
+}
+
+void shutdownFlush()
+{
+    // The last frame is submitted asynchronously (renderSubmitFrame ->
+    // C3D_FrameEnd(0)) and only drains at the next frame's
+    // C3D_FrameBegin(C3D_FRAME_SYNCDRAW); on shutdown there is no next frame.
+    // SYNCDRAW performs a C3D_FrameSync before anything else, so this dummy
+    // begin/end pair waits for the queue to finish -- after it, no GPU work
+    // references game textures, and the teardown below can free them safely.
+    // Same rationale (and same fix shape) as the CrashHandler_3ds copy; see
+    // also shutdownServices() in main_3ds.cpp, which never runs on this path
+    // because PLATFORM_EXIT_PROCESS_ON_SHUTDOWN has shutdownMinecraftApplet()
+    // call exit(0) instead of returning to main().
+    if (C3D_FrameBegin(C3D_FRAME_SYNCDRAW))
+    {
+        C3D_FrameEnd(0);
+    }
 }
 
 int panoramaSampleGrid()

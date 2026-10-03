@@ -79,6 +79,10 @@ int panoramaSampleGrid()
     return 2;
 }
 
+void shutdownFlush()
+{
+    // Nothing to drain on the PS2: the teardown returns through main_ps2.cpp.
+}
 
 void reportCrash(const std::string& description)
 {

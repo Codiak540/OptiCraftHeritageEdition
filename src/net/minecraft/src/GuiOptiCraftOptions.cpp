@@ -41,10 +41,12 @@ constexpr int_t BUTTON_TOUCH_COORDS = 211;
 // exists on the 3DS, paired with the face-button camera in the same row.
 constexpr int_t BUTTON_AUTO_JUMP = 212;
 // The Pocket-Edition touch gestures toggle (see DsInput.cpp's pad gestures):
-// tap to place/swing, hold to break/use with the stylus. 3DS only.
+// tap to place/swing, hold to break/use with the stylus. 3DS only. Shown as
+// "Touch Click"; the stored settings key stays pocketTouch so existing
+// options.txt files keep their value.
 constexpr int_t BUTTON_POCKET_TOUCH = 213;
 // The toggle-sneak option (see GameSettings::toggleShift): the option only
-// exists on the 3DS, paired with Pocket Touch in the same row.
+// exists on the 3DS, paired with Touch Click in the same row.
 constexpr int_t BUTTON_TOGGLE_SHIFT = 214;
 #endif
 }
@@ -104,7 +106,7 @@ void GuiOptiCraftOptions::initGui()
 	controlList.push_back(new GuiSmallButton(BUTTON_TOUCH_COORDS, width / 2 - 155, by,
 		uiText("Touch Coords: ") + std::string(settings->touchCoords ? uiText("ON") : uiText("OFF"))));
 	controlList.push_back(new GuiSmallButton(BUTTON_POCKET_TOUCH, width / 2 + 5, by,
-		uiText("Pocket Touch: ") + std::string(settings->pocketTouch ? uiText("ON") : uiText("OFF"))));
+		uiText("Touch Click: ") + std::string(settings->pocketTouch ? uiText("ON") : uiText("OFF"))));
 	by += 24;
 #endif
 
@@ -294,7 +296,7 @@ void GuiOptiCraftOptions::actionPerformed(GuiButton *button)
 	if (button->id == BUTTON_POCKET_TOUCH)
 	{
 		settings->setPocketTouch(!settings->pocketTouch);
-		button->displayString = uiText("Pocket Touch: ") +
+		button->displayString = uiText("Touch Click: ") +
 			std::string(settings->pocketTouch ? uiText("ON") : uiText("OFF"));
 		return;
 	}

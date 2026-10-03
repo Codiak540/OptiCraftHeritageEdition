@@ -70,7 +70,7 @@ void dsInputPoll(bool inMenu);
 // GameSettings whenever the option is (re)loaded or changed.
 void dsInputSetFaceButtonCamera(bool enabled);
 
-// Pocket-Edition touch gestures toggle (OptiCraft Options, "Pocket Touch"):
+// Pocket-Edition touch gestures toggle (OptiCraft Options, "Touch Click"):
 // while on, a short stationary touch on the camera pad taps (place/swing,
 // routed by the crosshair target) and a hold of 180 ms or more breaks/uses.
 // While off the pad is the plain camera drag it was before those gestures

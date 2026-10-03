@@ -43,6 +43,11 @@ int panoramaSampleGrid()
     return 8;
 }
 
+void shutdownFlush()
+{
+    // Nothing to drain: the Wii teardown path returns to main_wii.cpp, whose
+    // own teardown owns the GPU discipline.
+}
 
 void reportCrash(const std::string& description)
 {

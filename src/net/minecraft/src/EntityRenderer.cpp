@@ -2718,6 +2718,31 @@ void EntityRenderer::updateFogColor(float partialTicks)
     fogColorGreen += (skyG - fogColorGreen) * fogDistanceFactor;
     fogColorBlue += (skyB - fogColorBlue) * fogDistanceFactor;
 
+#if defined(CTR_PLATFORM)
+    // The 3DS has no PICA fog unit -- every renderFogi/renderFogf/
+    // renderTerrainSetFog is a stub in its backends -- so nothing blends the
+    // terrain's streaming edge into this clear colour the way the fog
+    // machinery does on every other platform. Where no geometry draws, the
+    // framebuffer shows the clear raw, and the vanilla fog colour (near-white
+    // at noon, and pinned at 0% sky blend by this console's TINY render
+    // distance in the factor above) read as a wrong-coloured band between the
+    // terrain and the sky plane: the three-band horizon report. Worlds that
+    // run the sky pass get the sky itself as the backdrop -- the clear colour
+    // becomes the sky colour, the empty horizon reads as a continuation of
+    // the sky, and the only remaining cut is the terrain's own edge, which is
+    // the best a fogless console can express. Skyless worlds (the Nether)
+    // keep the fog-coloured clear: that IS their backdrop. The stages below
+    // still apply on top of it, so rain, thunder, water/lava viewpoints and
+    // the void fog keep shaping it exactly as they shape the vanilla clear.
+    if (world != nullptr && world->worldProvider != nullptr &&
+        world->worldProvider->func_48217_e())
+    {
+        fogColorRed = skyR;
+        fogColorGreen = skyG;
+        fogColorBlue = skyB;
+    }
+#endif
+
     const float rainStrength = world->getRainStrength(partialTicks);
     if (rainStrength > 0.0f)
     {

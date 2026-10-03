@@ -137,6 +137,13 @@ bool BlockPistonBase::isIndirectlyPowered(World *world, int_t i, int_t j, int_t 
 
 void BlockPistonBase::playBlock(World *world, int_t i, int_t j, int_t k, int_t l, int_t i1)
 {
+	// The whole extend/retract chain applies synchronously -- often inside a
+	// PlayerEditMarkScope (a lever click), which would make every WithNotify
+	// of the chain urgent on the consoles and burn the run-to-completion
+	// urgent lane for several frames on a piston wall. Mark the cascade so
+	// RenderGlobal queues and coalesces the section rebuilds instead; the
+	// moving block itself is drawn by its tile-entity renderer meanwhile.
+	const World::PistonMarkScope pistonMarkScope(world);
 	isMoving = true;
 	int_t j1 = i1;
 	if (l == 0)

@@ -834,6 +834,14 @@ void Minecraft::shutdownMinecraftApplet()
 {
     try
     {
+        // Drain the GPU queue before the teardown frees GPU-owned memory.
+        // The only backend where this matters is the 3DS: the frame is
+        // submitted asynchronously and nothing forces a drain on exit,
+        // while every deletion below (textures, display lists) frees
+        // storage an in-flight frame may still be reading -- the
+        // intermittent "crash on exit" seen on hardware. No-op elsewhere.
+        ClientPlatformPolicy::shutdownFlush();
+
         statFileWriter->prepareStatsForSync();
         statFileWriter->syncStats();
 

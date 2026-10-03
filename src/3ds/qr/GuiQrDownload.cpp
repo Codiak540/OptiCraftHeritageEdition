@@ -333,15 +333,11 @@ void GuiQrDownload::runInstall()
 		installName = nameFromUrl(download.suggestedFileName());
 	if (kind == Kind::Skin)
 	{
-		std::string convertError;
-		if (!DsAssetConvert::convertPng(downloadPath, convertError))
-		{
-			message = "Could not convert the skin for this console";
-			detail = convertError;
-			state = State::Failed;
-			rebuildButtons();
-			return;
-		}
+		// No DsAssetConvert pre-pass for skins: installCustomSkin owns the
+		// console's row-order convention at write time (main file and the
+		// derived retro/preview PNGs), so a downloaded file goes in
+		// untouched -- a convertPng pre-flip would double-flip the pixels it
+		// then re-encodes.
 		std::string installError;
 		if (SkinManager::installCustomSkin(downloadPath, installName, installError))
 		{
