@@ -333,6 +333,27 @@ bool ChunkProvider::chunkExists(int_t i, int_t j)
 	return chunkMap.count(chunkKey(i, j)) != 0;
 }
 
+bool ChunkProvider::chunkExistsForPopulate(int_t i, int_t j)
+{
+	// Decoration can spill up to +8 blocks into the +x/+z neighbours, which
+	// is why population waits for them to exist. In a limited world the
+	// east/south neighbours of the border chunks lie outside the chunk map
+	// and will NEVER exist: waiting for them kept the entire east column and
+	// south row of every 256/864-block world from decorating -- a bare
+	// straight seam along two edges that read as a broken border. Never-land
+	// needs no waiting: whatever decoration spills into it lands in the
+	// blank chunk and is discarded.
+	if (worldObj != nullptr && worldObj->isLimitedWorld())
+	{
+		const WorldInfo *info = worldObj->getWorldInfo();
+		const int_t minChunk = info != nullptr ? info->getLimitedWorldMinChunk() : -8;
+		const int_t maxChunk = info != nullptr ? info->getLimitedWorldMaxChunk() : 7;
+		if (i < minChunk || i > maxChunk || j < minChunk || j > maxChunk)
+			return true;
+	}
+	return chunkExists(i, j);
+}
+
 Chunk *ChunkProvider::getChunkIfExists(int_t i, int_t j)
 {
 	const std::uint64_t key = chunkKey(i, j);
@@ -559,23 +580,23 @@ void ChunkProvider::publishPreparedChunk(int_t i, int_t j, Chunk *chunk)
 #endif
 
 	if (!chunk->isTerrainPopulated
-		&& chunkExists(eastX, southZ)
-		&& chunkExists(i, southZ)
-		&& chunkExists(eastX, j))
+		&& chunkExistsForPopulate(eastX, southZ)
+		&& chunkExistsForPopulate(i, southZ)
+		&& chunkExistsForPopulate(eastX, j))
 	{
 		populate(this, i, j);
 	}
 	if (chunkExists(westX, j) && !provideChunk(westX, j)->isTerrainPopulated
-		&& chunkExists(westX, southZ)
-		&& chunkExists(i, southZ)
+		&& chunkExistsForPopulate(westX, southZ)
+		&& chunkExistsForPopulate(i, southZ)
 		&& chunkExists(westX, j))
 	{
 		populate(this, westX, j);
 	}
 	if (chunkExists(i, northZ) && !provideChunk(i, northZ)->isTerrainPopulated
-		&& chunkExists(eastX, northZ)
+		&& chunkExistsForPopulate(eastX, northZ)
 		&& chunkExists(i, northZ)
-		&& chunkExists(eastX, j))
+		&& chunkExistsForPopulate(eastX, j))
 	{
 		populate(this, i, northZ);
 	}
@@ -1228,9 +1249,9 @@ bool ChunkProvider::canPopulateChunk(int_t i, int_t j)
 	// the diagonal) must already exist. Same invariant the inline path enforced.
 	const int_t eastX = JavaArithmetic::intAdd(i, 1);
 	const int_t southZ = JavaArithmetic::intAdd(j, 1);
-	return chunkExists(eastX, j)
-		&& chunkExists(i, southZ)
-		&& chunkExists(eastX, southZ);
+	return chunkExistsForPopulate(eastX, j)
+		&& chunkExistsForPopulate(i, southZ)
+		&& chunkExistsForPopulate(eastX, southZ);
 }
 
 void ChunkProvider::enqueuePopulate(int_t i, int_t j)

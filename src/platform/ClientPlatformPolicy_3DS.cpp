@@ -3,6 +3,7 @@
 #include "net/minecraft/src/GameResources.h"
 #include "pc/CrashHandler.h"
 
+#include <3ds.h>
 #include <citro3d.h>
 
 namespace ClientPlatformPolicy
@@ -73,6 +74,37 @@ int panoramaSampleGrid()
     // staging-arena submit -- the desktop/Wii 8x8 grid bills the menu 384
     // submits per frame for a blur the 400x240 target cannot resolve anyway.
     return 2;
+}
+
+void shutdownFinalize()
+{
+    // This platform exits the process from inside the game's shutdown
+    // (PLATFORM_EXIT_PROCESS_ON_SHUTDOWN): the exit(0) that follows never
+    // returns to main(), so shutdownServices() -- whose gfxExit() is the
+    // one join of libctru's GSP event thread any normal path performs --
+    // never runs. newlib's exit() then hands control to libctru's
+    // __libctru_exit, which unmaps the linear heap AND the entire
+    // application heap (svcControlMemory MEMOP_FREE) before
+    // svcExitProcess, with every other thread still alive. The GSP event
+    // thread's 4 KiB stack lives in that heap (gspInit -> threadCreate,
+    // gspgpu.c), so the moment the unmap lands it is a thread scheduled
+    // on unmapped memory: the next GPU interrupt it handles faults in its
+    // own prologue -- syncArbitrateAddress's push {lr} writing sp-4, data
+    // abort, fault status "Translation - Section" (Luma dump 2026-10-03:
+    // "go to the home menu, resume, exit the game" crashes). gfxExit() is
+    // the canonical stop, the same one shutdownServices() would have
+    // done: it frees the framebuffers and calls gspExit(), which clears
+    // gspRunEvents, signals the event and threadJoin()s the thread before
+    // anything unmaps. It is idempotent (screenFree == NULL guard), so the
+    // gfxExit() the crash path already does in CrashHandler_3ds.cpp stays
+    // safe. No fsExit() here on purpose: SD stays mounted so anything
+    // running inside exit(0) can still write the log; the process end
+    // reclaims the rest.
+    if (C3D_FrameBegin(C3D_FRAME_SYNCDRAW))
+    {
+        C3D_FrameEnd(0);
+    }
+    gfxExit();
 }
 
 void reportCrash(const std::string& description)

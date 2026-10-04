@@ -55,10 +55,21 @@ bool autoJumpIsSolidTile(World *world, int_t x, int_t y, int_t z)
 	return block != nullptr && block->blockMaterial != nullptr && block->blockMaterial->isSolid();
 }
 
-// Whether it is worth auto-jumping onto this block. Slabs (stairSingle) and
-// stairs are walked up by the 0.5 stepHeight already, and fences, panes, signs
-// and trapdoors have no usable top surface to land on.
-bool autoJumpIsJumpable(World *world, int_t x, int_t y, int_t z)
+// Whether it is worth auto-jumping onto this block. Decided by the real top
+// of the obstacle's collision box measured against the player's feet, not by
+// block type: walking (EntityLiving's 0.5 stepHeight) already climbs a bottom
+// slab at foot level and both halves of a stair block, so those must never
+// arm a hop; anything between that and the jump apex (~1.3 blocks) -- a full
+// one-block step, a stacked double slab, a top-half slab -- is exactly what
+// the hop is for; anything higher (fences read 1.5) is unreachable and must
+// not fire. The old type blacklist answered neither question: it let the
+// player get stuck against top-half slabs and one-block slab treads, while
+// every "slab" report of a spurious hop traced to a tread that really was a
+// full block high. Fences, gates, trapdoors and signs stay excluded
+// regardless of height: even where their box reads reachable there is no
+// usable surface to land on. Stairs (render type 10) always walk up in two
+// 0.5 steps no matter which side they are met from, so they never hop.
+bool autoJumpIsJumpable(World *world, int_t x, int_t y, int_t z, double feetY)
 {
 	if (world == nullptr)
 		return false;
@@ -69,10 +80,27 @@ bool autoJumpIsJumpable(World *world, int_t x, int_t y, int_t z)
 	if (block == nullptr)
 		return false;
 	if (block == Block::fence || block == Block::fenceIron || block == Block::fenceGate ||
-		block == Block::stairSingle || block == Block::trapdoor ||
+		block == Block::trapdoor ||
 		block == Block::signPost || block == Block::signWall)
 		return false;
-	return block->getRenderType() != 10; // 10 == SHAPE_STAIRS
+	if (block->getRenderType() == 10) // 10 == SHAPE_STAIRS
+		return false;
+	// The obstacle's real top: setBlockBoundsBasedOnState is the same dance
+	// the collision path runs before reading a cell's box (BlockStep picks
+	// the half its metadata says), and the bounds members are shared
+	// per-block state that every other physics query rewrites anyway, so
+	// touching them here is exactly as safe as any tick doing it.
+	block->setBlockBoundsBasedOnState(world, x, y, z);
+	const double rise = (double)y + block->maxY - feetY;
+	// stepHeight territory: walking gets there, a hop would only look wrong
+	// (the 0.01 absorbs float noise on the exact 0.5 slab rise).
+	if (rise <= 0.5 + 0.01)
+		return false;
+	// Above the jump apex: not worth arming, the hop would slam into the
+	// face and fall back.
+	if (rise > 1.25)
+		return false;
+	return true;
 }
 } // namespace
 #endif
@@ -92,6 +120,7 @@ EntityPlayerSP::EntityPlayerSP(Minecraft *minecraft, World *world, Session *sess
 	dimension = i;
 #if defined(CTR_PLATFORM)
 	autoJumpTime = 0;
+	autoJumpPending = false;
 #endif
 	if (session != nullptr)
 	{
@@ -149,12 +178,23 @@ void EntityPlayerSP::updatePlayerActionState()
 		if (stillArmed)
 		{
 			isJumping = true;
+			// Mark the pending jump as ours: jump() uses this to drop
+			// EntityLiving's sprint boost (see below).
+			autoJumpPending = true;
 			--autoJumpTime;
 		}
 		else
 		{
 			autoJumpTime = 0;
+			autoJumpPending = false;
 		}
+	}
+	else
+	{
+		// The armed window ran out without our hop firing (e.g. jumpTicks
+		// still cooling down from a manual jump): retire the pending flag
+		// too, or the next manual jump would lose its sprint boost once.
+		autoJumpPending = false;
 	}
 #endif
 }
@@ -184,24 +224,50 @@ void EntityPlayerSP::queueAutoJump(double prevX, double prevZ, double moveX, dou
 	// One block ahead along the movement direction, as in the reference.
 	const int_t blockX = MathHelper::floor_double(posX + moveX / dist);
 	const int_t blockZ = MathHelper::floor_double(posZ + moveZ / dist);
-	// posY is EYE height, not the feet: EntityPlayer sets yOffset = 1.62 and
-	// Entity::setPosition puts the box's minY at posY - yOffset. That is the
-	// reference's Entity::y convention verbatim, so its (int)(y-1)/(int)y/
-	// (int)(y+1) map straight across — (int)(y-1) is the step block, the other
-	// two are the headroom above it. Reading floor(posY) as the step instead
-	// lands one block too high, which made a 1-block step read as air and only
-	// fire on 2-block walls.
-	const int_t stepY = MathHelper::floor_double(posY - 1.0);
+	// Measure from the TRUE feet. posY carries the ySize step-smoothing
+	// offset (Entity::moveEntity subtracts it so the camera glides up after
+	// every 0.5 step), and for the ~2-4 ticks after stepping onto a
+	// half-height tread it depressed both the probe cell (stepY, one level
+	// low) and the rise measurement (minY - ySize, up to 0.51 low) at once:
+	// the next tread of a perfectly smooth +0.5 slab staircase then read as
+	// a ~1.0 step and armed a phantom hop -- "running up slab stairs gives
+	// exactly 2 jumps". The bounding box's minY is the feet the physics
+	// actually steps on, untouched by the smoothing.
+	const double feetY = boundingBox->minY;
+	// (int)(y-1) in the reference convention: with posY = feet + yOffset
+	// (ySize aside) that is the cell the feet are in.
+	const int_t stepY = MathHelper::floor_double(feetY + (double)yOffset - 1.0);
 	if (!autoJumpIsSolidTile(worldObj, blockX, stepY, blockZ))
 		return;
 	// Two blocks of headroom above the step.
 	if (autoJumpIsSolidTile(worldObj, blockX, stepY + 1, blockZ) ||
 		autoJumpIsSolidTile(worldObj, blockX, stepY + 2, blockZ))
 		return;
-	if (!autoJumpIsJumpable(worldObj, blockX, stepY, blockZ))
+	if (!autoJumpIsJumpable(worldObj, blockX, stepY, blockZ, feetY))
 		return;
 
 	autoJumpTime = 2;
+}
+
+// The auto-hop goes through EntityLiving's isJumping path so the real jump
+// keeps its cooldown, potion handling and stats — but it must not inherit the
+// sprint boost living in EntityLiving::jump(): those +0.2 of extra horizontal
+// velocity are the player's manual sprint-jump skill, and on them an armed hop
+// overshoots the step it was armed for. On staircases every boosted landing
+// lines up the next one-block tread and the game chains hop after hop — the
+// "keeps jumping while running up the slab stairs" report. Reference
+// auto-jumps land you ON the step: drop the boost (and with it the
+// sprint-jump exhaustion rate) for this hop only, then put sprinting back.
+void EntityPlayerSP::jump()
+{
+	const bool suppressBoost = autoJumpPending;
+	autoJumpPending = false;
+	const bool wasSprinting = isSprinting();
+	if (suppressBoost && wasSprinting)
+		setSprinting(false);
+	EntityPlayer::jump();
+	if (suppressBoost && wasSprinting)
+		setSprinting(true);
 }
 #endif
 

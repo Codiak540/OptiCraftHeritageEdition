@@ -84,6 +84,13 @@ void shutdownFlush()
     // Nothing to drain on the PS2: the teardown returns through main_ps2.cpp.
 }
 
+void shutdownFinalize()
+{
+    // PLATFORM_EXIT_PROCESS_ON_SHUTDOWN is 0 here, so the shutdown returns
+    // to main_ps2.cpp instead of exiting -- this only exists to keep the
+    // one-policy-symbol-per-platform contract.
+}
+
 void reportCrash(const std::string& description)
 {
     MC_LOG_ERROR("crash", "%s\n", description.c_str());

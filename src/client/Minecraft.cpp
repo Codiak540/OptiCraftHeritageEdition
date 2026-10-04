@@ -875,7 +875,10 @@ void Minecraft::shutdownMinecraftApplet()
         lwjgl::Display::swapBuffers();
 #if PLATFORM_EXIT_PROCESS_ON_SHUTDOWN
         if (!hasCrashed)
+        {
+            ClientPlatformPolicy::shutdownFinalize();
             exit(0);
+        }
 #else
         return;
 #endif
@@ -883,7 +886,10 @@ void Minecraft::shutdownMinecraftApplet()
     lwjgl::Display::swapBuffers();
 #if PLATFORM_EXIT_PROCESS_ON_SHUTDOWN
     if (!hasCrashed)
+    {
+        ClientPlatformPolicy::shutdownFinalize();
         exit(0);
+    }
 #else
     return;
 #endif

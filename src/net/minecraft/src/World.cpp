@@ -1056,6 +1056,24 @@ bool World::checkChunksExist(int minX, int minY, int minZ, int maxX, int maxY, i
 
 bool World::chunkExists(int chunkX, int chunkZ)
 {
+    // A limited world ends in permanently blank ground: chunks outside its
+    // hard range are never created, never load, and never will. Reporting
+    // them as "not existing" froze every existence-gated system at the
+    // border -- most importantly the entity tick: updateEntityWithOptional
+    // Force() waits for a PLATFORM_PLAYER_UPDATE_CHUNK_RANGE_BLOCKS-radius
+    // of existing chunks around the entity, so on the 3DS (16 blocks) the
+    // player locked up dead exactly 16 blocks before the wall (z = -112 in
+    // a 256 world: no input, no physics, and the border clamp that lives
+    // inside the frozen tick never ran). Outside-the-world is "exists,
+    // permanently empty": readers get the blank chunk's air.
+    if (isLimitedWorld())
+    {
+        const WorldInfo *info = getWorldInfo();
+        const int_t minChunk = info != nullptr ? info->getLimitedWorldMinChunk() : -8;
+        const int_t maxChunk = info != nullptr ? info->getLimitedWorldMaxChunk() : 7;
+        if (chunkX < minChunk || chunkX > maxChunk || chunkZ < minChunk || chunkZ > maxChunk)
+            return true;
+    }
     return chunkProvider->chunkExists(chunkX, chunkZ);
 }
 
