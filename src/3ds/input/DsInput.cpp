@@ -20,13 +20,15 @@
 //                                                         LEFT/RIGHT -> hotbar wheel
 //                                                         +1/-1; DOWN -> F5 (perspective)
 //   START   ENTER     only while typing      pause     -> KEY_ESCAPE
-//   ZL/ZR   --                               hotbar wheel +1/-1 (New 3DS only)
+//   ZL/ZR   --                               hotbar wheel +1/-1 (New 3DS, or a
+//                                          Circle Pad Pro on an Old 3DS/XL)
 //
 //   circle pad -> stick axes (analog movement, PLATFORM_DIRECT_ANALOG_MOVEMENT)
-//   C-Stick  -> look pad in gameplay (New 3DS only; Old hardware reports a
-//               zeroed position, so the channel is inert there). Deltas ride
-//               the same touch-look pipeline as the face-button camera,
-//               scaled by deflection at a frame-rate-free rate.
+//   C-Stick  -> look pad in gameplay (New 3DS nub, or a Circle Pad Pro's
+//               right pad on an Old 3DS/XL; centred zero when neither is
+//               attached). Deltas ride the same touch-look pipeline as the
+//               face-button camera, scaled by deflection at a
+//               frame-rate-free rate.
 //   menu L/R -> their own DS_KEY_L/DS_KEY_R codes while a screen is up (they
 //               cannot be SPACE/SHIFT, which the keyboard and the container
 //               navigator already own); the creative screen maps them to
@@ -238,13 +240,45 @@ constexpr int kFaceDoubleTapMs = 300;    // taps closer than this = double
 constexpr int kFaceJumpHoldPolls = 5;
 // Look rate in mouse pixels per second: the default sensitivity cube is 1.0,
 // so one pixel is 0.15 degrees -- 480 px/s is a comfortable ~72 deg/s sweep.
-// Shared by the face-button camera and the New 3DS C-Stick channel below,
-// which scale it by how far the input is pushed.
+// Shared by the face-button camera and the right-stick channel below
+// (New 3DS C-Stick / Circle Pad Pro), which scale it by how far the input is
+// pushed.
 constexpr float kFaceCameraPixelsPerSec = 480.0f;
 
-// New 3DS C-Stick camera state. The nub self-centres well, but a resting
-// offset must not creep the view, so the same deadzone+rescale the published
-// stick axes get (InputBackend_3DS) is applied before any rate scaling --
+// Circle Pad Pro / New 3DS C-Stick: libctru keeps the ir:rst service -- the
+// shared memory both right-stick sources report through (3dbrew
+// "IRRST_Shared_Memory") -- off on Old hardware: hidInit() consults the weak
+// hidShouldUseIrrst() hook, whose stock answer is APT_CheckNew3DS, New
+// models only. Overriding the hook makes hidInit() bring ir:rst up on every
+// console, and is libctru's own intended way for homebrew to opt into the
+// Circle Pad Pro: the CPP is an Old-3DS/XL IR accessory whose right pad and
+// ZL/ZR report through that very shared memory, with pad bits meant to be
+// ORd into HID's (ZL/ZR = bits 14/15, the same values hid.h's KEY_ZL/KEY_ZR
+// carry). Nothing downstream changes: hidScanInput() already folds
+// irrstKeysHeld() into its key masks, so the ZL/ZR hotbar impulses and the
+// hidCstickRead() snapshot below light up on their own.
+//
+// Consoles with no right stick attached -- the Old 2DS cannot even clip a
+// CPP on -- keep reading a centred, all-zero state: without the accessory
+// the IR module never writes a shared-memory entry, and irrstScanInput()
+// gates every field on that entry being fresh, so the look channel and the
+// triggers stay inert exactly as before. Boot is safe too: __appInit()
+// ignores hidInit()'s return value, so even a hypothetical console without
+// the ir:rst service just leaves the refcount at zero, where
+// irrstScanInput()/irrstKeysHeld() are no-ops. The one real cost:
+// IRRST_Initialize(10, 0) makes the IR module poll for the accessory even
+// when none is present -- the same thing every CPP-compatible retail
+// cartridge does while running. hidExit() pairs the irrstExit() on every
+// exit path (it honours usingIrrst, which this override sets).
+extern "C" bool hidShouldUseIrrst(void)
+{
+	return true;
+}
+
+// Right-stick camera state (New 3DS C-Stick / Circle Pad Pro). The stick
+// self-centres well, but a resting offset must not creep the view, so the
+// same deadzone+rescale the published stick axes get (InputBackend_3DS) is
+// applied before any rate scaling --
 // the camera reads DsInputState's RAW axes, because the deadzone lives in the
 // backend half and must not be applied twice.
 constexpr float kCStickDeadzone = 0.20f;
@@ -273,10 +307,12 @@ constexpr std::uint32_t GP_DPAD_RIGHT  = 1u << 8; // wheel -1 (next slot)
 // push KEY_ESCAPE -- one shoulder switched category while the other closed
 // the inventory (2026-09-29, 3DS).
 constexpr std::uint32_t GP_BACK        = 1u << 9;
-// New 3DS triggers. They share the hotbar wheel with the D-pad's horizontal
-// pair rather than folding into GP_DPAD_LEFT/RIGHT: the D-pad bits also
-// carry menu navigation while a screen is open, and ZL/ZR must not step the
-// GUI. The bits stay zero on Old hardware (KEY_ZL/KEY_ZR never report).
+// New 3DS triggers, and the Circle Pad Pro's shoulder pair on Old hardware
+// (both report through ir:rst -- see the hidShouldUseIrrst override above).
+// They share the hotbar wheel with the D-pad's horizontal pair rather than
+// folding into GP_DPAD_LEFT/RIGHT: the D-pad bits also carry menu
+// navigation while a screen is open, and ZL/ZR must not step the GUI. The
+// bits stay zero with nothing attached (KEY_ZL/KEY_ZR never report there).
 constexpr std::uint32_t GP_SLOT_PREV   = 1u << 10; // ZL: wheel +1 (previous slot)
 constexpr std::uint32_t GP_SLOT_NEXT   = 1u << 11; // ZR: wheel -1 (next slot)
 
@@ -371,9 +407,10 @@ std::uint32_t readGameplayButtons(u32 keys)
 	if (keys & KEY_DDOWN)  value |= GP_DPAD_DOWN;
 	if (keys & KEY_DLEFT)  value |= GP_DPAD_LEFT;
 	if (keys & KEY_DRIGHT) value |= GP_DPAD_RIGHT;
-	// New 3DS only: the extra triggers step the hotbar alongside the D-pad's
-	// horizontal pair (see the GP_SLOT_* declaration for why they are separate
-	// bits). Zero on Old hardware, so nothing changes there.
+	// New 3DS, or a Circle Pad Pro on Old hardware: the extra triggers step
+	// the hotbar alongside the D-pad's horizontal pair (see the GP_SLOT_*
+	// declaration for why they are separate bits). Zero with nothing
+	// attached, so nothing changes there.
 	if (keys & KEY_ZL)     value |= GP_SLOT_PREV;
 	if (keys & KEY_ZR)     value |= GP_SLOT_NEXT;
 	return value;
@@ -540,8 +577,9 @@ void updateGameplay(u32 keys, bool touchDown)
 	// InventoryPlayer::changeCurrentItem() subtracts its argument, so LEFT
 	// steps the hotbar back and RIGHT steps it forward. The D-pad owns the
 	// wheel in gameplay precisely because L/R clicked away to mouse buttons
-	// (header table). ZL/ZR (New 3DS) join the same wheel as dedicated
-	// impulse bits, so the player can hold the D-pad free for the camera.
+	// (header table). ZL/ZR (New 3DS, Circle Pad Pro alike) join the same
+	// wheel as dedicated impulse bits, so the player can hold the D-pad free
+	// for the camera.
 	if (pressed & (GP_DPAD_LEFT | GP_SLOT_PREV))  lwjgl::Mouse::detail::pushWheel(1, x, y);
 	if (pressed & (GP_DPAD_RIGHT | GP_SLOT_NEXT)) lwjgl::Mouse::detail::pushWheel(-1, x, y);
 
@@ -711,13 +749,14 @@ float cStickDeflection(float raw)
 	return magnitude * sign;
 }
 
-// The New 3DS C-Stick look channel: a deflection-scaled look pad riding the
-// same pushMotion -> mouseXYChange -> turnEntity pipeline as the touch panel
-// and the face-button camera, so the sensitivity slider and the invert
-// option cover all three alike. dsInputPoll() calls it in gameplay only --
-// menus keep the nub inert (the D-pad and circle pad own navigation there)
-// and so does text entry. On Old hardware irrstCstickRead reports libctru's
-// zeroed cache, both deflections stay 0, and nothing ever fires.
+// The right-stick look channel (New 3DS C-Stick, Circle Pad Pro alike): a
+// deflection-scaled look pad riding the same pushMotion -> mouseXYChange ->
+// turnEntity pipeline as the touch panel and the face-button camera, so the
+// sensitivity slider and the invert option cover all three alike.
+// dsInputPoll() calls it in gameplay only -- menus keep the nub inert (the
+// D-pad and circle pad own navigation there) and so does text entry. With
+// no right stick attached (an Old 2DS, an Old 3DS sans CPP) the ir:rst
+// entries never refresh, both deflections stay 0, and nothing ever fires.
 void updateCStickCamera()
 {
 	const int now = consoleInputNowMs();
@@ -865,12 +904,14 @@ void dsInputPoll(bool inMenu)
 	g_state.stickX = std::clamp(static_cast<float>(circle.dx) / kCirclePadMax, -1.0f, 1.0f);
 	g_state.stickY = std::clamp(static_cast<float>(-circle.dy) / kCirclePadMax, -1.0f, 1.0f);
 
-	// New 3DS C-Stick -> raw -1..1 with the same axis conventions as the
-	// circle pad above (Y negated into down-positive, so "nub up reads
-	// negative" the way every downstream consumer expects). hidScanInput()
-	// already refreshed libctru's cache through irrstScanInput() -- hidInit()
-	// starts ir:rst on New hardware only -- and on Old hardware the call
-	// returns that zeroed cache, so the axes read as a centred stick.
+	// Right stick (New 3DS C-Stick / Circle Pad Pro) -> raw -1..1 with the
+	// same axis conventions as the circle pad above (Y negated into
+	// down-positive, so "nub up reads negative" the way every downstream
+	// consumer expects). hidScanInput() already refreshed libctru's cache
+	// through irrstScanInput() -- hidInit() starts ir:rst on every model
+	// thanks to the hidShouldUseIrrst() override above -- and with nothing
+	// attached the call returns the zeroed cache, so the axes read as a
+	// centred stick.
 	circlePosition cstick = {};
 	hidCstickRead(&cstick);
 	g_state.cstickX = std::clamp(static_cast<float>(cstick.dx) / kCirclePadMax, -1.0f, 1.0f);
@@ -1056,9 +1097,10 @@ void dsInputPoll(bool inMenu)
 		g_faceJumpHoldFrames = 0;
 	}
 
-	// New 3DS C-Stick look, gameplay only: menus and text entry keep the nub
-	// inert so it never fights the D-pad/keyboard, the same way the
-	// face-button camera stands down outside gameplay.
+	// Right-stick look (New 3DS C-Stick / Circle Pad Pro), gameplay only:
+	// menus and text entry keep the nub inert so it never fights the
+	// D-pad/keyboard, the same way the face-button camera stands down
+	// outside gameplay.
 	if (!g_inMenu && !typing)
 		updateCStickCamera();
 

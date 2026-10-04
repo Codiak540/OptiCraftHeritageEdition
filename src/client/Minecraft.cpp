@@ -1000,6 +1000,28 @@ void Minecraft::run()
                 cpuGpuSwapNs += swapEndNs - swapStartNs;
                 cpuGpuFrameNs += swapEndNs - l1;
 
+#if defined(CTR_PLATFORM)
+                // Close-from-HOME (2026-10-04): the wake that delivers the
+                // system's close is processed inside Display::update() above
+                // -- aptMainLoop parks there for the whole HOME-menu stay and
+                // latches the close once resumed. On that resume libctru
+                // never re-acquires the GSP right (aptWaitForWakeUp gates
+                // AcquireRight on the wake command) and the system keeps the
+                // displays for its closing overlay, so the GSP events the
+                // present path waits on may simply never fire again -- the
+                // world render and frame submit below would wedge the close
+                // (a plain resume works because the displays come back with
+                // it). Nothing here is worth rendering either way: the app is
+                // going down right now. Bail out of the frame and let the
+                // loop exit drive the same teardown the working in-app exit
+                // uses.
+                if (lwjgl::Display::isCloseRequested())
+                {
+                    shutdown();
+                    continue;
+                }
+#endif
+
                 if (thePlayer != nullptr && thePlayer->isEntityInsideOpaqueBlock())
                     gameSettings->thirdPersonView = 0;
 

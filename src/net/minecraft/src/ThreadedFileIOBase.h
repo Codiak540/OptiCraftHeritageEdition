@@ -23,6 +23,14 @@ public:
 	void queueIO(IThreadedFileIO *task);
 	void waitForFinish();
 	void cancelTask(IThreadedFileIO *task);
+	// Drain the queue, then stop and join the worker. Idempotent, and safe
+	// from any thread except the worker itself. The destructor performs only
+	// the stop (its caller has already waited for its data); this variant is
+	// for exit paths that cannot rely on the destructor running at all -- see
+	// the 3DS atexit hook in main_3ds.cpp, whose runtime never walks
+	// __libc_fini_array, so global destructors (including ~ThreadedFileIOBase)
+	// do not execute and the worker would otherwise outlive the process heap.
+	void shutdown();
 
 private:
 	ThreadedFileIOBase();

@@ -127,14 +127,33 @@ private:
 	bool drainAsyncGenerationRequests(int_t budget);
 	bool drainAsyncGeneratedChunks(int_t budget);
 	ChunkGenerationScheduler *asyncGenerationScheduler;
-	// Set when the loader is Anvil: the worker then has no region reader, and
-	// requestChunkDetailed() has to keep saved chunks off its queue itself.
+	// Set when the loader is Anvil and the worker cannot decode saves
+	// (PLATFORM_ASYNC_CHUNK_DECODE off): requestChunkDetailed() then has to
+	// keep saved chunks off its queue itself. Null whenever the worker
+	// decodes them (or runs generation only, McRegion profiles).
 	AnvilChunkLoader *asyncSavedChunkProbe;
+	// The Anvil loader handed to the scheduler for worker-side decode
+	// (PLATFORM_ASYNC_CHUNK_DECODE): null unless this profile runs that
+	// path. Publish consults it to attach the entities the worker-side
+	// decode deliberately left for the game thread.
+	AnvilChunkLoader *asyncAnvilWorkerLoader;
+#if PLATFORM_3DS
+	// Publish pacing clock (see the comment in drainAsyncGeneratedChunks):
+	// the next async publish is held until this timestamp, set to the last
+	// publish's start plus twice its measured cost.
+	long_t nextAsyncPublishAfterNs = 0;
+#endif
 #endif
 #if PLATFORM_BOUNDED_WORLD
 	// Per-tick synchronous-generation budget (see PLATFORM_GENERATE_CHUNKS_PER_TICK).
 	// Reset at the start of every world tick; incremented for each chunk generated.
 	int_t genChunksThisTick;
+#if PLATFORM_3DS
+	// Wall-clock pacing for the synchronous fallback in provideChunk (the
+	// valve comment there): the next valve attempt is held until this
+	// timestamp, set to the last one's start plus twice its measured cost.
+	long_t nextValveGenerateAfterNs = 0;
+#endif
 #endif
 
 #if PLATFORM_INCREMENTAL_CHUNK_GENERATION

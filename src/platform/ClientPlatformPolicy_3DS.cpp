@@ -2,6 +2,7 @@
 
 #include "net/minecraft/src/GameResources.h"
 #include "pc/CrashHandler.h"
+#include "pc/lwjgl/Display.h"
 
 #include <3ds.h>
 #include <citro3d.h>
@@ -61,6 +62,23 @@ void shutdownFlush()
     // also shutdownServices() in main_3ds.cpp, which never runs on this path
     // because PLATFORM_EXIT_PROCESS_ON_SHUTDOWN has shutdownMinecraftApplet()
     // call exit(0) instead of returning to main().
+    //
+    // 2026-10-04 close-from-HOME hang: that wait is unbounded, and on the
+    // resume that delivers the system's close it never completes. libctru
+    // re-acquires the GSP right only when the wake command is neither
+    // WAKEUP_CANCEL nor a plain WAKEUP (aptWaitForWakeUp, apt.c): on the
+    // close wake AcquireRight never runs, so SYNCDRAW waits on GSP events
+    // with no right to ever receive them. moonlight-n3ds is the working
+    // reference for the posture: its exit handler runs service exits only
+    // (aptExit/gfxExit/ndspExit) and performs no GPU queue waits -- gfxExit
+    // -> gspExit signals and joins the GSP event thread instead of waiting
+    // on the pipeline. A pipeline that never delivers events also means no
+    // frame is in flight that could fault reading the memory the teardown
+    // frees (and the last real submit completed during the HOME-menu park,
+    // seconds before the close), so the drain is skippable exactly here;
+    // every other exit path keeps it.
+    if (lwjgl::Display::isCloseRequested())
+        return;
     if (C3D_FrameBegin(C3D_FRAME_SYNCDRAW))
     {
         C3D_FrameEnd(0);
@@ -100,9 +118,18 @@ void shutdownFinalize()
     // safe. No fsExit() here on purpose: SD stays mounted so anything
     // running inside exit(0) can still write the log; the process end
     // reclaims the rest.
-    if (C3D_FrameBegin(C3D_FRAME_SYNCDRAW))
+    // Same close-from-HOME gate as shutdownFlush(): this second C3D sync
+    // would wait on GSP events that never arrive once the close was
+    // delivered (the wake command means no GSPGPU_AcquireRight, see
+    // shutdownFlush). gfxExit() below is the moonlight-n3ds posture on
+    // every path: it signals and joins the GSP event thread without
+    // touching the pipeline, so it stays unconditional.
+    if (!lwjgl::Display::isCloseRequested())
     {
-        C3D_FrameEnd(0);
+        if (C3D_FrameBegin(C3D_FRAME_SYNCDRAW))
+        {
+            C3D_FrameEnd(0);
+        }
     }
     gfxExit();
 }

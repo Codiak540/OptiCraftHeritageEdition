@@ -4,6 +4,7 @@
 #include "platform/PlatformTuning.h"
 #include "platform/Thread.h"
 #include "net/minecraft/src/Chunk.h"
+#include "net/minecraft/src/AnvilChunkLoader.h"
 #include "net/minecraft/src/IChunkProvider.h"
 #include "net/minecraft/src/ChunkProviderGenerate.h"
 #include "net/minecraft/src/IntCache.h"
@@ -21,6 +22,7 @@ struct ChunkGenerationScheduler::Impl
 {
     IChunkProvider* generator = nullptr;
     McRegionChunkLoader* regionLoader = nullptr;
+    AnvilChunkLoader* anvilLoader = nullptr;
     World* world = nullptr;
     std::atomic<int_t> focusX{0};
     std::atomic<int_t> focusZ{0};
@@ -42,11 +44,13 @@ std::uint64_t ChunkGenerationScheduler::key(int_t x, int_t z)
 
 ChunkGenerationScheduler::ChunkGenerationScheduler(IChunkProvider* ownedGenerator,
                                                    McRegionChunkLoader* regionLoader,
-                                                   World* world)
+                                                   World* world,
+                                                   AnvilChunkLoader* anvilLoader)
     : impl_(new Impl())
 {
     impl_->generator = ownedGenerator;
     impl_->regionLoader = regionLoader;
+    impl_->anvilLoader = anvilLoader;
     impl_->world = world;
 }
 
@@ -293,6 +297,59 @@ void ChunkGenerationScheduler::runWorker()
                     result.z = coord.second;
                     ChunkLoadStatus decodeStatus = ChunkLoadStatus::ReadError;
                     result.chunk = impl_->regionLoader->decodeChunkBlocksFromData(
+                        impl_->world, coord.first, coord.second, data, result.nbt, &decodeStatus);
+                    if (result.chunk != nullptr)
+                    {
+                        result.kind = ResultKind::LoadedChunk;
+                        std::lock_guard<std::mutex> guard(impl_->mutex);
+                        impl_->results.push_back(std::move(result));
+                        continue;
+                    }
+                }
+#endif
+                Result result;
+                result.x = coord.first;
+                result.z = coord.second;
+                result.kind = ResultKind::LoadedData;
+                result.data = std::move(data);
+                std::lock_guard<std::mutex> guard(impl_->mutex);
+                impl_->results.push_back(std::move(result));
+                continue;
+            }
+            if (loadStatus == ChunkLoadStatus::ReadError)
+            {
+                Result result;
+                result.x = coord.first;
+                result.z = coord.second;
+                result.kind = ResultKind::ReadError;
+                std::lock_guard<std::mutex> guard(impl_->mutex);
+                impl_->results.push_back(std::move(result));
+                continue;
+            }
+        }
+
+        if (impl_->anvilLoader != nullptr)
+        {
+            // The Anvil twin of the McRegion branch above, same contract:
+            // the raw bytes are read on the worker (pending-queue copy or
+            // region file, both serialized internally), the blocks, light
+            // and heightmap decode here when the profile enables it, and
+            // the parsed root travels with the chunk so publish can still
+            // construct its entities on the game thread. A decode failure
+            // hands the raw data back for the game-thread fallback, and a
+            // column that is not on disk falls through to generation.
+            std::vector<byte_t> data;
+            ChunkLoadStatus loadStatus = ChunkLoadStatus::Missing;
+            if (impl_->anvilLoader->readChunkData(coord.first, coord.second, data, &loadStatus))
+            {
+#if PLATFORM_ASYNC_CHUNK_DECODE
+                if (impl_->world != nullptr)
+                {
+                    Result result;
+                    result.x = coord.first;
+                    result.z = coord.second;
+                    ChunkLoadStatus decodeStatus = ChunkLoadStatus::ReadError;
+                    result.chunk = impl_->anvilLoader->decodeChunkBlocksFromData(
                         impl_->world, coord.first, coord.second, data, result.nbt, &decodeStatus);
                     if (result.chunk != nullptr)
                     {

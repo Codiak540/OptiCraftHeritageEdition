@@ -13,6 +13,7 @@
 class Chunk;
 class IChunkProvider;
 class McRegionChunkLoader;
+class AnvilChunkLoader;
 class World;
 
 class ChunkGenerationScheduler
@@ -51,9 +52,11 @@ public:
     using CoordinatePredicate = bool (*)(void* context, int_t x, int_t z);
 
     // `world` is only read by the worker-side chunk decode; pass nullptr to
-    // keep saved chunks on the LoadedData path.
+    // keep saved chunks on the LoadedData path. `anvilLoader` extends the
+    // same decode to Anvil saves; nullptr keeps the scheduler McRegion-only
+    // (the pre-existing shape on every platform that does not enable it).
     ChunkGenerationScheduler(IChunkProvider* ownedGenerator, McRegionChunkLoader* regionLoader,
-                             World* world = nullptr);
+                             World* world = nullptr, AnvilChunkLoader* anvilLoader = nullptr);
     ~ChunkGenerationScheduler();
 
     bool start();

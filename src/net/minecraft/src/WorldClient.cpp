@@ -3,6 +3,7 @@
 #include "WorldSettings.h"
 #include "WorldInfo.h"
 #include "java/Arithmetic.h"
+#include "java/System.h"
 
 #include "Chunk.h"
 #include "ChunkCoordinates.h"
@@ -592,6 +593,15 @@ void WorldClient::rematerializeStashedChunks()
 	// it re-meshes as air and reads as the permanent hole. Budget the zlib +
 	// import work so a full perimeter ring doesn't stall a tick.
 	constexpr int_t MAX_REMATERIALIZATIONS_PER_TICK = 4;
+	// The wall-clock half of that budget, same reasoning as the import cap in
+	// NetworkManager::processReadPackets: one rematerialization is a full zlib
+	// inflate plus the section import into fresh storages on the game thread,
+	// and four of them stack into exactly the kind of collapsed tick the
+	// counts exist to prevent. Checked before each import, so the first column
+	// of a tick always lands and the rest wait in the stash -- nothing is
+	// lost, the entries survive until their next turn.
+	constexpr long_t MAX_REMATERIALIZATION_BUDGET_NS = 6LL * 1000LL * 1000LL;
+	const long_t rematerializeStartNs = System::nanoTime();
 	int_t remaining = MAX_REMATERIALIZATIONS_PER_TICK;
 	std::vector<ulong_t> toReimport;
 	toReimport.reserve(stashedChunks.size());
@@ -619,6 +629,8 @@ void WorldClient::rematerializeStashedChunks()
 	for (ulong_t key : toReimport)
 	{
 		if (remaining <= 0)
+			break;
+		if (System::nanoTime() - rematerializeStartNs >= MAX_REMATERIALIZATION_BUDGET_NS)
 			break;
 		auto it = stashedChunks.find(key);
 		if (it == stashedChunks.end())

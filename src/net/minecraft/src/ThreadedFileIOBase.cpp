@@ -133,6 +133,24 @@ void ThreadedFileIOBase::waitForFinish()
 	isThreadWaiting = false;
 }
 
+void ThreadedFileIOBase::shutdown()
+{
+	// Finish everything already queued first: unlike the destructor, this
+	// runs on exit paths that may have skipped the normal save-and-drain
+	// (a caught exception, a crash screen), so pending writes still belong
+	// on disk, not discarded with the thread. waitForFinish() returns
+	// immediately once stopping is set, so a second call is a no-op.
+	waitForFinish();
+	{
+		std::lock_guard<std::mutex> guard(queueMutex);
+		stopping = true;
+	}
+	queueCondition.notify_all();
+	finishCondition.notify_all();
+	if (worker.joinable() && worker.get_id() != std::this_thread::get_id())
+		worker.join();
+}
+
 void ThreadedFileIOBase::cancelTask(IThreadedFileIO *task)
 {
 	if (task == nullptr)

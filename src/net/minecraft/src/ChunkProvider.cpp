@@ -98,17 +98,34 @@ ChunkProvider::ChunkProvider(World *world, IChunkLoader *ichunkloader, IChunkPro
 #if PLATFORM_ASYNC_CHUNK_GENERATION
 	asyncGenerationScheduler = nullptr;
 	asyncSavedChunkProbe = nullptr;
+	asyncAnvilWorkerLoader = nullptr;
 	McRegionChunkLoader *asyncRegionLoader = dynamic_cast<McRegionChunkLoader *>(ichunkloader);
 	AnvilChunkLoader *asyncAnvilLoader = dynamic_cast<AnvilChunkLoader *>(ichunkloader);
-	// The worker reads region files only through McRegionChunkLoader. With the
-	// Anvil loader it runs generation alone (a nullptr region loader), and
-	// requestChunkDetailed() checks the save first so nothing on disk is ever
-	// handed to it. Release worlds are Anvil, so without this branch the
-	// worker never existed and every chunk generated on the game thread.
+	// The worker reads saved columns through the disk loader it is given:
+	// McRegion region files on the Wii, and on this profile (via
+	// PLATFORM_ASYNC_CHUNK_DECODE) the Anvil saves release worlds use.
+	// When the knob is off the worker runs generation only and
+	// requestChunkDetailed() has to keep saved chunks off its queue itself,
+	// because it has no loader and would otherwise generate over them.
 	if (dynamic_cast<ChunkProviderGenerate *>(chunkProvider) != nullptr && worldObj != nullptr &&
 	    (asyncRegionLoader != nullptr || asyncAnvilLoader != nullptr))
 	{
+#if PLATFORM_ASYNC_CHUNK_DECODE
+		// Saved columns decode on the worker (the same knob the Wii uses for
+		// its McRegion saves), so it needs the loader and the request path
+		// must stop answering SavedOnDisk: a saved column takes the same
+		// request -> worker -> publish pipeline a generated one already
+		// uses, and only its SD read, NBT parse and Chunk construction move
+		// off the game thread -- on this console that whole lump is the
+		// "tirones muy graves" of walking through explored terrain, and the
+		// publish-side cost it keeps is one entity attach.
+		asyncSavedChunkProbe = nullptr;
+		AnvilChunkLoader *workerAnvilLoader = asyncAnvilLoader;
+#else
 		asyncSavedChunkProbe = asyncRegionLoader == nullptr ? asyncAnvilLoader : nullptr;
+		AnvilChunkLoader *workerAnvilLoader = nullptr;
+#endif
+		asyncAnvilWorkerLoader = workerAnvilLoader;
 #if PLATFORM_PC_LEGACY || PLATFORM_WII || PLATFORM_3DS
 		// The worker only builds terrain/cave buffers. Structure discovery,
 		// decoration, Chunk construction, lighting and publication stay on the
@@ -120,17 +137,18 @@ ChunkProvider::ChunkProvider(World *world, IChunkLoader *ichunkloader, IChunkPro
 			new ChunkProviderGenerate(
 				worldObj, worldObj->getRandomSeed(), false,
 				PLATFORM_ASYNC_ISOLATED_BIOME_SOURCE != 0),
-			asyncRegionLoader, worldObj);
+			asyncRegionLoader, worldObj, workerAnvilLoader);
 #else
 		asyncGenerationScheduler = new ChunkGenerationScheduler(
 			new ChunkProviderGenerate(worldObj, worldObj->getRandomSeed()),
-			asyncRegionLoader, worldObj);
+			asyncRegionLoader, worldObj, workerAnvilLoader);
 #endif
 		if (!asyncGenerationScheduler->start())
 		{
 			delete asyncGenerationScheduler;
 			asyncGenerationScheduler = nullptr;
 			asyncSavedChunkProbe = nullptr;
+			asyncAnvilWorkerLoader = nullptr;
 		}
 	}
 #endif
@@ -454,6 +472,23 @@ bool ChunkProvider::drainAsyncGeneratedChunks(int_t budget)
 	PlatformStreamingFrameBudgetScope frameBudgetScope;
 #endif
 
+#if PLATFORM_3DS
+	// Publish pacing. The lump described above is also the single largest
+	// streaming cost a frame carries on this console: on the Old 3DS one
+	// publish is tens of milliseconds, so "one per frame" reads as one hitch
+	// per published column for as long as the player keeps moving through
+	// unstreamed terrain. Hold the next publish until twice the measured cost
+	// of the last one has passed. A cheap publish never hits the clock at
+	// 30 fps; an expensive one halves the streaming duty cycle, so columns
+	// land at a rate the frame can absorb instead of stacking publish, mesh
+	// and populate in every frame. Nothing is lost: the result waits in the
+	// scheduler's queue, and the QUEUE_LIMIT backpressure paces new requests
+	// the same way behind it.
+	if (System::nanoTime() < nextAsyncPublishAfterNs)
+		return false;
+	const long_t publishWindowStartNs = System::nanoTime();
+#endif
+
 	bool published = false;
 	for (int_t n = 0; n < budget; ++n)
 	{
@@ -482,12 +517,39 @@ bool ChunkProvider::drainAsyncGeneratedChunks(int_t budget)
 					else if (loadStatus == ChunkLoadStatus::ReadError)
 						chunk = blankChunk;
 				}
+				else
+				{
+					AnvilChunkLoader* anvilLoader = dynamic_cast<AnvilChunkLoader*>(chunkLoader);
+					if (anvilLoader != nullptr)
+					{
+						// The worker read the bytes but could not decode them:
+						// fall back to the full game-thread decode over the
+						// same data (which reports the failure and preserves
+						// the region file), the Anvil twin of the McRegion
+						// fallback above.
+						ChunkLoadStatus loadStatus = ChunkLoadStatus::ReadError;
+						chunk = anvilLoader->loadChunkFromData(worldObj, result.x, result.z, result.data, &loadStatus);
+						if (chunk != nullptr)
+							chunk->lastSaveTime = currentWorldTime();
+						else if (loadStatus == ChunkLoadStatus::ReadError)
+							chunk = blankChunk;
+					}
+				}
 				break;
 			}
 			case ChunkGenerationScheduler::ResultKind::LoadedChunk:
 				chunk = result.chunk;
 				result.chunk = nullptr;
-				McRegionChunkLoader::attachChunkEntities(worldObj, chunk, result.nbt.get());
+				// Anvil publishes replay the scheduled block ticks McRegion
+				// levels never carried; entities and tile entities go through
+				// the same shared helper either way. The worker loader is null
+				// on every profile that does not hand an Anvil loader to the
+				// scheduler, so those take the McRegion attach exactly as
+				// before.
+				if (asyncAnvilWorkerLoader != nullptr)
+					AnvilChunkLoader::attachChunkEntities(worldObj, chunk, result.nbt.get());
+				else
+					McRegionChunkLoader::attachChunkEntities(worldObj, chunk, result.nbt.get());
 				chunk->lastSaveTime = currentWorldTime();
 				break;
 			case ChunkGenerationScheduler::ResultKind::GeneratedData:
@@ -533,6 +595,14 @@ bool ChunkProvider::drainAsyncGeneratedChunks(int_t budget)
 		delete result.chunk;
 		asyncGenerationScheduler->complete(result.x, result.z);
 	}
+#if PLATFORM_3DS
+	// A published column paid the full lump above; pace the next one off the
+	// measured cost (a no-op window for a cheap publish -- see the pacing
+	// comment at the top of this function).
+	if (published)
+		nextAsyncPublishAfterNs =
+			publishWindowStartNs + 2LL * (System::nanoTime() - publishWindowStartNs);
+#endif
 	return published;
 }
 #endif
@@ -990,10 +1060,40 @@ Chunk *ChunkProvider::provideChunk(int_t i, int_t j)
 #endif
 			if (!critical && genChunksThisTick >= PLATFORM_GENERATE_CHUNKS_PER_TICK)
 				return blankChunk;
+#if PLATFORM_3DS
+			// Wall-clock pacing for the fallback itself. The valve exists for
+			// the queue-full burst, the scheduler-dead configuration and the
+			// critical ring around the player (those columns bypass the async
+			// queue by design, so a critical SAVED column still pays its SD
+			// read + NBT decode + Chunk construction here, teleports above
+			// all), and one valve step is a full synchronous generate -- or
+			// the same saved-column lump just described. At 268 MHz either is
+			// tens of milliseconds landing in one tick, once per tick, for as
+			// long as the queue stays full: that was the "tirones muy graves
+			// al generar o cargar chunks" on both fresh and explored terrain.
+			// Hold the next attempt until twice the measured cost of the last
+			// one has passed: a cheap step never notices the clock, an
+			// expensive burst streams at a bounded ~50% duty cycle instead
+			// of monopolising every tick, and the player's own column
+			// (critical) is never held up.
+			if (!critical && System::nanoTime() < nextValveGenerateAfterNs)
+				return blankChunk;
+#endif
 			genChunksThisTick++;
 		}
 #endif
+#if PLATFORM_3DS
+		// Charge every full synchronous prepareChunk that reaches the tail,
+		// critical ones included: they cost the frame the same either way, and
+		// a critical load right after a teleport is exactly the kind of
+		// expense the pacing above exists to spread out.
+		const long_t valveStartNs = System::nanoTime();
+		Chunk *const preparedChunk = prepareChunk(i, j);
+		nextValveGenerateAfterNs = valveStartNs + 2LL * (System::nanoTime() - valveStartNs);
+		return preparedChunk;
+#else
 		return prepareChunk(i, j);
+#endif
 	}
 
 	if (it->second != nullptr)

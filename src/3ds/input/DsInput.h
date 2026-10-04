@@ -34,12 +34,13 @@ struct DsInputState
     float stickX = 0.0f;        // -1..1, raw (deadzone handling is downstream)
     float stickY = 0.0f;
 
-    // New 3DS C-Stick, same raw -1..1 axis contract as the circle pad fields
-    // (Y down-positive, nub up reads negative). On an Old 3DS ir:rst never
-    // initialises (hidInit only starts it on New hardware), so
-    // irrstCstickRead reports a zeroed position and these stay 0 -- the
-    // gameplay look channel is inert rather than absent, and the shared
-    // snapshot's right-stick fields read a centred stick.
+    // Right stick (New 3DS C-Stick, or a Circle Pad Pro clipped onto an Old
+    // 3DS/XL -- DsInput.cpp overrides libctru's weak hidShouldUseIrrst() so
+    // hidInit brings ir:rst up on every model), same raw -1..1 axis contract
+    // as the circle pad fields (Y down-positive, nub up reads negative).
+    // With no right stick attached the ir:rst entries never refresh and
+    // these stay 0 -- the gameplay look channel is inert rather than absent,
+    // and the shared snapshot's right-stick fields read a centred stick.
     float cstickX = 0.0f;
     float cstickY = 0.0f;
 };
@@ -52,8 +53,9 @@ void dsInputInit(int screenW, int screenH);
 // lwjgl::Display::processMessages(). Also forwards touch -> mouse, START ->
 // KEY_ESCAPE (or ENTER while a field has focus), and the gameplay channel
 // (jump/inventory/sneak keys; attack from X or R and use from B or L as
-// mouse buttons; hotbar wheel from D-pad LEFT/RIGHT, ZL/ZR on a New 3DS,
-// and the C-Stick as a look pad there; chat from D-pad UP). While a field
+// mouse buttons; hotbar wheel from D-pad LEFT/RIGHT, ZL/ZR (New 3DS or
+// Circle Pad Pro), and the right stick as a look pad there; chat from D-pad
+// UP). While a field
 // has focus the menu navigation and the mouse forwarding stand down -- see
 // DsInput.cpp.
 //

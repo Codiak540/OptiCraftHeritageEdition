@@ -339,6 +339,18 @@ void NetworkManager::processReadPackets()
 	constexpr int_t CHUNK_PACKETS_PER_TICK_NEW3DS = 12;
 	const int_t MAX_CHUNK_PACKETS_PER_TICK =
 	    dsIsNew3DS() ? CHUNK_PACKETS_PER_TICK_NEW3DS : CHUNK_PACKETS_PER_TICK_OLD3DS;
+	// The wall-clock half of the import cap. The counts bound how many columns
+	// a tick may import, but the per-column cost is what actually collapses the
+	// tick on the Old model -- six ~192 KB section imports (zlib plus the copy
+	// into fresh storages, plus the heightmap pass) are far more than a 50 ms
+	// tick can carry at 268 MHz, so the count alone let the tick stretch until
+	// movement packets went out late and the server read the client as laggy.
+	// Once chunk imports alone have spent this budget, the dispatch stops at
+	// the front Packet51 with the same re-queue shape as the count cap; at
+	// least one import always runs, and a New 3DS still drains several inside
+	// it. The reader thread keeps decoding ahead regardless, and TCP
+	// backpressure holds the rest server-side.
+	constexpr long_t MAX_CHUNK_IMPORT_BUDGET_NS = 10LL * 1000LL * 1000LL;
 	#else
 	constexpr int_t MAX_SEND_QUEUE_BYTES = 0x100000;
 	constexpr int_t MAX_PACKETS_PER_TICK = 1000;
@@ -372,6 +384,12 @@ void NetworkManager::processReadPackets()
 	// queued for subsequent ticks instead of monopolizing the EE and causing a
 	// visible frame hitch.
 	int_t chunkImportsThisTick = 0;
+#if defined(CTR_PLATFORM)
+	// Clock for MAX_CHUNK_IMPORT_BUDGET_NS: starts at the dispatch loop, not
+	// at the top of the tick, so the keepalive/overflow bookkeeping above
+	// never eats into the import allowance.
+	const long_t chunkDispatchStartNs = System::nanoTime();
+#endif
 	for (int_t i = MAX_PACKETS_PER_TICK; i-- > 0;)
 	{
 		std::unique_ptr<Packet> packet;
@@ -384,10 +402,12 @@ void NetworkManager::processReadPackets()
 			// The chunk-import cap: re-queue a Packet51 at the front and
 			// stop the dispatch there, so the import cost is spread over
 			// ticks and the smaller packets behind it are not starved by a
-			// flood that would never yield (see MAX_CHUNK_PACKETS_PER_TICK).
+			// flood that would never yield (see MAX_CHUNK_PACKETS_PER_TICK
+			// and the wall-clock MAX_CHUNK_IMPORT_BUDGET_NS).
 			if (readPackets.front() != nullptr &&
 			    readPackets.front()->getPacketId() == 51 &&
-			    chunkImportsThisTick >= MAX_CHUNK_PACKETS_PER_TICK)
+			    (chunkImportsThisTick >= MAX_CHUNK_PACKETS_PER_TICK ||
+			     System::nanoTime() - chunkDispatchStartNs >= MAX_CHUNK_IMPORT_BUDGET_NS))
 				break;
 #endif
 			packet = std::move(readPackets.front());

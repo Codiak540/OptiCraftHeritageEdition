@@ -914,6 +914,17 @@ void GuiIngame::renderGameOverlay(float_t partialTick, bool showDebug, int_t mou
 	{
 		renderGameplayBottomPanel(partialTick);
 		renderBottomPanelEnd();
+		// The panel's widgets draw through Gui::drawRect, whose vanilla
+		// epilogue leaves Blend disabled. The overlays right below -- vignette,
+		// pumpkin blur, portal -- inherit the blend state instead of enabling
+		// it themselves (vanilla's renderPumpkinBlur only sets the blend FUNC,
+		// renderGameOverlay's reset above is what turns GL_BLEND on), and the
+		// citro3d backend spells a disabled blend as opaque identity factors:
+		// the pumpkin blur painted the top screen solid black in gameplay,
+		// while any open GuiScreen (no panel pass between the two) still
+		// showed it translucent. Re-assert the same 2D state here, exactly
+		// like the entity-state reset further down does.
+		resetOverlayGLState();
 	}
 #endif
 

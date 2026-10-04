@@ -10,11 +10,13 @@
 #include <citro3d.h>
 
 #include <cstdio>
+#include <cstdlib>
 
 #include "platform/Log.h"
 #include "platform/Thread.h"
 #include "client/Minecraft.h"
 #include "java/String.h"
+#include "net/minecraft/src/ThreadedFileIOBase.h"
 #include "3ds/DsBootstrap.h"
 #include "3ds/system/DsEarlyCrash.h"
 
@@ -26,6 +28,10 @@
 // CIA path cannot rely on the exheader's StackSize key for the same job
 // because the .3dsx / Homebrew Launcher loader reads no exheader at all.
 extern "C" std::uint32_t __stacksize__ = 0x80000;
+
+// Defined in SoundManager_3DS.cpp; declared here instead of a header because
+// this is exit plumbing private to the 3DS bring-up, not a SoundManager API.
+void dsStopMusicStreamAtExit();
 
 namespace
 {
@@ -79,6 +85,74 @@ void shutdownServices()
 	fsExit();
 }
 
+// Stop the threads the normal shutdown never joined, from inside exit().
+//
+// Root cause of the "exit crash" (Luma dump 2026-10-04, hardware): on this
+// platform newlib's exit() only walks the atexit list (verified in the
+// linked exit(): __call_exitprocs, the __stdio_exit_handler, then _exit) --
+// __libc_fini_array is never called by anyone, so C++ global destructors do
+// NOT run. ThreadedFileIOBase's worker is spawned by a global constructor
+// and parked in a 25 ms timed condition_variable wait; its destructor (the
+// only thing that stops and joins it) never executes. libctru's _exit
+// (__libctru_exit) then unmaps the linear heap AND the whole application
+// heap with every other thread still alive, and thread stacks are memalign'd
+// from that heap (libctru threadCreate). The worker's 25 ms timeout is the
+// one wake-up source that fires on its own after the unmap: svcArbitrateAddress
+// returns to a pop on the now unmapped stack -- data abort, "Translation -
+// Section", FAR == SP. That is the same family as the 2026-10-03 GSP event
+// thread fixed with gfxExit() in shutdownFinalize (see the comment there);
+// this is the remaining self-waking thread after every normal teardown step.
+//
+// atexit() reaches every exit path: the exit(0) inside
+// shutdownMinecraftApplet(), the std::exit(1) in CrashHandler_3ds.cpp, and
+// crt0's exit() after main returns (the hasCrashed path, and the early boot
+// failures above -- the IO worker exists from static initialisation, so even
+// "missing game data" exits need it). Handlers run inside exit(), before
+// _exit unmaps anything, which is the whole point. Everything else is
+// already joined by then on the normal paths: the chunk-generation worker
+// through ~World in shutdownMinecraftApplet, the network threads through
+// ~NetworkManager on disconnect, the GSP event thread through the gfxExit()
+// in shutdownFinalize, and the audio refill thread through
+// sndManager->closeMinecraft(). The two calls below cover exactly the ones
+// the crash paths skip:
+//
+//   * the music stream thread -- CrashHandler_3ds.cpp exits without
+//     closeMinecraft(), and its refill loop self-wakes every 2-16 ms;
+//   * the threaded-IO worker -- stopped late enough for its queued saves to
+//     drain first (waitForFinish inside), so this never discards data.
+void stopSurvivingWorkerThreads()
+{
+	try
+	{
+		dsStopMusicStreamAtExit();
+		ThreadedFileIOBase::threadedIOInstance.shutdown();
+
+		// moonlight-N3DS's exit pattern (src/n3ds_main.cpp registers
+		// n3ds_exit_handler, which calls aptExit() itself): run APT's full
+		// exit HERE, while every service, the SD mount and the heap are
+		// still alive. libctru would otherwise run aptExit deep inside
+		// _exit's __appExit, after archiveUnmountAll()/fsExit()/hidExit() --
+		// past the last point the log file can reach -- and aptExit's
+		// unbounded join of the internal APT event-handler thread is exactly
+		// the kind of wait that must not happen behind fsExit(). On the
+		// HOME-close path this performs
+		// APT_PrepareToCloseApplication and defers APT_CloseApplication to
+		// the same __system_retAddr hook __libctru_exit would call, so the
+		// system handshake is unchanged; aptExit is refcounted, so the
+		// __appExit call that follows is an early return. Order vs. our own
+		// threads: audio/ndsp and the IO worker stop first, so the event
+		// handler APT joins cannot be caught mid-flight in one of our DSP
+		// relays we still own.
+		aptExit();
+	}
+	catch (...)
+	{
+		// A broken teardown inside exit() must not become a std::terminate;
+		// the process is going down either way and the kernel reclaims what
+		// the join missed.
+	}
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -118,6 +192,12 @@ int main(int argc, char **argv)
 	// The handler routes through CrashHandler::Crash() -- bottom screen held
 	// until START, reason copied into the file log.
 	DsEarlyCrash::install();
+
+	// Before any code that can exit(): see stopSurvivingWorkerThreads() above.
+	// atexit() is the only teardown phase this platform's exit() actually
+	// runs, so this is where the threads that would otherwise outlive the
+	// process heap must be stopped.
+	std::atexit(stopSurvivingWorkerThreads);
 
 	// fsInit + the "sdmc:" mount + mkdir sdmc:/opticraft, all in DsBootstrap
 	// because java::File objects and Resource lookups can trigger the same

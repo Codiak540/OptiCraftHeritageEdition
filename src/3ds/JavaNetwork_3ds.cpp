@@ -91,6 +91,26 @@ int openBlockingConnection(const std::string &host, int port)
 	const int noDelay = 1;
 	(void)::setsockopt(newFd, IPPROTO_TCP, TCP_NODELAY, &noDelay, sizeof(noDelay));
 
+	// Deeper kernel queues for the one burst this profile really meets: the
+	// map-chunk fan-in right after the spawn teleport. libctru's sys/socket.h
+	// lists SO_RCVBUF/SO_SNDBUF among its implemented options (they carry
+	// none of the "no effect?" markers its inert ones do), and the default
+	// receive window is small enough that a server-side burst lands as loss
+	// and retransmits while the game thread drains at its bounded import
+	// rate -- the retransmits are what inflate the effective ping during a
+	// chunk storm. The sizes stay modest against the 1 MB soc:U context
+	// block; a stack that refuses them keeps its defaults, and the one
+	// log line tells a hardware session which happened (0 = honoured,
+	// -1 = refused).
+	const int receiveQueueBytes = 96 * 1024;
+	const int sendQueueBytes = 32 * 1024;
+	const int rcvBufResult =
+		::setsockopt(newFd, SOL_SOCKET, SO_RCVBUF, &receiveQueueBytes, sizeof(receiveQueueBytes));
+	const int sndBufResult =
+		::setsockopt(newFd, SOL_SOCKET, SO_SNDBUF, &sendQueueBytes, sizeof(sendQueueBytes));
+	MC_LOG_INFO("network", "[3DS] socket queues: SO_RCVBUF=%d SO_SNDBUF=%d\n",
+	            rcvBufResult, sndBufResult);
+
 	// Bounded, interruptible sends (see DsSocket::write, which replaced the
 	// original unbounded blocking send: a stalled peer must fail the write
 	// instead of wedging the write thread forever, or the outbound pipe dies

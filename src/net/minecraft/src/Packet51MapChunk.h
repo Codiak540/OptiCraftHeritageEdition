@@ -10,6 +10,9 @@ class Packet51MapChunk : public Packet
 {
 public:
     Packet51MapChunk();
+    // Releases the 3DS reader-side pre-inflate slot when the packet holds
+    // inflated data (see Packet51MapChunk.cpp).
+    ~Packet51MapChunk() override;
 
     void readPacketData(std::istream &is) override;
     void writePacketData(std::ostream &os) override;

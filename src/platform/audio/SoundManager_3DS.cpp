@@ -984,6 +984,12 @@ void SoundManager::onSoundOptionsChanged()
 	}
 }
 
+// libctru's DSP wake hook: the weak definition lives in apt.c (a no-op stub)
+// and dsp.c overrides it once the DSP service is up. It is deliberately not
+// in the public headers, but it is the only way to complete the DSP sleep
+// handshake from outside libctru's own APT flow -- see closeMinecraft().
+extern "C" void aptDspWakeup(void);
+
 void SoundManager::closeMinecraft()
 {
 	stopStream();
@@ -994,6 +1000,25 @@ void SoundManager::closeMinecraft()
 	{
 		for (int channel = 0; channel < CTR_SFX_CHANNEL_COUNT; ++channel)
 			ndspChnWaveBufClear(channel);
+		// Force the DSP awake before ndspExit() joins its sync thread. A HOME
+		// menu suspend runs the DSP sleep handshake (aptJumpToHomeMenu ->
+		// aptDspSleep -> component unload), and the matching wake runs on the
+		// resume (aptWaitForWakeUp -> aptDspWakeup). That handshake is spread
+		// over two unsynchronized states (dsp.c's dspSleeping and ndsp.c's
+		// bSleeping/bEnteringSleep) touched by both the main thread and
+		// libctru's APT event-handler thread, so a close right after a
+		// suspend cycle can catch the ndsp sync thread still parked in
+		// LightEvent_Wait(&sleepEvent) -- and ndspExit() joins it with
+		// threadJoin(U64_MAX) without signalling anything, so the join
+		// never returns and the console stays on the "Closing software"
+		// screen forever (Old 2DS, 2026-10-04; the title-screen exit never
+		// sleeps the DSP, which is why only HOME -> close hangs).
+		// aptDspWakeup() is the libctru weak-symbol override point (the
+		// real body lives in dsp.c; it is not in the public headers): when
+		// the DSP is awake it is a no-op, and when any part of the sleep
+		// state is stuck it reloads the component, flips the ndsp state and
+		// signals the event, so the join completes on the next DSP frame.
+		aptDspWakeup();
 		ndspExit();
 	}
 	loaded = false;
@@ -1151,3 +1176,32 @@ void SoundManager::playSoundFX(const jstring &s, float volume, float pitch)
 }
 
 #endif // NO_SOUND
+
+// Called from the 3DS exit hook in main_3ds.cpp (atexit), not from the game:
+// every normal quit stops the stream through sndManager->closeMinecraft()
+// before exit(0) runs, but the crash screen exits with std::exit(1) and skips
+// that call. The refill thread sleeps in 2-16 ms svcSleepThread() slices, so
+// left running it self-wakes onto libctru's unmapped heap (see the atexit
+// hook for the full mechanism) -- the same data abort the threaded-IO worker
+// produced (Luma dump 2026-10-04). stopStream() joins and frees the thread,
+// and is a cheap early-out when nothing is playing. Declared extern in
+// main_3ds.cpp rather than a header: it is exit plumbing private to this
+// platform's bring-up, not part of the SoundManager contract.
+void dsStopMusicStreamAtExit()
+{
+#if !defined(NO_SOUND)
+	stopStream();
+	// The crash screen exits with std::exit(1) and never runs
+	// closeMinecraft(), so on that path this is the only audio teardown that
+	// happens before libctru unmaps the heaps. Two threads would otherwise
+	// survive the unmap: the refill thread stopped by stopStream() above,
+	// and ndsp's own sync thread, which self-wakes on every DSP frame IRQ.
+	// Both the forced wake and the reasoning are the ones documented in
+	// closeMinecraft() -- aptDspWakeup() first so ndspExit()'s unbounded
+	// join cannot catch the sync thread parked in the sleep wait after a
+	// HOME suspend cycle. On the normal path closeMinecraft() already took
+	// ndsp down, and ndspExit() is refcounted, so this is an early return.
+	aptDspWakeup();
+	ndspExit();
+#endif
+}

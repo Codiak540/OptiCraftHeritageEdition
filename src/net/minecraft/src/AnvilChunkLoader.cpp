@@ -13,6 +13,7 @@
 #include "Block.h"
 #include "AnvilChunkLoaderPending.h"
 #include "Chunk.h"
+#include "ChunkLoader.h"
 #include "CompressedStreamTools.h"
 #include "Entity.h"
 #include "EntityList.h"
@@ -200,6 +201,167 @@ bool AnvilChunkLoader::isChunkSaved(int_t x, int_t z)
     std::shared_ptr<RegionFile> region = RegionFileCache::acquireRegionFile(
         worldDir, x, z, RegionFileCache::Format::Anvil, readOnly);
     return region != nullptr && region->hasChunk(x & 31, z & 31);
+}
+
+bool AnvilChunkLoader::readChunkData(int_t x, int_t z, std::vector<byte_t> &data,
+                                     ChunkLoadStatus *status)
+{
+    if (status != nullptr)
+        *status = ChunkLoadStatus::Missing;
+
+    // Same sources and order as loadChunk(): a pending save is the freshest
+    // copy of the column (copyPendingChunkData copies under its mutex), and
+    // only then the region file -- RegionFile/RegionFileCache serialize their
+    // own state, so this is safe to call from the chunk-generation worker.
+    // Everything lands in the caller's vector: the game thread keeps its own
+    // readScratch, and the worker's buffer is its own.
+    const ChunkCoordIntPair position(x, z);
+    if (copyPendingChunkData(position, data))
+    {
+        if (status != nullptr)
+            *status = ChunkLoadStatus::Loaded;
+        return true;
+    }
+
+    if (storageDisabled)
+        return false;
+
+    std::shared_ptr<RegionFile> region = RegionFileCache::acquireRegionFile(
+        worldDir, x, z, RegionFileCache::Format::Anvil, readOnly);
+    RegionFile::ReadStatus readStatus = RegionFile::ReadStatus::Missing;
+    if (!region->getChunkData(x & 31, z & 31, data, &readStatus))
+    {
+        if (status != nullptr && readStatus != RegionFile::ReadStatus::Missing)
+            *status = ChunkLoadStatus::ReadError;
+        return false;
+    }
+
+    if (status != nullptr)
+        *status = ChunkLoadStatus::Loaded;
+    return true;
+}
+
+Chunk *AnvilChunkLoader::decodeChunkBlocksFromData(World *world, int_t x, int_t z,
+                                                   std::vector<byte_t> &data,
+                                                   std::unique_ptr<NBTTagCompound> &rootOut,
+                                                   ChunkLoadStatus *status)
+{
+    rootOut.reset();
+    // Same failure policy as McRegionChunkLoader::decodeChunkBlocksFromData:
+    // a column that parses but cannot be decoded reports ReadError, so the
+    // publish refuses to regenerate over data it could not read and keeps
+    // the region file as it found it.
+    if (status != nullptr)
+        *status = ChunkLoadStatus::ReadError;
+
+    std::unique_ptr<NBTTagCompound> root;
+    try
+    {
+        VectorInputStream stream(data);
+        PlatformLoadWorkScope nbtWork(PlatformLoadWork::Nbt);
+        root.reset(CompressedStreamTools::readCompound(stream));
+    }
+    catch (...)
+    {
+        MC_LOG_ERROR("chunk", "Invalid NBT in Anvil chunk %d,%d; preserving region data\n", x, z);
+        return nullptr;
+    }
+    if (root == nullptr || !root->hasKey("Level"))
+    {
+        MC_LOG_WARN("chunk", "Anvil chunk file at %d,%d is missing level data, skipping\n", x, z);
+        return nullptr;
+    }
+
+    NBTTagCompound *level = root->getCompoundTag("Level");
+    if (level == nullptr || !level->hasKey("Sections"))
+    {
+        MC_LOG_ERROR("chunk", "Anvil chunk file at %d,%d is missing sections, skipping\n", x, z);
+        return nullptr;
+    }
+
+    // The relocation rules loadChunkFromCompound() applies on the game
+    // thread, kept identical here: read-only saves follow the stored
+    // coordinates, writable saves relocate to the requested position.
+    if (readOnly)
+    {
+        const int_t storedX = level->getInteger("xPos");
+        const int_t storedZ = level->getInteger("zPos");
+        if (storedX != x || storedZ != z)
+        {
+            MC_LOG_WARN("chunk", "Anvil chunk %d,%d belongs to %d,%d; relocating chunk coordinates\n",
+                        x, z, storedX, storedZ);
+            level->setInteger("xPos", x);
+            level->setInteger("zPos", z);
+        }
+    }
+
+    PlatformLoadWorkScope decodeWork(PlatformLoadWork::ChunkDecode);
+    Chunk *chunk = readChunkBlocksFromLevel(world, level);
+    if (chunk == nullptr)
+        return nullptr;
+
+    if (!readOnly && !chunk->isAtLocation(x, z))
+    {
+        MC_LOG_WARN("chunk", "Anvil chunk %d,%d belongs to %d,%d; relocating chunk coordinates\n",
+                    x, z, chunk->xPosition, chunk->zPosition);
+        level->setInteger("xPos", x);
+        level->setInteger("zPos", z);
+        delete chunk;
+        chunk = readChunkBlocksFromLevel(world, level);
+        if (chunk == nullptr)
+            return nullptr;
+    }
+
+    chunk->removeUnknownBlocks();
+    // The root travels with the chunk: publish still has to construct the
+    // entities, tile entities and scheduled ticks, which the worker never
+    // does because they write World state.
+    rootOut = std::move(root);
+    if (status != nullptr)
+        *status = ChunkLoadStatus::Loaded;
+    return chunk;
+}
+
+void AnvilChunkLoader::attachChunkEntities(World *world, Chunk *chunk, NBTTagCompound *root)
+{
+    if (chunk == nullptr || root == nullptr)
+        return;
+    NBTTagCompound *level = root->getCompoundTag("Level");
+    if (level == nullptr)
+        return;
+
+    // Entities and tile entities through the same shared helper the McRegion
+    // publish uses (it sets hasEntities as it goes).
+    ChunkLoader::loadChunkEntitiesFromCompound(world, chunk, level);
+
+    // The Anvil-only tail that helper does not know: scheduled block updates
+    // (falling sand, flowing water) saved with the column. Replaying them
+    // writes World state, which is why the worker-side decode left them for
+    // this game-thread call. McRegion levels never carry the tag, so a
+    // McRegion publish going through the shared helper alone stays correct.
+    if (level->hasKey("TileTicks"))
+    {
+        NBTTagList *ticks = level->getTagList("TileTicks");
+        for (int_t index = 0; index < ticks->tagCount(); ++index)
+        {
+            NBTTagCompound *tag = dynamic_cast<NBTTagCompound *>(ticks->tagAt(index));
+            if (tag == nullptr)
+                continue;
+            world->scheduleBlockUpdateFromLoad(
+                tag->getInteger("x"), tag->getInteger("y"), tag->getInteger("z"),
+                tag->getInteger("i"), tag->getInteger("t"));
+        }
+    }
+}
+
+Chunk *AnvilChunkLoader::loadChunkFromData(World *world, int_t x, int_t z,
+                                           std::vector<byte_t> &data, ChunkLoadStatus *status)
+{
+    std::unique_ptr<NBTTagCompound> root;
+    Chunk *chunk = decodeChunkBlocksFromData(world, x, z, data, root, status);
+    if (chunk != nullptr)
+        attachChunkEntities(world, chunk, root.get());
+    return chunk;
 }
 
 Chunk *AnvilChunkLoader::loadChunkFromCompound(World *world, int_t expectedX, int_t expectedZ,
@@ -425,7 +587,7 @@ void AnvilChunkLoader::writeChunkToLevel(Chunk *chunk, World *world, NBTTagCompo
     }
 }
 
-Chunk *AnvilChunkLoader::readChunkFromLevel(World *world, NBTTagCompound *level)
+Chunk *AnvilChunkLoader::readChunkBlocksFromLevel(World *world, NBTTagCompound *level)
 {
 #if PLATFORM_PS2 && MC_LOG_LEVEL > 2
     const std::uint32_t blocksStart = platformProfileRenderPhaseBegin();
@@ -500,6 +662,19 @@ Chunk *AnvilChunkLoader::readChunkFromLevel(World *world, NBTTagCompound *level)
         platformProfileChunkDecode(lightingStart, PlatformChunkDecodeStage::Lighting);
 #endif
     }
+
+    return chunk.release();
+}
+
+Chunk *AnvilChunkLoader::readChunkFromLevel(World *world, NBTTagCompound *level)
+{
+    // Blocks/biomes/heightmap/skylight first: the part the worker-side decode
+    // shares through readChunkBlocksFromLevel. Everything below constructs
+    // entities, tile entities and scheduled block updates and touches World,
+    // so it never runs on the worker.
+    std::unique_ptr<Chunk> chunk(readChunkBlocksFromLevel(world, level));
+    if (chunk == nullptr)
+        return nullptr;
 
 #if PLATFORM_PS2 && MC_LOG_LEVEL > 2
     const std::uint32_t entityDecodeStart = platformProfileRenderPhaseBegin();
