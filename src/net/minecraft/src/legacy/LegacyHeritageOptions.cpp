@@ -33,17 +33,21 @@ constexpr int_t BUTTON_EDIT_PLAYER_NAME = 606;
 constexpr int_t BUTTON_SPLITSCREEN_LAYOUT = 607;
 constexpr int_t BUTTON_LEGACY_CRAFTING = 608;
 constexpr int_t BUTTON_LEGACY_CREATIVE = 609;
+// The auto-jump toggle lives in both options screens on every platform
+// (GuiOptiCraftOptions is the non-legacy twin).
+constexpr int_t BUTTON_AUTO_JUMP = 613;
 #if defined(CTR_PLATFORM)
 // The face-button camera toggle lives in both options screens (this legacy
-// one is the screen the 3DS actually shows; GuiOptiCraftOptions is the
-// non-legacy twin). The three dual-screen HUD toggles below it and the
-// auto-jump toggle beside it too.
+// one is the screen the 3DS actually shows). The dual-screen HUD toggles
+// below it are 3DS-only.
 constexpr int_t BUTTON_FACE_CAMERA = 610;
 constexpr int_t BUTTON_TOUCH_MAP = 611;
 constexpr int_t BUTTON_TOUCH_COORDS = 612;
-constexpr int_t BUTTON_AUTO_JUMP = 613;
 constexpr int_t BUTTON_POCKET_TOUCH = 614;
 constexpr int_t BUTTON_TOGGLE_SHIFT = 615;
+// The dual-screen HUD side swap (GameSettings::touchHudSwap), the legacy
+// twin of GuiOptiCraftOptions' BUTTON_TOUCH_HUD_SWAP.
+constexpr int_t BUTTON_TOUCH_HUD_SWAP = 616;
 #endif
 
 }
@@ -52,10 +56,10 @@ LegacyHeritageOptions::LegacyHeritageOptions(GuiScreen *parent, GameSettings *se
     LegacyOptionsBackgroundMode backgroundModeValue)
     : LegacyOptionsScreen(parent, settingsValue, backgroundModeValue), nameField(nullptr), legacyUiCheckbox(nullptr),
       legacyLookCheckbox(nullptr), legacyCraftingCheckbox(nullptr), legacyCreativeCheckbox(nullptr),
-      alternativeControlsCheckbox(nullptr)
+      alternativeControlsCheckbox(nullptr), autoJumpCheckbox(nullptr)
 #if defined(CTR_PLATFORM)
-      , faceCameraCheckbox(nullptr), touchMapCheckbox(nullptr), touchCoordsCheckbox(nullptr), autoJumpCheckbox(nullptr),
-      pocketTouchCheckbox(nullptr), toggleShiftCheckbox(nullptr)
+      , faceCameraCheckbox(nullptr), touchMapCheckbox(nullptr), touchCoordsCheckbox(nullptr),
+      pocketTouchCheckbox(nullptr), toggleShiftCheckbox(nullptr), touchHudSwapCheckbox(nullptr)
 #endif
 {
 }
@@ -79,10 +83,15 @@ void LegacyHeritageOptions::initGui()
     ++rowCount;
 #endif
 #if defined(CTR_PLATFORM)
-    // Face Camera/Auto Jump share one row, Touch Click/Toggle Shift share
-    // the next. Touch Map and Touch Coords share rows with the legacy
-    // options above.
+    // Touch Click/Toggle Shift share one row and Face Camera takes the row
+    // under it at full width. The rest pair into the legacy rows above
+    // (Touch Map with Legacy UI, Touch Coords with Legacy Look, Swap Touch
+    // HUD with Legacy Crafting, Auto Jump with Legacy Creative), so none of
+    // them grow the panel.
     rowCount += 2;
+#else
+    // Auto Jump (every platform outside the 3DS pairing): its own row.
+    ++rowCount;
 #endif
 #if PLATFORM_HAS_CONTROLLER_CALIBRATION
     ++rowCount;
@@ -107,9 +116,10 @@ void LegacyHeritageOptions::initGui()
     row += 2;
 
 #if defined(CTR_PLATFORM)
-    // Touch Map and Touch Coords share rows with the legacy options in the
-    // first column (no gap): Touch Map pairs with Legacy UI, Touch Coords
-    // with Legacy Look. Face-Button Camera goes at the bottom, full width.
+    // The right-hand column of touch toggles pairs into the legacy rows
+    // (no gap): Touch Map with Legacy UI, Touch Coords with Legacy Look,
+    // Swap Touch HUD with Legacy Crafting, Auto Jump with Legacy Creative.
+    // Face-Button Camera goes at the bottom, full width.
     constexpr int_t PAIR_GAP = 16;
     const int_t colW = std::max<int_t>(48, (w - PAIR_GAP) / 2);
 #else
@@ -147,6 +157,28 @@ void LegacyHeritageOptions::initGui()
 #endif
     ++row;
 
+#if defined(CTR_PLATFORM)
+    // Legacy Crafting halves its row on the 3DS: Swap Touch HUD takes the
+    // right column, directly under the Touch Coords toggle above it, so
+    // the touch options read as one right-hand column.
+    legacyCraftingCheckbox = new LegacyOptionCheckbox(BUTTON_LEGACY_CRAFTING, x, legacyLayout.rowY(row), colW, h,
+        uiText("Legacy Crafting"), settings->legacyCrafting);
+    controlList.push_back(legacyCraftingCheckbox);
+    touchHudSwapCheckbox = new LegacyOptionCheckbox(BUTTON_TOUCH_HUD_SWAP, x + colW + PAIR_GAP,
+        legacyLayout.rowY(row), colW, h, uiText("Swap Touch HUD"), settings->touchHudSwap);
+    controlList.push_back(touchHudSwapCheckbox);
+    ++row;
+
+    // Legacy Creative halves its row the same way: Auto Jump takes the
+    // right column.
+    legacyCreativeCheckbox = new LegacyOptionCheckbox(BUTTON_LEGACY_CREATIVE, x, legacyLayout.rowY(row), colW, h,
+        uiText("Legacy Creative"), settings->legacyCreative);
+    controlList.push_back(legacyCreativeCheckbox);
+    autoJumpCheckbox = new LegacyOptionCheckbox(BUTTON_AUTO_JUMP, x + colW + PAIR_GAP,
+        legacyLayout.rowY(row), colW, h, uiText("Auto Jump"), settings->autoJump);
+    controlList.push_back(autoJumpCheckbox);
+    ++row;
+#else
     legacyCraftingCheckbox = new LegacyOptionCheckbox(BUTTON_LEGACY_CRAFTING, x, legacyLayout.rowY(row++), w, h,
         uiText("Legacy Crafting"), settings->legacyCrafting);
     controlList.push_back(legacyCraftingCheckbox);
@@ -155,24 +187,26 @@ void LegacyHeritageOptions::initGui()
         uiText("Legacy Creative"), settings->legacyCreative);
     controlList.push_back(legacyCreativeCheckbox);
 
-#if defined(CTR_PLATFORM)
-    // Face-Button Camera and Auto Jump share the bottom row (the label is
-    // shortened to "Face Camera" so both fit the legacy half-width column).
-    faceCameraCheckbox = new LegacyOptionCheckbox(BUTTON_FACE_CAMERA, x, legacyLayout.rowY(row), colW, h,
-        uiText("Face Camera"), settings->faceButtonCamera);
-    controlList.push_back(faceCameraCheckbox);
-    autoJumpCheckbox = new LegacyOptionCheckbox(BUTTON_AUTO_JUMP, x + colW + PAIR_GAP,
-        legacyLayout.rowY(row), colW, h, uiText("Auto Jump"), settings->autoJump);
+    // Auto Jump: its own row on every platform but the 3DS, which pairs it
+    // into the Legacy Creative row above.
+    autoJumpCheckbox = new LegacyOptionCheckbox(BUTTON_AUTO_JUMP, x, legacyLayout.rowY(row++), w, h,
+        uiText("Auto Jump"), settings->autoJump);
     controlList.push_back(autoJumpCheckbox);
-    ++row;
+#endif
+
+#if defined(CTR_PLATFORM)
     pocketTouchCheckbox = new LegacyOptionCheckbox(BUTTON_POCKET_TOUCH, x, legacyLayout.rowY(row), colW, h,
         uiText("Touch Click"), settings->pocketTouch);
     controlList.push_back(pocketTouchCheckbox);
-    // Toggle Shift sits under Auto Jump on the same row as Touch Click,
-    // so the 3DS panel does not grow an extra row for it.
+    // Toggle Shift pairs with Touch Click; Face Camera (the label is
+    // shortened so it fits the half-width column) takes the full-width row
+    // under it.
     toggleShiftCheckbox = new LegacyOptionCheckbox(BUTTON_TOGGLE_SHIFT, x + colW + PAIR_GAP, legacyLayout.rowY(row++), colW, h,
         uiText("Toggle Shift"), settings->toggleShift);
     controlList.push_back(toggleShiftCheckbox);
+    faceCameraCheckbox = new LegacyOptionCheckbox(BUTTON_FACE_CAMERA, x, legacyLayout.rowY(row++), w, h,
+        uiText("Face Camera"), settings->faceButtonCamera);
+    controlList.push_back(faceCameraCheckbox);
 #endif
 
 #ifdef WII_PLATFORM
@@ -323,6 +357,15 @@ void LegacyHeritageOptions::actionPerformed(GuiButton *button)
         return;
     }
 
+    if (button->id == BUTTON_AUTO_JUMP)
+    {
+        settings->autoJump = !settings->autoJump;
+        if (autoJumpCheckbox != nullptr)
+            autoJumpCheckbox->setChecked(settings->autoJump);
+        settings->saveOptions();
+        return;
+    }
+
 #if defined(CTR_PLATFORM)
     if (button->id == BUTTON_FACE_CAMERA)
     {
@@ -347,14 +390,6 @@ void LegacyHeritageOptions::actionPerformed(GuiButton *button)
         settings->saveOptions();
         return;
     }
-    if (button->id == BUTTON_AUTO_JUMP)
-    {
-        settings->autoJump = !settings->autoJump;
-        if (autoJumpCheckbox != nullptr)
-            autoJumpCheckbox->setChecked(settings->autoJump);
-        settings->saveOptions();
-        return;
-    }
     if (button->id == BUTTON_POCKET_TOUCH)
     {
         settings->setPocketTouch(!settings->pocketTouch);
@@ -367,6 +402,14 @@ void LegacyHeritageOptions::actionPerformed(GuiButton *button)
         settings->toggleShift = !settings->toggleShift;
         if (toggleShiftCheckbox != nullptr)
             toggleShiftCheckbox->setChecked(settings->toggleShift);
+        settings->saveOptions();
+        return;
+    }
+    if (button->id == BUTTON_TOUCH_HUD_SWAP)
+    {
+        settings->touchHudSwap = !settings->touchHudSwap;
+        if (touchHudSwapCheckbox != nullptr)
+            touchHudSwapCheckbox->setChecked(settings->touchHudSwap);
         settings->saveOptions();
         return;
     }

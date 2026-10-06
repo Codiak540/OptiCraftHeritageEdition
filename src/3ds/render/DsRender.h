@@ -45,6 +45,24 @@ struct GpuState
 	bool colorWriteB = true;
 	bool colorWriteA = true;
 
+	// GL fog state (glFogi/glFogf/glFogColor + the GL_FOG capability). The
+	// PICA200 has a fixed per-pixel fog unit -- a depth-indexed LUT plus a
+	// fog colour, see the fog block in DsRender.cpp -- so the GL-shaped
+	// values carry through untouched and the LUT is built from them at draw
+	// time. projectionNear/projectionFar are recorded from the last
+	// renderFrustum because the LUT converts the hardware's post-projection
+	// depth back into eye distance through them (FogLut_CalcZ's inversion);
+	// every fogged draw runs under the frustum projection that produced its
+	// depths, so the pair is always the right one.
+	bool fogEnabled = false;
+	RenderFogMode fogMode = RenderFogMode::Linear;
+	float fogStart = 0.0f;
+	float fogEnd = 8.0f;
+	float fogDensity = 1.0f;
+	unsigned int fogColor = 0xFFFFFFFFu;
+	float projectionNear = 0.05f;
+	float projectionFar = 128.0f;
+
 	// GL's current-colour register (glColor4f/glColor3f): the colour taken by
 	// every vertex that arrives without one baked into the mesh -- the sky
 	// dome, the horizon band, the sun/moon quads, GUI overlays. renderColor4f
@@ -134,5 +152,26 @@ bool drawLinear(const RenderInterleavedMesh& mesh, const GpuState& state);
 // that rewrote it) is owned here.
 void* allocLinear(std::size_t bytes);
 void freeLinear(void* p);
+
+// Texture unit 1, the game's dynamic lightmap. EntityRenderer's
+// enableLightmap()/disableLightmap() select GL_TEXTURE1, bind the 16x16
+// lightmap texture there and toggle the unit's Texture2D capability;
+// RenderAPI_CTR_3DS mirrors those two halves onto the PICA's second
+// sampler through these calls. The state lives outside GpuState on
+// purpose: GL's unit-1 enable applies at call time, so a replayed
+// display-list section must take the bit from the frame it replays in,
+// not the one it was captured in.
+void setLightmapTexture(int textureId);
+void setLightmapActive(bool enabled);
+
+// The model-wide lightmap coordinate pair: GL's current unit-1 texcoord,
+// set per entity/hand through OpenGlHelper's setLightmapTextureCoords
+// (RenderAPI's renderSetMultiTextureCoord). The flush hands it to the
+// shader's lmco uniform, where it sums with the per-vertex brightness
+// pair -- meshes that carry the slot (terrain, particles:
+// Tessellator::setBrightness) get (0, 0) instead, so the pair only ever
+// lights the meshes the GL path lights with it: entities, the
+// first-person hand, the tile-entity renderers' special cases.
+void setLightmapCoord(float u, float v);
 
 } // namespace ds

@@ -1771,17 +1771,12 @@ void EntityRenderer::renderWorld(float partialTicks, int64_t renderTimeLimitNano
         
         ClippingHelperImpl::getInstance();
         
-        // Renderizar cielo (solo en distancias cortas). The 3DS renders it
-        // at every distance: DsWorldTuning pins its render distance to
-        // TINY (distance 3), and RenderAPI_CTR_3DS has no PICA fog unit
-        // behind setupFog to blend the terrain edge into the clear colour,
-        // so skipping the pass leaves the fog-coloured clear reading as a
-        // gray/black sky instead of one.
-#if defined(CTR_PLATFORM)
-        const bool renderSkyPass = true;
-#else
+        // Renderizar cielo (solo en distancias cortas). Same condition on
+        // every console now: the PICA fog unit is wired, so the terrain's
+        // streaming edge blends into the clear colour through setupFog the
+        // same way it does on PS2/Wii -- the fogless-era CTR override that
+        // forced this pass on at every distance is gone.
         const bool renderSkyPass = mc->gameSettings->renderDistance < 2;
-#endif
         if (renderSkyPass)
         {
             setupFog(-1, partialTicks);
@@ -2391,6 +2386,14 @@ void EntityRenderer::renderRainSnow(float partialTicks)
 #else
     renderBindTexture(mc->renderEngine->getTexture("/environment/snow.png"));
 #endif
+#if PLATFORM_3DS
+    // The same curtain rule as PS2, for a worse victim here: the cloud layer
+    // draws right after this pass (see the renderWorld order above), and the
+    // curtains are the nearest geometry in the frame. With depth writes on
+    // they punched per-frame holes in the clouds -- the sky flickered the
+    // whole time it rained. Rain must shade the frame, never occlude it.
+    renderDepthMask(false);
+#endif
 
 #if PLATFORM_FLOAT_VERTEX_MATH
     const float renderPosX = static_cast<float>(entity->lastTickPosX) +
@@ -2639,7 +2642,7 @@ void EntityRenderer::renderRainSnow(float partialTicks)
     renderEnable(RenderCapability::CullFace);
     renderDisable(RenderCapability::Blend);
     renderAlphaFunc(RenderCompare::Greater, 0.1f);
-#if PLATFORM_PS2
+#if PLATFORM_PS2 || PLATFORM_3DS
     renderDepthMask(true);
 #endif
     disableLightmap(static_cast<double>(partialTicks));
@@ -2718,30 +2721,11 @@ void EntityRenderer::updateFogColor(float partialTicks)
     fogColorGreen += (skyG - fogColorGreen) * fogDistanceFactor;
     fogColorBlue += (skyB - fogColorBlue) * fogDistanceFactor;
 
-#if defined(CTR_PLATFORM)
-    // The 3DS has no PICA fog unit -- every renderFogi/renderFogf/
-    // renderTerrainSetFog is a stub in its backends -- so nothing blends the
-    // terrain's streaming edge into this clear colour the way the fog
-    // machinery does on every other platform. Where no geometry draws, the
-    // framebuffer shows the clear raw, and the vanilla fog colour (near-white
-    // at noon, and pinned at 0% sky blend by this console's TINY render
-    // distance in the factor above) read as a wrong-coloured band between the
-    // terrain and the sky plane: the three-band horizon report. Worlds that
-    // run the sky pass get the sky itself as the backdrop -- the clear colour
-    // becomes the sky colour, the empty horizon reads as a continuation of
-    // the sky, and the only remaining cut is the terrain's own edge, which is
-    // the best a fogless console can express. Skyless worlds (the Nether)
-    // keep the fog-coloured clear: that IS their backdrop. The stages below
-    // still apply on top of it, so rain, thunder, water/lava viewpoints and
-    // the void fog keep shaping it exactly as they shape the vanilla clear.
-    if (world != nullptr && world->worldProvider != nullptr &&
-        world->worldProvider->func_48217_e())
-    {
-        fogColorRed = skyR;
-        fogColorGreen = skyG;
-        fogColorBlue = skyB;
-    }
-#endif
+    // No CTR special case anymore: the PICA fog unit is wired (see the
+    // renderFog* implementations in RenderAPI_CTR_3DS.cpp), so the fog
+    // machinery blends the terrain's streaming edge into this colour on
+    // the 3DS exactly as it does on every other platform, and the vanilla
+    // clear/fog colour serves unchanged. The stages below still shape it.
 
     const float rainStrength = world->getRainStrength(partialTicks);
     if (rainStrength > 0.0f)

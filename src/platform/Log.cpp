@@ -1,9 +1,11 @@
 #include "platform/Log.h"
 
+#include "platform/Mutex.h"
 #include "platform/RenderAPI.h"
 #include <cstdio>
 #include <cstdarg>
 #include <cstring>
+#include <mutex>
 
 #if PLATFORM_WII
 extern "C" void wiiPlatformLogWrite(const char* line);
@@ -57,6 +59,31 @@ void appendEarly(const char* line)
 bool g_syncWrites = MC_LOG_SYNC_WRITES != 0;
 char g_logPath[512] = {};
 int g_sinceCommit = 0;
+
+// The sink is shared by every thread that logs, and it was never locked.
+// Level 0 builds compile the MC_LOG macros out entirely, so the sink used to
+// be single-threaded by accident -- only the main thread ever reached these
+// functions, and the missing mutex was invisible. A level >= 1 multiplayer
+// session breaks that on 2026-10-05: the server-list ping logs "[3DS] TCP
+// connect" from its poller thread while the main thread writes its own
+// lines, and with sync=1/commit=1 every line runs fclose()+fopen() on the
+// one FILE*. Two threads interleaving fputs/fclose/fopen on the same FILE*
+// corrupt newlib's stream state and leave both loggers dead inside stdio:
+// the level-1 3DS build froze on the server list exactly there -- the last
+// line on the card was the poller's "TCP connect", no "connected"/"timed
+// out" ever followed (the poller's own next log line died in the same
+// broken sink), and the emulator log showed no CPU exception: a deadlock,
+// not a fault. Everything below that touches g_logFile/g_logPath/g_earlyLog
+// therefore runs under this mutex; the formatting in McLog::write happens
+// into stack buffers before it is taken. commitFile()/writeFile() are
+// private to this TU and expect the caller to hold it.
+//
+// Crash-handler note: CrashHandler_3ds reports through McLog::write too. A
+// thread that faults *while holding this mutex* makes the handler block on
+// it; that is accepted -- the unguarded sink froze every level-1 multiplayer
+// session at the first server ping, and a fault landing inside a log line
+// is far rarer than that.
+PlatformMutex g_logMutex;
 
 // Reopen the file so the filesystem records what has been written.
 //
@@ -142,6 +169,7 @@ void writeFile(const char* line, McLog::Level level, const char* category)
 bool McLog::openSessionFile(const char* directory)
 {
 #if MC_LOG_LEVEL > 0
+    std::lock_guard<PlatformMutex> guard(g_logMutex);
 #if defined(PS2_REMOTE_DEBUG) && PLATFORM_PS2
     (void)directory;
     g_earlyLogSize = 0;
@@ -224,6 +252,7 @@ bool McLog::openSessionFile(const char* directory)
 void McLog::flush()
 {
 #if MC_LOG_LEVEL > 0
+    std::lock_guard<PlatformMutex> guard(g_logMutex);
     if (g_logFile)
         commitFile();
 #endif
@@ -232,6 +261,7 @@ void McLog::flush()
 void McLog::setSyncWrites(bool enabled)
 {
 #if MC_LOG_LEVEL > 0
+    std::lock_guard<PlatformMutex> guard(g_logMutex);
     g_syncWrites = enabled;
     if (enabled && g_logFile)
         std::fflush(g_logFile);
@@ -243,6 +273,7 @@ void McLog::setSyncWrites(bool enabled)
 bool McLog::syncWrites()
 {
 #if MC_LOG_LEVEL > 0
+    std::lock_guard<PlatformMutex> guard(g_logMutex);
     return g_syncWrites;
 #else
     return false;
@@ -252,6 +283,7 @@ bool McLog::syncWrites()
 void McLog::resetPlatformLog()
 {
 #if MC_LOG_LEVEL > 0
+    std::lock_guard<PlatformMutex> guard(g_logMutex);
     if (g_logFile)
     {
         std::fflush(g_logFile);
@@ -278,6 +310,12 @@ void McLog::write(Level level, const char* category, const char* fmt, ...)
     char line[896];
     ::snprintf(line, sizeof(line), "[MC][%s][%s] %s", levelName(level), safeCategory, message);
 
+    // One lock covers both shared FILE* streams -- the debug.log sink (with
+    // its commitFile() close/reopen cycles) and stdout -- so no other thread
+    // can mutate the stream underneath this sequence. The pure getters used
+    // below (shouldWriteConsole -> renderBottomPanelOwned) take no locks and
+    // log nothing, so the guard cannot recurse or deadlock.
+    std::lock_guard<PlatformMutex> guard(g_logMutex);
     if (g_logFile)
         writeFile(line, level, safeCategory);
     else

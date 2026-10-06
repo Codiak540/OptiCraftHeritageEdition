@@ -33,6 +33,17 @@
 //               cannot be SPACE/SHIFT, which the keyboard and the container
 //               navigator already own); the creative screen maps them to
 //               its category tabs.
+//
+//   REBINDING (DsPadKeyCodes.h's contract, made live here): every mappable
+//   button -- A, B, X, Y, L, R, SELECT, D-pad -- speaks its DS_KEY_* code.
+//   While the Controls screen listens (platformPadRebindExclusive) the
+//   buttons arrive as their codes instead of their menu translations, so a
+//   capture can land on any of them -- B stays the cancel (PS2 reserves its
+//   back button identically) and START the fixed escape. A binding that
+//   claims a code re-purposes the button: the claimed L/R/X stops feeding
+//   its hardcoded click channel and the press fires the bound action
+//   alone; unclaimed buttons keep the decided layout untouched (see
+//   g_boundPadCodes / updateGameplay's rebind channel).
 //   touch      -> menus: absolute pointer + click. Gameplay: LOOK ONLY (panel
 //                 drags move the camera; the triggers own the buttons). While
 //                 a text field has focus the on-screen keyboard owns the
@@ -77,6 +88,17 @@
 #include "lwjgl/Keyboard.h"
 #include "lwjgl/Mouse.h"
 #include "platform/ConsoleInputClock.h"
+// Top level ON PURPOSE: this header's touchHud variables must be the one
+// program-wide namespace, not copies. It once sat further down inside this
+// file's anonymous namespace, which silently redeclared every touchHud
+// variable as a TU-private _GLOBAL__N_1::touchHud:: member -- DsInput's
+// hit-test then read its own never-written swappedSides copy (legally
+// const-foldable) while GuiIngame's draw followed the real one, so the
+// drawn HUD swapped sides but the tappable surface stayed where it was
+// (2026-10 hardware report). Inside any namespace this include is a bug;
+// the extern declaration in TouchHudLayout.h turns a future capture into
+// a link error instead of a silent split.
+#include "platform/TouchHudLayout.h"
 
 #include <algorithm>
 #include <cmath>
@@ -122,7 +144,6 @@ std::uint32_t g_prevHeld = 0;
 // Previous poll's touch sample. The panel reports an ABSOLUTE contact point,
 // but the mouse queue wants relative motion too, so deltas are differenced
 // here -- the same job the Wii's IR producer does in WiiPointer.cpp.
-#include "platform/TouchHudLayout.h"
 
 // The gameplay touch-HUD widget key currently latched down (0 = none).
 // Widget actions press the key on contact and release it on lift, at least
@@ -158,6 +179,14 @@ void pressTouchHudWidget(touchHud::WidgetHit hit)
 		return;
 	case touchHud::Widget::Pause:
 		key = lwjgl::Keyboard::KEY_ESCAPE;
+		break;
+	case touchHud::Widget::Jump:
+		// The gameplay jump channel code -- the same one GP_JUMP pushes for
+		// whichever physical button currently carries jump (the face-button
+		// camera layout moves the button, never the code). Latched like the
+		// others: key down on contact, up on lift, so a held finger is a
+		// held jump.
+		key = DS_KEY_A;
 		break;
 	default:
 		return;
@@ -339,6 +368,26 @@ std::uint32_t g_prevMenuNav = 0;
 // category tabs) get them as their dedicated DS_KEY_* pad codes instead.
 std::uint32_t g_prevMenuShoulders = 0;
 
+// Pad-code claim mask (bit n = DS_KEY_A + n), pushed from GameSettings'
+// platform sync for every binding that names a DS_KEY_* code. A claimed
+// L/R/X yields its hardcoded click channel so the binding is ALL the
+// button does; A/Y/SELECT need no yield because their hardcoded channel IS
+// their code emission. Defaults claim none of L/R/X, so the shipped
+// layout (place on L/B, attack on R/X) is exactly what an untouched
+// options.txt keeps.
+std::uint32_t g_boundPadCodes = 0;
+// The KEY_* subset of a claimed button set, precomputed for the click-channel
+// yield in updateGameplay().
+std::uint32_t g_claimedClickButtons = 0;
+
+// Pad-code emission state (updateGameplay's rebind channel): the previous
+// poll's emitted-code mask for edge diffing, and the previous poll's
+// capture flag so a capture that starts under a held button swallows that
+// hold instead of binding it on its first poll (the same seeding rule the
+// menu navigation channel uses at boundaries).
+bool g_prevRebindCapture = false;
+std::uint32_t g_prevRebindCodes = 0;
+
 // Mouse button levels. Button 0 is driven by the touch tap OR GP_ATTACK, so
 // they are tracked together rather than per source.
 bool g_prevBtn0 = false;
@@ -454,6 +503,14 @@ std::uint32_t menuStickTextBits(std::uint32_t navBits)
 	return bits;
 }
 
+// The mappable buttons (DsPadKeyCodes.h): what a Controls-screen capture can
+// land on, and what the pad-code channel below can emit. B and START are
+// deliberately absent -- B is the capture's cancel (the PS2 reserves its
+// back button the same way) and START keeps its fixed KEY_ESCAPE role.
+constexpr std::uint32_t kRebindableButtons =
+    KEY_A | KEY_X | KEY_Y | KEY_L | KEY_R | KEY_SELECT |
+    KEY_DUP | KEY_DDOWN | KEY_DLEFT | KEY_DRIGHT;
+
 // Deliver the gameplay half of this frame's scan. `touchDown` comes in
 // because button 0 has two sources and the finger is exempt from inMenu: it
 // is the pointer, and it has to keep clicking screens.
@@ -462,7 +519,15 @@ std::uint32_t menuStickTextBits(std::uint32_t navBits)
 // this runs, so every click below lands where the finger is.
 void updateGameplay(u32 keys, bool touchDown)
 {
-	const std::uint32_t held = readGameplayButtons(keys);
+	// A binding that claims a pad code re-purposes its button: the claimed
+	// L/R/X stops feeding its hardcoded click channel, so the press is the
+	// bound action alone (g_boundPadCodes). The raw `keys` is kept for the
+	// rebind channel below -- a claimed button still SPEAKS its code; only
+	// its click role yields. The face-camera diamond is unaffected: in that
+	// mode dsInputPoll strips A/B/X/Y/SELECT from `keys` before this call,
+	// so the camera keeps them exactly as it always did.
+	const std::uint32_t clickKeys = keys & ~g_claimedClickButtons;
+	const std::uint32_t held = readGameplayButtons(clickKeys);
 	// The circle pad's menu direction, for the keyboard-code channel below.
 	const std::uint32_t stickBits = menuStickNavBits();
 
@@ -481,9 +546,12 @@ void updateGameplay(u32 keys, bool touchDown)
 		// pressed for; it navigates on its next fresh press instead. The
 		// stick seeds the same way: walking with the pad pushed is the
 		// normal way a pause screen opens, and the menu must not step on
-		// the deflection it opened with.
+		// the deflection it opened with. The pad-code channel seeds
+		// identically: a button held across the boundary is already "down"
+		// in the new context and acts on its next fresh press.
 		g_prevMenuNav = held | stickBits;
 		g_prevMenuShoulders = g_inMenu ? (keys & (KEY_L | KEY_R)) : 0u;
+		g_prevRebindCodes = keys & kRebindableButtons;
 	}
 	g_suppressed &= held; // forget buttons that have since been released
 
@@ -525,6 +593,12 @@ void updateGameplay(u32 keys, bool touchDown)
 	// START's KEY_ESCAPE is decided in dsInputPoll(), and B here is the
 	// screens' own back button.
 	const bool typing = platformTextInputExclusive();
+	// The Controls screen's rebind listener: while it listens, the buttons
+	// arrive as their DS_KEY_* codes (the rebind channel below) instead of
+	// these menu translations -- otherwise a capture on A would bind the
+	// navigation's KEY_RETURN and the D-pad would bind the arrow keys, both
+	// of which belong to the menus themselves.
+	const bool rebindCapture = g_inMenu && !typing && platformPadRebindExclusive();
 	// The stick rides the same D-pad navigation bits -- one mechanism for
 	// both, and every menu that answers the D-pad answers the stick.
 	const std::uint32_t navActive = g_inMenu
@@ -532,33 +606,38 @@ void updateGameplay(u32 keys, bool touchDown)
 	                             GP_JUMP | GP_BACK))
 	    : 0u;
 	const std::uint32_t navChanged = navActive ^ g_prevMenuNav;
-	if (!typing)
+	if (!typing && !rebindCapture)
 	{
 		if (navChanged & GP_DPAD_UP)    lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_UP, (navActive & GP_DPAD_UP) != 0);
 		if (navChanged & GP_DPAD_DOWN)  lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_DOWN, (navActive & GP_DPAD_DOWN) != 0);
 		if (navChanged & GP_DPAD_LEFT)  lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_LEFT, (navActive & GP_DPAD_LEFT) != 0);
 		if (navChanged & GP_DPAD_RIGHT) lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_RIGHT, (navActive & GP_DPAD_RIGHT) != 0);
 		if (navChanged & GP_JUMP)       lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_RETURN, (navActive & GP_JUMP) != 0);
-		// B alone stays the screens' back button everywhere -- containers
-		// included (their split-half/place-one click rides X instead while a
-		// container is open; see mapTextButtons). PS2/Wii keep their own
-		// back buttons live during container navigation too. L shares
-		// GP_USE with B in gameplay, but in a menu it is the keyboard
-		// pair's left half (SPACE: the crafting screen's category tabs),
-		// so the escape rides B's dedicated GP_BACK bit instead.
-		if ((navChanged & GP_BACK) != 0)
-			lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_ESCAPE, (navActive & GP_BACK) != 0);
 	}
+	// B alone stays the screens' back button everywhere -- containers
+	// included (their split-half/place-one click rides X instead while a
+	// container is open; see mapTextButtons). PS2/Wii keep their own
+	// back buttons live during container navigation too. It also stays the
+	// rebind capture's CANCEL: the escape push below is unconditional, and
+	// a capture's keyTyped treats KEY_ESCAPE as "abort" (reservedCaptureKey)
+	// -- the PS2 reserves its back button for exactly that.
+	if (!typing && (navChanged & GP_BACK) != 0)
+		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_ESCAPE, (navActive & GP_BACK) != 0);
 	g_prevMenuNav = navActive;
 
 	// Menu shoulders: L/R pushed as their dedicated DS_KEY_* pad codes so a
 	// screen can bind them (the creative screen's category tabs) without
 	// touching the SPACE/SHIFT pair the on-screen keyboard and the container
-	// navigator own. Edge-driven like the arrows above, seeded at the menu
-	// boundary for the same reason, and excluded from the Controls screen's
-	// rebind listener -- gameplay L/R are mouse clicks, so a binding nothing
-	// can emit would be a dead entry in that screen.
-	const std::uint32_t menuShoulders = g_inMenu ? (keys & (KEY_L | KEY_R)) : 0u;
+	// navigator own. A CLAIMED shoulder yields this channel entirely: its
+	// code is a gameplay binding now, and A/Y/SELECT's codes already stay
+	// silent in menus precisely so a bound action cannot fire from inside
+	// one -- the tab flip goes with the button, which is the price of
+	// re-purposing it. Edge-driven like the arrows above, seeded at the menu
+	// boundary for the same reason, and standing down while a rebind capture
+	// listens -- the pad-code channel below is then the shoulders' only
+	// path, so the two can never double-push the same code.
+	const std::uint32_t menuShoulders =
+	    g_inMenu ? (keys & (KEY_L | KEY_R) & ~g_claimedClickButtons) : 0u;
 	const std::uint32_t shoulderChanged = menuShoulders ^ g_prevMenuShoulders;
 	if (!typing && !platformPadRebindExclusive() && shoulderChanged != 0)
 	{
@@ -568,6 +647,58 @@ void updateGameplay(u32 keys, bool touchDown)
 			lwjgl::Keyboard::detail::pushKey(DS_KEY_R, (menuShoulders & KEY_R) != 0);
 	}
 	g_prevMenuShoulders = menuShoulders;
+
+	// The pad-code channel (DsPadKeyCodes.h's contract, the piece that makes
+	// a captured binding live): mappable buttons pushed as their DS_KEY_*
+	// codes, edge-driven both ways so KeyBinding state stays truthful. It
+	// runs in exactly two contexts:
+	//
+	//   * rebindCapture -- every button a capture can land on, arriving as
+	//     its code instead of the menu translations gated off above. In a
+	//     menu this is the ONLY path for A/X/Y/L/R/SELECT/dpad codes: the
+	//     GP_* pushes below are gameplay-only.
+	//   * gameplay -- the buttons whose whole meaning used to be a
+	//     hardcoded channel: B, X, the triggers (mouse clicks) and the
+	//     D-pad (wheel impulses, chat, F5) now speak their codes too, so a
+	//     binding that claims one (dsInputSetBoundPadCodes) actually fires.
+	//     A/Y/SELECT are absent here because their GP_* pushes below
+	//     already carry their codes; B/X fall away with the rest of the
+	//     diamond in face-camera mode, which keeps the camera the camera.
+	//     The D-pad's fixed roles stay alongside the code (a binding there
+	//     is a both-roles button by choice; the defaults claim the codes
+	//     only through the vestigial movement bindings, which the analog
+	//     stick superseded and nothing reads).
+	std::uint32_t codesActive = 0;
+	if (rebindCapture)
+		codesActive = keys & kRebindableButtons;
+	else if (!g_inMenu && !typing)
+		codesActive = keys & (KEY_B | KEY_X | KEY_L | KEY_R |
+		                      KEY_DUP | KEY_DDOWN | KEY_DLEFT | KEY_DRIGHT);
+	// A capture that starts under a held button (the A press that tapped the
+	// row, the trigger held while a menu opened) swallows the hold instead
+	// of binding it on the first poll -- the same seeding rule the menu
+	// navigation uses at boundaries.
+	if (rebindCapture != g_prevRebindCapture)
+	{
+		g_prevRebindCodes = keys & kRebindableButtons;
+		g_prevRebindCapture = rebindCapture;
+	}
+	const std::uint32_t codesChanged = codesActive ^ g_prevRebindCodes;
+	if (codesChanged != 0)
+	{
+		if (codesChanged & KEY_A)      lwjgl::Keyboard::detail::pushKey(DS_KEY_A, (codesActive & KEY_A) != 0);
+		if (codesChanged & KEY_X)      lwjgl::Keyboard::detail::pushKey(DS_KEY_X, (codesActive & KEY_X) != 0);
+		if (codesChanged & KEY_Y)      lwjgl::Keyboard::detail::pushKey(DS_KEY_Y, (codesActive & KEY_Y) != 0);
+		if (codesChanged & KEY_L)      lwjgl::Keyboard::detail::pushKey(DS_KEY_L, (codesActive & KEY_L) != 0);
+		if (codesChanged & KEY_R)      lwjgl::Keyboard::detail::pushKey(DS_KEY_R, (codesActive & KEY_R) != 0);
+		if (codesChanged & KEY_SELECT) lwjgl::Keyboard::detail::pushKey(DS_KEY_SELECT, (codesActive & KEY_SELECT) != 0);
+		if (codesChanged & KEY_DUP)    lwjgl::Keyboard::detail::pushKey(DS_KEY_DPAD_UP, (codesActive & KEY_DUP) != 0);
+		if (codesChanged & KEY_DDOWN)  lwjgl::Keyboard::detail::pushKey(DS_KEY_DPAD_DOWN, (codesActive & KEY_DDOWN) != 0);
+		if (codesChanged & KEY_DLEFT)  lwjgl::Keyboard::detail::pushKey(DS_KEY_DPAD_LEFT, (codesActive & KEY_DLEFT) != 0);
+		if (codesChanged & KEY_DRIGHT) lwjgl::Keyboard::detail::pushKey(DS_KEY_DPAD_RIGHT, (codesActive & KEY_DRIGHT) != 0);
+		if (codesChanged & KEY_B)      lwjgl::Keyboard::detail::pushKey(DS_KEY_B, (codesActive & KEY_B) != 0);
+	}
+	g_prevRebindCodes = codesActive;
 
 	const int x = g_state.pointerX;
 	const int y = g_state.pointerY;
@@ -849,6 +980,10 @@ void dsInputInit(int screenW, int screenH)
 	g_prevMenuShoulders = 0;
 	g_prevBtn0 = false;
 	g_prevBtn1 = false;
+	g_boundPadCodes = 0;
+	g_claimedClickButtons = 0;
+	g_prevRebindCapture = false;
+	g_prevRebindCodes = 0;
 }
 
 void dsInputSetFaceButtonCamera(bool enabled)
@@ -867,6 +1002,22 @@ void dsInputSetPocketTouch(bool enabled)
 		g_padTapArmed = false;
 		g_padBreakActive = false;
 	}
+}
+
+void dsInputSetBoundPadCodes(std::uint32_t codes)
+{
+	g_boundPadCodes = codes;
+	// The click-channel yield set: only L/R/X have a hardcoded click to
+	// yield. A/Y/SELECT's gameplay channel IS their code emission, so a
+	// claim on those needs no suppression -- the code push and the binding
+	// are the same event. B is deliberately NOT in this set: the capture
+	// channel never emits DS_KEY_B (B is the capture's cancel), so only a
+	// hand-edited options.txt could ever claim it -- and yielding would
+	// then break B's universal menu-back role. B stays fixed.
+	g_claimedClickButtons = 0;
+	if (codes & (1u << (DS_KEY_L - DS_KEY_A))) g_claimedClickButtons |= KEY_L;
+	if (codes & (1u << (DS_KEY_R - DS_KEY_A))) g_claimedClickButtons |= KEY_R;
+	if (codes & (1u << (DS_KEY_X - DS_KEY_A))) g_claimedClickButtons |= KEY_X;
 }
 
 void dsInputPoll(bool inMenu)

@@ -11,6 +11,15 @@ public:
 	PlayerControllerMP(Minecraft *minecraft, NetClientHandler *netclienthandler);
 	~PlayerControllerMP() override;
 
+	// Ownership transfer without destruction. When a server re-sends the login
+	// packet on a live session (respawn, world change), NetClientHandler::handleLogin
+	// replaces this controller while *this object's* handler is the one dispatching
+	// that very packet: destroying it inline would free the NetClientHandler and its
+	// NetworkManager while processReadPackets() is still on the stack. The handler
+	// is released here and re-owned by the controller created in its place.
+	NetClientHandler *getNetClientHandler() const { return netClientHandler; }
+	void releaseNetClientHandler() { netClientHandler = nullptr; }
+
 	void setCreative(bool creative);
 	bool shouldDrawHUD() override;
 	bool func_35642_f() override;

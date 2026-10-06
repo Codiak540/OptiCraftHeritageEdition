@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include "3ds/input/DsPadKeyCodes.h"
+#include "3ds/input/DsInput.h"
 #include "lwjgl/Keyboard.h"
 #include "net/minecraft/src/GameSettings.h"
 #include "net/minecraft/src/KeyBinding.h"
@@ -103,6 +104,24 @@ void platformGameSettingsFinalizeLoad(GameSettings& settings)
 	KeyBinding::resetKeyBindingArrayAndHash();
 }
 
-void platformGameSettingsSyncControllerBindings(const GameSettings&) {}
+void platformGameSettingsSyncControllerBindings(const GameSettings& settings)
+{
+	// The 3DS's whole controller-sync contract is the pad-code claim mask
+	// (DsPadKeyCodes.h): every KeyBinding whose keyCode names a pad button
+	// claims that button, and DsInput re-purposes it -- the claimed button
+	// stops feeding its hardcoded click channel (place/attack on L/R/X)
+	// and speaks its code, so what the Controls screen bound is ALL the
+	// button does. Runs whenever bindings load, reset or change (the
+	// GameSettings sync points already call this on every platform).
+	std::uint32_t codes = 0;
+	for (KeyBinding *binding : settings.keyBindings)
+	{
+		if (binding == nullptr)
+			continue;
+		if (binding->keyCode >= DS_KEY_A && binding->keyCode < DS_KEY_SENTINEL_END)
+			codes |= 1u << (binding->keyCode - DS_KEY_A);
+	}
+	dsInputSetBoundPadCodes(codes);
+}
 void platformGameSettingsAddKnownKeys(std::unordered_set<std::string>&) {}
 void platformGameSettingsWriteOptions(const GameSettings&, std::ostream&) {}

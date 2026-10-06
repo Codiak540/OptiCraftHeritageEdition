@@ -9,9 +9,8 @@
 #include <stdexcept>
 #include <type_traits>
 #ifndef PS2_PLATFORM
-#include <sstream>
-#include <iomanip>
-#include <locale>
+#include <cstdio>
+#include <cstdlib>
 #endif
 #include <cmath>
 #include <cstring>
@@ -73,12 +72,31 @@ static bool sameBits(T a, T b)
 }
 
 template <typename T>
-static bool parseClassicExact(const std::string &text, T &out)
+static bool parseClassicExact(const char *text, T &out)
 {
-    std::istringstream in(text);
-    in.imbue(std::locale::classic());
-    in >> out;
-    return !in.fail() && in.peek() == std::char_traits<char>::eof();
+	// Classic-C-locale float parse with the "whole text consumed" contract
+	// that the previous `std::istringstream in(text);
+	// in.imbue(std::locale::classic()); in >> out; !fail && peek == EOF`
+	// implemented. newlib's strtof/strtod parse the same grammar num_get
+	// uses in the classic locale, and they keep their working state in the
+	// calling thread's own reent, so they are safe from any thread. The
+	// stream/locale objects the old code constructed per call were not: a
+	// 2026-10-05 Luma data abort on a 3DS net worker thread died inside
+	// std::locale::_Impl construction -> __convert_to_v -> strtof ->
+	// _strtod_l -> __gethex while formatting a double (the shared,
+	// lazily-initialized classic-locale facets raced between threads).
+	if (text == nullptr || *text == '\0')
+		return false;
+	char *end = nullptr;
+	T parsed;
+	if constexpr (std::is_same<T, float>::value)
+		parsed = std::strtof(text, &end);
+	else
+		parsed = std::strtod(text, &end);
+	if (end == text || *end != '\0')
+		return false;
+	out = parsed;
+	return true;
 }
 
 static std::string normalizeJavaDecimal(const std::string &token, bool negative)
@@ -150,28 +168,33 @@ static jstring javaFpToString(T value)
     if (std::isinf(value)) return std::signbit(value) ? "-Infinity" : "Infinity";
     if (value == static_cast<T>(0)) return std::signbit(value) ? "-0.0" : "0.0";
 
+    // Java-exact shortest float text without C++ iostreams. libstdc++'s
+    // num_put formats doubles through snprintf("%.*g") and parses them back
+    // through the strtod family, so the strings here are byte-identical to
+    // the old ostringstream/istringstream roundtrip -- minus the per-call
+    // locale facets that were unsafe off the main thread (see
+    // parseClassicExact). snprintf/strtof/strtod run entirely through the
+    // calling thread's reent state, and on the 268 MHz Old 3DS core this
+    // shape is also dramatically cheaper than constructing two stream
+    // objects and a locale imbue per precision probe.
     const bool negative = std::signbit(value);
     const T magnitude = negative ? -value : value;
-    std::string best;
+    char best[64] = {};
     for (int precision = 1; precision <= std::numeric_limits<T>::max_digits10; ++precision)
     {
-        std::ostringstream out;
-        out.imbue(std::locale::classic());
-        out << std::setprecision(precision) << std::defaultfloat << magnitude;
-        std::string candidate = out.str();
+        char candidate[64];
+        std::snprintf(candidate, sizeof(candidate), "%.*g", precision, static_cast<double>(magnitude));
         T parsed{};
         if (parseClassicExact(candidate, parsed) && sameBits(parsed, magnitude))
         {
-            best = candidate;
+            std::strcpy(best, candidate);
             break;
         }
     }
-    if (best.empty())
+    if (best[0] == '\0')
     {
-        std::ostringstream out;
-        out.imbue(std::locale::classic());
-        out << std::setprecision(std::numeric_limits<T>::max_digits10) << std::defaultfloat << magnitude;
-        best = out.str();
+        std::snprintf(best, sizeof(best), "%.*g",
+                      std::numeric_limits<T>::max_digits10, static_cast<double>(magnitude));
     }
     return normalizeJavaDecimal(best, negative);
 }

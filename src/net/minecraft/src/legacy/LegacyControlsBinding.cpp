@@ -217,6 +217,13 @@ bool legacyControlsApplyCapturedKey(GameSettings *settings, const LegacyControls
         if (row.bindingIndex < 0 || row.bindingIndex >= static_cast<int_t>(settings->keyBindings.size()))
             return false;
         settings->setKeyBinding(row.bindingIndex, key);
+        // Refresh the platform's view of the bindings right away: the 3DS's
+        // pad-code claim mask (DsPadKeyCodes.h) decides which buttons speak
+        // their code and which keep their hardcoded click, and a capture is
+        // the one moment it changes outside a load. A no-op on the platforms
+        // whose sync is empty (PC, PS2) and the Wii captures through its own
+        // branch below.
+        settings->syncControllerBindingsToPlatform();
         return true;
     }
 

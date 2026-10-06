@@ -48,6 +48,19 @@ public:
 	long_t creationTimeMillis;
 
 private:
+	// 3DS only: getPacketId() resolves the id through the
+	// std::map<std::type_index,...> lookup (typeid + type_info::before strcmp
+	// per call). The dispatch loop asks for it several times per packet and
+	// the reader thread classifies each decoded packet by id, so on the
+	// 268 MHz Old 3DS core the first answer is memoized here; the queue
+	// hand-off under the mutex publishes it to the game thread. A packet
+	// never changes class after decode, so one value is stable for a
+	// lifetime. Other platforms keep the uncached lookup: no behavior
+	// change there, and no per-instance cost.
+#if defined(CTR_PLATFORM)
+	mutable int_t cachedPacketId = -1;
+#endif
+
 	static std::map<int_t, std::function<std::unique_ptr<Packet>()>> packetIdToFactoryMap;
 	static std::map<std::type_index, int_t> packetClassToIdMap;
 	static std::set<int_t> clientPacketIdList;

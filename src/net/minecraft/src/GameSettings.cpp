@@ -154,10 +154,12 @@ void GameSettings::setDefaults()
     faceButtonCamera = true;
     touchMap = true;
     touchCoords = true;
+    touchHudSwap = false;
     // The PE pad gestures ship enabled (owner call): the tap/hold on the
     // camera pad is how touch-only play places and breaks blocks.
     pocketTouch = true;
-    // 3DS only; off by default (unlike MCPE's auto-jump, which defaults on).
+    // Every platform; off by default (unlike MCPE's auto-jump, which
+    // defaults on).
     autoJump = false;
     // 3DS only; hold-to-sneak stays the default.
     toggleShift = false;

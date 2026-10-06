@@ -13,6 +13,8 @@
 #elif defined(CTR_PLATFORM)
 #include <3ds.h>
 #include "3ds/DsBootstrap.h"
+#include "Packet51MapChunk.h"
+#include "Packet0KeepAlive.h"
 #endif
 
 #include "NetHandler.h"
@@ -27,6 +29,51 @@ int_t NetworkManager::field_28144_e[256];
 std::atomic<int_t> NetworkManager::numReadThreads{0};
 std::atomic<int_t> NetworkManager::numWriteThreads{0};
 std::mutex NetworkManager::threadSyncObject;
+
+#if defined(CTR_PLATFORM)
+namespace
+{
+// The read queue's entity lane (see NetworkManager.h): the packets that
+// create, move, animate, equip, mount, sleep or destroy OTHER entities. Ids
+// 20..42 are the same block the PS2's received-entity counter already treats
+// as the entity domain (36 and 37 are not registered); 17 (sleep) and 18
+// (swing animation) are entity display state too, exactly like 38/40/41/42.
+// Everything that must keep its wire order against chunk data (50..54, 60,
+// 61, 130..132) or against the login/respawn reset (1, 5, 8, 9, 43, 100..107,
+// ...) stays in the main lane.
+inline bool isEntityLanePacketId(int_t packetId)
+{
+	return (packetId >= 20 && packetId <= 42) || packetId == 17 || packetId == 18;
+}
+
+// The 3DS split of the read queue's byte budget. The chunk lane keeps the
+// historical 4 MB ceiling (MAX_READ_QUEUE_BYTES) for the one traffic class
+// that can actually fill it: Packet51 map-chunk floods. Every other packet
+// is small enough to be admitted against kMaxSmallQueueBytes instead, so a
+// flood that exhausts the chunk budget stops back-pressuring keepalive,
+// entity and block-change traffic -- the reader keeps decoding them (and the
+// dispatch lanes keep delivering them) while chunk packets hold behind the
+// game thread's import cap, exactly as TCP backpressure intends for the
+// bulk class alone. 512 KB is generous against real small traffic (the
+// entity and keepalive lanes drain fully every tick, and a whole ring of
+// Packet50 pre-chunks is a few kilobytes) while still bounding a malicious
+// small-packet flood on its own.
+constexpr std::size_t kMaxSmallQueueBytes = 512 * 1024;
+
+// Packets this small take the small lane's budget. Chunk-data packets always
+// take the chunk lane's regardless of size -- the small lane is reserved for
+// the latency-sensitive classes and must not be eroded by cheap sections of
+// a chunk flood.
+constexpr std::size_t kSmallPacketAdmitBytes = 2048;
+
+// Same classification on both ends of the queue: admission and dispatch must
+// agree on which byte budget a packet pays into, or the counters drift.
+inline bool isSmallReadQueuePacket(const Packet *packet, std::size_t packetBytes)
+{
+	return !packet->isChunkDataPacket && packetBytes <= kSmallPacketAdmitBytes;
+}
+}
+#endif
 
 NetworkManager::NetworkManager(const std::string &host, int_t port, const std::string &s, NetHandler *nethandler)
 	: networkSocket(JavaNetwork::createSocket())
@@ -235,10 +282,78 @@ bool NetworkManager::readPacket()
 			if (packetBytes > MAX_READ_QUEUE_BYTES)
 				throw std::runtime_error("Incoming packet exceeds queue limit");
 
+#if defined(CTR_PLATFORM)
+			// The client's whole keepalive story: the Tab-list ping the player
+			// sees is the round trip of THIS packet, and the old path -- queue
+			// into the keepalive lane, wait for the game thread's dispatch (a
+			// whole tick: 50 ms quiet, 1.7 s under a flood), then the send
+			// queue -- added up to seconds whenever the 2048-packet queue cap
+			// was pinned or the tick was stretched (the 2026-10-05 session:
+			// keepalives dispatched ageMs=1861-2356 with the backlog pinned at
+			// 2047 tiny packets). handleKeepAlive does nothing but echo the id
+			// back (NetClientHandler.cpp), so the reader can do exactly that
+			// right here, at decode time: no lane, no tick, no admission --
+			// addToSendQueue only takes the send-queue lock, and the writer
+			// thread polls that queue every 2 ms. The game thread never sees a
+			// Packet0 on this console. Server-side keepalives (if this console
+			// ever hosts) still take the dispatch path below; the guard keeps
+			// them untouched.
+			lastDecodeTimeMillis.store(System::currentTimeMillis(), std::memory_order_release);
+			if (packet->getPacketId() == 0 && !serverHandler)
+			{
+				Packet0KeepAlive *keepAlive = static_cast<Packet0KeepAlive *>(packet.get());
+				addToSendQueue(new Packet0KeepAlive(keepAlive->randomId));
+				return true;
+			}
+#endif
+
 			for (;;)
 			{
 				{
 					std::lock_guard<PlatformMutex> guard(readQueueLock);
+#if defined(CTR_PLATFORM)
+					// The byte budget is split by packet class (see
+					// kMaxSmallQueueBytes): chunk-lane bytes against
+					// MAX_READ_QUEUE_BYTES, small packets against their own
+					// ceiling, so a chunk flood holding its lane cannot also
+					// hold the keepalive/entity traffic behind it. All lanes
+					// share the packet-count budget -- the split is a
+					// byte-budget split, not extra packets.
+					const int_t decodedPacketId = packet->getPacketId();
+					const bool smallPacket = isSmallReadQueuePacket(packet.get(), packetBytes);
+					const std::size_t laneBytes = smallPacket ? readQueueSmallBytes : readQueueChunkBytes;
+					const std::size_t laneBudget = smallPacket ? kMaxSmallQueueBytes : MAX_READ_QUEUE_BYTES;
+					if (readPackets.size() + entityPackets.size() + keepalivePackets.size() < MAX_READ_QUEUE_PACKETS &&
+					    laneBytes + packetBytes <= laneBudget)
+					{
+						readQueueByteLength += packetBytes;
+						if (smallPacket)
+							readQueueSmallBytes += packetBytes;
+						else
+							readQueueChunkBytes += packetBytes;
+						// A login (1) or respawn (9) (re)establishes the world
+						// every packet behind it belongs to. Raise the barrier
+						// while one is undischarged: entity packets decoded in
+						// that window stay in the main lane so they cannot be
+						// dispatched ahead of it against the previous (or a
+						// null) world. The dispatch loop lowers the barrier
+						// once the establishing packet has been processed.
+						if (decodedPacketId == 1 || decodedPacketId == 9)
+							worldResetPacketsPending++;
+						// Packet0 needs none of that protection: it is a pure
+						// RTT echo reading no world state, so it may overtake
+						// chunk data and the login/respawn barrier alike.
+						if (decodedPacketId == 0)
+							keepalivePackets.emplace_back(std::move(packet));
+						else if (worldResetPacketsPending == 0 &&
+						         isEntityLanePacketId(decodedPacketId))
+							entityPackets.emplace_back(std::move(packet));
+						else
+							readPackets.emplace_back(std::move(packet));
+						flag = true;
+						break;
+					}
+#else
 					if (readPackets.size() < MAX_READ_QUEUE_PACKETS &&
 					    readQueueByteLength <= MAX_READ_QUEUE_BYTES &&
 					    packetBytes <= MAX_READ_QUEUE_BYTES - readQueueByteLength)
@@ -248,6 +363,7 @@ bool NetworkManager::readPacket()
 						flag = true;
 						break;
 					}
+#endif
 				}
 
 #if defined(PS2_PLATFORM) || defined(WII_PLATFORM) || defined(CTR_PLATFORM)
@@ -256,6 +372,15 @@ bool NetworkManager::readPacket()
 				// bounded queue applies TCP backpressure and caps the peak at the
 				// queue budget plus one protocol-sized packet. The 3DS game thread
 				// drains at PS2-like rates, so it takes the PS2's policy too.
+#if defined(CTR_PLATFORM)
+				// The admission wait is this thread's only idle time while the
+				// queue is full -- spend it inflating the oldest still-compressed
+				// Packet51 at the queue front (the wedge the decode-time cap
+				// left behind) instead of only sleeping: the game thread's
+				// dispatch would otherwise pay that same inflate inline inside
+				// its tick.
+				preInflateFrontQueuedChunk();
+#endif
 				if (!running || serverTerminating)
 					return false;
 				sleepThread();
@@ -263,6 +388,15 @@ bool NetworkManager::readPacket()
 				throw std::runtime_error("Incoming packet queue overflow");
 #endif
 			}
+#if defined(CTR_PLATFORM)
+			// After queueing a decode, the front gets first refusal on any
+			// free live-inflate slot ahead of the next decode: Packet51s
+			// decoded past the cap sit compressed ahead of everything the
+			// reader decodes later, so keeping that front inflated is what
+			// keeps the game thread's imports cheap (see
+			// preInflateFrontQueuedChunk).
+			preInflateFrontQueuedChunk();
+#endif
 		}
 		else if (!serverTerminating)
 		{
@@ -277,6 +411,49 @@ bool NetworkManager::readPacket()
 	}
 	return flag;
 }
+
+#if defined(CTR_PLATFORM)
+bool NetworkManager::preInflateFrontQueuedChunk()
+{
+	// Take the front packet out of the queue only if it is a Packet51 that
+	// still holds just its compressed payload. The dispatch may pop whatever
+	// lands at the front meanwhile -- an import or two moving ahead of this
+	// column is harmless, chunks are position-keyed -- and nothing else can
+	// reach the packet while this thread owns it.
+	std::unique_ptr<Packet> front;
+	{
+		std::lock_guard<PlatformMutex> guard(readQueueLock);
+		if (readPackets.empty())
+			return false;
+		Packet *candidate = readPackets.front().get();
+		if (candidate == nullptr || candidate->getPacketId() != 51)
+			return false;
+		Packet51MapChunk *mapChunk = static_cast<Packet51MapChunk *>(candidate);
+		if (!mapChunk->needsInflation())
+			return false;
+		front = std::move(readPackets.front());
+		readPackets.pop_front();
+	}
+
+	// Inflate outside the lock: this thread owns the packet exclusively here,
+	// and the zlib pass is exactly the work being moved off the game thread
+	// -- holding readQueueLock through it would just move the stall onto
+	// every dispatch pop. preInflate() honours the same live-inflated cap as
+	// the decode-time pre-inflate, so the inflated buffers behind the queue
+	// stay bounded whichever thread fills them.
+	const bool inflated = static_cast<Packet51MapChunk *>(front.get())->preInflate();
+
+	// Back at the front. Byte accounting is untouched on purpose: the queue
+	// counts the compressed size (getPacketSize), which inflation does not
+	// change. When the cap was full this is a no-op round trip and the next
+	// caller retries.
+	{
+		std::lock_guard<PlatformMutex> guard(readQueueLock);
+		readPackets.push_front(std::move(front));
+	}
+	return inflated;
+}
+#endif
 
 void NetworkManager::onNetworkError(std::exception &exception)
 {
@@ -367,7 +544,21 @@ void NetworkManager::processReadPackets()
 	bool empty;
 	{
 		std::lock_guard<PlatformMutex> guard(readQueueLock);
+#if defined(CTR_PLATFORM)
+		// Packet0s never queue on this console (echoed at decode, see
+		// readPacket), so queue emptiness alone no longer proves the server
+		// went silent: an AFK player on a quiet server gets one keepalive a
+		// second and nothing else, and a queue-emptiness watchdog would
+		// false-fire the 60 s disconnect.timeout on exactly that. Feed the
+		// watchdog from the reader's decode activity instead -- any traffic
+		// in the last second means the connection is alive even when the
+		// lanes sit empty between keepalives. A dead socket stops decoding,
+		// the lanes drain, and the 1200-tick watchdog fires as before.
+		empty = readPackets.empty() && entityPackets.empty() && keepalivePackets.empty() &&
+		    System::currentTimeMillis() - lastDecodeTimeMillis.load(std::memory_order_acquire) >= 1000;
+#else
 		empty = readPackets.empty();
+#endif
 	}
 
 	if (empty)
@@ -389,6 +580,16 @@ void NetworkManager::processReadPackets()
 	// at the top of the tick, so the keepalive/overflow bookkeeping above
 	// never eats into the import allowance.
 	const long_t chunkDispatchStartNs = System::nanoTime();
+	// Entity-lane drain cap: a mob-dense area floods the lane with
+	// thousands of tiny packets a second, and an unbounded drain eats every
+	// one of the 128 dispatch iterations for as long as the flood lasts --
+	// Packet51 imports starve for tens of ticks and the world streams in one
+	// burst at the end (the "tirones" while chunks load near the farm,
+	// 2026-10-05 session). Capping the lane leaves the main lane at least 32
+	// iterations every tick so chunks keep landing; the flood itself drains
+	// a few ticks slower, which WorldClient::entitySpawnQueue absorbs --
+	// entities park until their chunk is resident anyway.
+	int_t entityLaneDrainedThisTick = 0;
 #endif
 	for (int_t i = MAX_PACKETS_PER_TICK; i-- > 0;)
 	{
@@ -396,27 +597,80 @@ void NetworkManager::processReadPackets()
 		int_t packetBytes = 0;
 		{
 			std::lock_guard<PlatformMutex> guard(readQueueLock);
+#if defined(CTR_PLATFORM)
+			// Keepalive lane first, whole lane per tick: Packet0 is a pure RTT
+			// echo (no world state read or written), so it may always run
+			// ahead of everything else. Buried in the main lane it waited
+			// behind the six-per-tick Packet51 import cap for the length of
+			// a chunk flood -- tens of ticks on the Old 3DS -- which the
+			// server's ping measurement echoed back and the player list
+			// showed as multi-second ping while walking.
+			//
+			// Entity lane next, whole lane per tick: those packets are a few
+			// dozen bytes each and only touch the entity maps, so draining
+			// them here costs microseconds and keeps movement, equipment and
+			// despawns flowing every tick no matter how deep the capped
+			// Packet51 backlog behind them is. On the Old 3DS one chunk
+			// import can consume most of the import budget, and without this
+			// lane a chunk flood froze every entity for the length of the
+			// flood and then snapped them ahead -- the "multiplayer stutters
+			// on hardware, perfect in emulator" gap: the emulator drains the
+			// same flood in a couple of ticks. Entities that arrive before
+			// their chunk data park in WorldClient::entitySpawnQueue, which
+			// the protocol already has to tolerate.
+			if (!keepalivePackets.empty())
+			{
+				packet = std::move(keepalivePackets.front());
+				keepalivePackets.pop_front();
+			}
+			else if (!entityPackets.empty() && entityLaneDrainedThisTick < 96)
+			{
+				++entityLaneDrainedThisTick;
+				packet = std::move(entityPackets.front());
+				entityPackets.pop_front();
+			}
+			else
+			{
+				if (readPackets.empty())
+					break;
+				// The chunk-import cap: re-queue a Packet51 at the front and
+				// stop the dispatch there, so the import cost is spread over
+				// ticks and the smaller packets behind it are not starved by a
+				// flood that would never yield (see MAX_CHUNK_PACKETS_PER_TICK
+				// and the wall-clock MAX_CHUNK_IMPORT_BUDGET_NS).
+				if (readPackets.front() != nullptr &&
+				    readPackets.front()->getPacketId() == 51 &&
+				    (chunkImportsThisTick >= MAX_CHUNK_PACKETS_PER_TICK ||
+				     System::nanoTime() - chunkDispatchStartNs >= MAX_CHUNK_IMPORT_BUDGET_NS))
+					break;
+				packet = std::move(readPackets.front());
+				readPackets.pop_front();
+			}
+#else
 			if (readPackets.empty())
 				break;
-#if defined(CTR_PLATFORM)
-			// The chunk-import cap: re-queue a Packet51 at the front and
-			// stop the dispatch there, so the import cost is spread over
-			// ticks and the smaller packets behind it are not starved by a
-			// flood that would never yield (see MAX_CHUNK_PACKETS_PER_TICK
-			// and the wall-clock MAX_CHUNK_IMPORT_BUDGET_NS).
-			if (readPackets.front() != nullptr &&
-			    readPackets.front()->getPacketId() == 51 &&
-			    (chunkImportsThisTick >= MAX_CHUNK_PACKETS_PER_TICK ||
-			     System::nanoTime() - chunkDispatchStartNs >= MAX_CHUNK_IMPORT_BUDGET_NS))
-				break;
-#endif
 			packet = std::move(readPackets.front());
 			readPackets.pop_front();
+#endif
 			packetBytes = packet != nullptr ? packet->getPacketSize() + 1 : 0;
 			if (packetBytes > 0 && static_cast<std::size_t>(packetBytes) <= readQueueByteLength)
 				readQueueByteLength -= static_cast<std::size_t>(packetBytes);
 			else if (packetBytes > 0)
 				readQueueByteLength = 0;
+#if defined(CTR_PLATFORM)
+			// The split byte budget's lane counters (see readPacket's
+			// admission): the same classification the packet was admitted
+			// under, so neither counter can drift below zero.
+			if (packetBytes > 0)
+			{
+				const bool smallPacket = isSmallReadQueuePacket(packet.get(), static_cast<std::size_t>(packetBytes));
+				std::size_t &laneBytes = smallPacket ? readQueueSmallBytes : readQueueChunkBytes;
+				if (static_cast<std::size_t>(packetBytes) <= laneBytes)
+					laneBytes -= static_cast<std::size_t>(packetBytes);
+				else
+					laneBytes = 0;
+			}
+#endif
 		}
 #if defined(CTR_PLATFORM)
 		if (packet != nullptr && packet->getPacketId() == 51)
@@ -432,13 +686,38 @@ void NetworkManager::processReadPackets()
 						packet->getPacketId(), getReceivedEntityPacketCount(),
 						static_cast<long long>(System::currentTimeMillis() - packet->creationTimeMillis));
 #endif
+#if defined(CTR_PLATFORM)
+				const int_t dispatchedPacketId = packet->getPacketId();
+#endif
 				packet->processPacket(*netHandler);
+#if defined(CTR_PLATFORM)
+				// The login/respawn has now (re)established the world the
+				// packets behind it belong to; entity packets decoded from
+				// here on may take the fast lane again. Lowered after
+				// processPacket returns so entities decoded while the
+				// establishing handler is still running stay conservative
+				// (main lane) -- the handler may not have finished wiring the
+				// new world.
+				if (dispatchedPacketId == 1 || dispatchedPacketId == 9)
+				{
+					std::lock_guard<PlatformMutex> guard(readQueueLock);
+					if (worldResetPacketsPending > 0)
+						worldResetPacketsPending--;
+				}
+#endif
 			}
 			catch (std::exception &exception)
 			{
 				onNetworkError(exception);
 				std::lock_guard<PlatformMutex> guard(readQueueLock);
 				readPackets.clear();
+#if defined(CTR_PLATFORM)
+				entityPackets.clear();
+				keepalivePackets.clear();
+				worldResetPacketsPending = 0;
+				readQueueSmallBytes = 0;
+				readQueueChunkBytes = 0;
+#endif
 				readQueueByteLength = 0;
 				break;
 			}
@@ -448,6 +727,13 @@ void NetworkManager::processReadPackets()
 				onNetworkError(exception);
 				std::lock_guard<PlatformMutex> guard(readQueueLock);
 				readPackets.clear();
+#if defined(CTR_PLATFORM)
+				entityPackets.clear();
+				keepalivePackets.clear();
+				worldResetPacketsPending = 0;
+				readQueueSmallBytes = 0;
+				readQueueChunkBytes = 0;
+#endif
 				readQueueByteLength = 0;
 				break;
 			}
@@ -458,7 +744,11 @@ void NetworkManager::processReadPackets()
 
 	{
 		std::lock_guard<PlatformMutex> guard(readQueueLock);
+#if defined(CTR_PLATFORM)
+		empty = readPackets.empty() && entityPackets.empty() && keepalivePackets.empty();
+#else
 		empty = readPackets.empty();
+#endif
 	}
 	if (terminating && empty && netHandler != nullptr)
 		netHandler->handleErrorMessage(terminationReason, field_20101_t);
@@ -467,7 +757,11 @@ void NetworkManager::processReadPackets()
 std::size_t NetworkManager::getReadQueuePacketCount()
 {
 	std::lock_guard<PlatformMutex> guard(readQueueLock);
+#if defined(CTR_PLATFORM)
+	return readPackets.size() + entityPackets.size() + keepalivePackets.size();
+#else
 	return readPackets.size();
+#endif
 }
 
 std::size_t NetworkManager::getReadQueueByteLength()
@@ -616,6 +910,33 @@ void NetworkManager::writeThreadRun()
 					onNetworkError(exception);
 				MC_LOG_ERROR("game", "%s\n", exception.what());
 			}
+#if defined(CTR_PLATFORM)
+			// The writer is idle whenever the send queue is dry, and while the
+			// socket is quiet this is the only network thread awake at all --
+			// the reader parks inside the blocking stream read. Post-flood
+			// that is exactly when the compressed Packet51 wedge is still
+			// draining, so service one front column per idle pass: the game
+			// thread's dispatch would otherwise pay each of those inflates
+			// inline inside its tick. A send queued mid-inflate leaves within
+			// one inflate (~100 ms on the Old model), far inside what a
+			// stretched tick delays it by today.
+			if (!serverTerminating)
+			{
+				try
+				{
+					preInflateFrontQueuedChunk();
+				}
+				catch (std::exception &exception)
+				{
+					// Same contract as the flush above: a failed service (a
+					// bad_alloc inflating a column) is a network error, not
+					// a thread abort.
+					if (!terminating)
+						onNetworkError(exception);
+					MC_LOG_ERROR("game", "%s\n", exception.what());
+				}
+			}
+#endif
 			sleepThread();
 
 			if (serverTerminating && running)

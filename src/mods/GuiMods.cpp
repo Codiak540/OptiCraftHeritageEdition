@@ -140,18 +140,14 @@ GuiMods::~GuiMods()
 void GuiMods::setSelectedModIndex(int_t index)
 {
     selectedModIndex = index;
+    auto &mods = ModManager::getInstance().getMods();
+    const bool hasSelection = (selectedModIndex >= 0 && selectedModIndex < static_cast<int_t>(mods.size()));
+
     if (deleteButton != nullptr)
-    {
-        auto &mods = ModManager::getInstance().getMods();
-        if (selectedModIndex >= 0 && selectedModIndex < static_cast<int_t>(mods.size()))
-        {
-            deleteButton->enabled = mods[selectedModIndex]->isRemovable();
-        }
-        else
-        {
-            deleteButton->enabled = false;
-        }
-    }
+        deleteButton->enabled = hasSelection && mods[selectedModIndex]->isRemovable();
+
+    if (settingsButton != nullptr)
+        settingsButton->enabled = hasSelection && mods[selectedModIndex]->hasSettings();
 }
 
 void GuiMods::initGui()
@@ -166,9 +162,11 @@ void GuiMods::initGui()
     controlList.clear();
 
     // Row 1 buttons
-    controlList.push_back(new GuiButton(101, width / 2 - 155, height - 48, 150, 20, "Load Mods"));
-    deleteButton = new GuiButton(102, width / 2 + 5, height - 48, 150, 20, "Delete Mod");
+    controlList.push_back(new GuiButton(101, width / 2 - 155, height - 48, 100, 20, "Load Mods"));
+    deleteButton = new GuiButton(102, width / 2 - 50, height - 48, 100, 20, "Delete Mod");
     controlList.push_back(deleteButton);
+    settingsButton = new GuiButton(103, width / 2 + 55, height - 48, 100, 20, "Settings");
+    controlList.push_back(settingsButton);
 
     // Row 2 buttons
     controlList.push_back(new GuiButton(100, width / 2 - 155, height - 25, 150, 20, "Texture Packs"));
@@ -204,6 +202,12 @@ void GuiMods::actionPerformed(GuiButton *button)
             std::string ver = mods[selectedModIndex]->getVersion();
             mc->displayGuiScreen(new GuiYesNo(this, "Are you sure you want to delete this mod?", name + " (" + ver + ")", "Delete", "Cancel", 1));
         }
+    }
+    else if (button->id == 103) // Settings
+    {
+        auto &mods = ModManager::getInstance().getMods();
+        if (selectedModIndex >= 0 && selectedModIndex < static_cast<int_t>(mods.size()))
+            ModManager::getInstance().openModSettings(mc, mods[selectedModIndex]->getId());
     }
     else if (slotList != nullptr)
     {

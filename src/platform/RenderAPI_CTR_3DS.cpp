@@ -10,11 +10,12 @@
 //
 // What is intentionally still narrow, with the hardware reason:
 //
-//   * Fog, lighting, colour-material and shade-model calls are accepted and
-//     dropped. Minecraft bakes its lighting into vertex colours and the
-//     brightness attribute on the Tessellator path, so the PICA needs neither
-//     fixed-function lighting nor a fog unit for the GUI/milestone draw set;
-//     world fog arrives with the terrain phase.
+//   * Fog is implemented: the PICA200 has a fixed per-pixel fog unit (a
+//     depth-indexed LUT plus a fog colour -- see the renderFog* block and
+//     DsRender.cpp's applyFog). Lighting, colour-material and shade-model
+//     calls remain accepted and dropped: Minecraft bakes its lighting into
+//     vertex colours and the brightness attribute on the Tessellator path,
+//     so the PICA needs no fixed-function lighting.
 //   * Mipmaps, anisotropy and MSAA are reported unsupported, so RenderEngine
 //     never builds mip chains that would be thrown away.
 //   * The retained-mode surface is now real for display lists (see the
@@ -61,15 +62,17 @@ ds::GpuState s_state;
 // way the desktop backend relies on GL's binding instead.
 int s_uploadTarget = 0;
 
-// GL keeps one binding per texture unit; the PICA has one wired sampler.
-// The game's lightmap path selects GL_TEXTURE1 (OpenGlHelper's
-// lightmapTexUnit) and binds the 16x16 lightmap there -- with a no-op
-// unit selector those binds would land on the only unit and clobber
-// whatever the world is sampling from (the terrain atlas), leaving every
-// captured section state replaying samples of the lightmap: a black
-// world. So the selection is tracked: binds on any unit still retarget
-// uploads (glTexImage2D addresses the active unit's binding), but only
-// the default unit's binds change what the shader samples.
+// GL keeps one binding per texture unit; the PICA's stage 0 samples one
+// wired atlas binding, with the lightmap on a second unit beside it. The
+// game's lightmap path selects GL_TEXTURE1 (OpenGlHelper's lightmapTexUnit)
+// and binds the 16x16 lightmap there -- with a no-op unit selector those
+// binds would land on the only sampler slot and clobber whatever the world
+// is sampling from (the terrain atlas), leaving every captured section
+// state replaying samples of the lightmap: a black world. So the selection
+// is tracked: binds on any unit still retarget uploads (glTexImage2D
+// addresses the active unit's binding), the default unit's binds change
+// the stage-0 atlas, and a unit-1 bind records the lightmap for TexEnv
+// stage 1 (ds::setLightmapTexture; see the flush in DsRender.cpp).
 int s_activeTextureUnit = 0x84C0; // GL_TEXTURE0
 
 // GL_TEXTURE_2D is enabled *per texture unit*, and the game's lightmap path
@@ -87,9 +90,11 @@ int s_activeTextureUnit = 0x84C0; // GL_TEXTURE0
 // keep this bit per unit for exactly this reason; see
 // RenderAPI_GS_PS2.cpp and WiiNativeState's texture_enabled mask.
 //
-// Index 0 mirrors into s_state.texture2d, the only unit the PICA sampler
-// reads. Index 1 is tracked for parity so a later lightmap TexEnv stage
-// has its switch to consult.
+// Index 0 mirrors into s_state.texture2d, the unit the stage-0 atlas
+// sampler reads. Index 1 is the lightmap's TexEnv switch: renderEnable/
+// renderDisable push it into ds::setLightmapActive, which DsRender.cpp's
+// flush consults for every draw -- live, deliberately never captured into
+// a display-list entry's state (GL's unit-1 enable applies at call time).
 bool s_texture2dByUnit[2] = { false, false };
 
 // Which unit's bit a capability call touches. Only GL_TEXTURE1 (the
@@ -484,17 +489,20 @@ void renderEnable(RenderCapability capability)
 	{
 	case RenderCapability::Texture2D:
 		s_texture2dByUnit[trackedTextureUnitIndex()] = true;
-		// Only unit 0 feeds the sampler; a lightmap-unit enable must not
-		// stand in for it (and must not be discarded either -- see the
-		// s_texture2dByUnit note).
+		// Only unit 0 feeds stage 0; a lightmap-unit enable must not stand
+		// in for it (and must not be discarded either -- see the
+		// s_texture2dByUnit note). Unit 1's bit is the lightmap's TexEnv
+		// switch (ds::setLightmapActive), so both tracks stay live.
 		s_state.texture2d = s_texture2dByUnit[0];
+		ds::setLightmapActive(s_texture2dByUnit[1]);
 		break;
 	case RenderCapability::Blend:     s_state.blend = true;     break;
 	case RenderCapability::DepthTest: s_state.depthTest = true; break;
 	case RenderCapability::AlphaTest: s_state.alphaTest = true; break;
 	case RenderCapability::CullFace:  s_state.cullFace = true;  break;
+	case RenderCapability::Fog:       s_state.fogEnabled = true;  break;
 	default:
-		// Lighting/normalize/fog/polygon-offset have no PICA path behind this
+		// Lighting/normalize/polygon-offset have no PICA path behind this
 		// surface yet; the lighting the world shows arrives through vertex
 		// colours and the brightness attribute.
 		break;
@@ -508,14 +516,16 @@ void renderDisable(RenderCapability capability)
 	case RenderCapability::Texture2D:
 		// Per unit: this is the call EntityRenderer::disableLightmap makes
 		// while GL_TEXTURE1 is active, and it has to leave unit 0 sampling
-		// the terrain atlas.
+		// the terrain atlas -- and the lightmap's TexEnv stage disarmed.
 		s_texture2dByUnit[trackedTextureUnitIndex()] = false;
 		s_state.texture2d = s_texture2dByUnit[0];
+		ds::setLightmapActive(s_texture2dByUnit[1]);
 		break;
 	case RenderCapability::Blend:     s_state.blend = false;     break;
 	case RenderCapability::DepthTest: s_state.depthTest = false; break;
 	case RenderCapability::AlphaTest: s_state.alphaTest = false; break;
 	case RenderCapability::CullFace:  s_state.cullFace = false;  break;
+	case RenderCapability::Fog:       s_state.fogEnabled = false; break;
 	default: break;
 	}
 }
@@ -546,11 +556,15 @@ void renderColorMask(bool red, bool green, bool blue, bool alpha)
 void renderBindTexture(int texture)
 {
 	// Upload addressing follows the active unit's binding, whatever unit
-	// that is; only the default unit's binds feed the sampler the shader
-	// reads (see s_activeTextureUnit).
+	// that is; only the default unit's binds feed the stage-0 sampler (see
+	// s_activeTextureUnit). A unit-1 bind is the game's lightmap --
+	// enableLightmap() binds the 16x16 dynamic lightmap there -- so it is
+	// recorded for the second sampler instead (ds::setLightmapTexture).
 	s_uploadTarget = texture;
 	if (s_activeTextureUnit == 0x84C0)
 		s_state.boundTexture = texture;
+	else
+		ds::setLightmapTexture(texture);
 }
 
 void renderSetActiveTextureUnit(int textureUnit)
@@ -564,9 +578,19 @@ void renderSetActiveTextureUnit(int textureUnit)
 void renderSetClientActiveTextureUnit(int textureUnit) { (void)textureUnit; }
 void renderSetMultiTextureCoord(int textureUnit, float u, float v)
 {
-	// Lightmap coordinates travel in the mesh (brightness attribute), so
-	// there is no second texcoord channel to feed here.
-	(void)textureUnit; (void)u; (void)v;
+	// GL's per-unit current texcoord. Only the lightmap unit's is ever
+	// set: RenderManager, the first-person hand and the special-case
+	// entity renderers feed the whole model's light through OpenGlHelper
+	// (raw scale -- the unit-1 texture matrix transforms it, which the
+	// shader does inline). There is no fixed-function channel to stage it
+	// in on the PICA, so the pair is recorded for the shader's lmco
+	// uniform (see setLightmapCoord): a mesh that writes the per-vertex
+	// slot (Tessellator::setBrightness -- terrain, particles) receives
+	// (0, 0) there and ignores it; a mesh that does not (entities, the
+	// hand) samples the lightmap with it -- GL's exact current-coordinate
+	// semantics for a batch that never writes one.
+	if (textureUnit == 0x84C1) // OpenGlHelper::lightmapTexUnit (GL_TEXTURE1)
+		ds::setLightmapCoord(u, v);
 }
 
 void renderSetLightmapColors(const std::uint32_t* colors, int count)
@@ -689,6 +713,11 @@ void renderResetResources()
 	s_nextOcclusionQuery = 1;
 	s_uploadTarget = 0;
 	s_activeTextureUnit = 0x84C0;
+	// The lightmap's storage went away with the texture records; drop the
+	// handle and the arm bit so a stale name cannot modulate by garbage
+	// until the next enableLightmap pair re-establishes both.
+	ds::setLightmapTexture(0);
+	ds::setLightmapActive(false);
 	s_recordingList = -1;
 	s_displayLists.clear();
 	ds::texture::resetAll();
@@ -699,17 +728,74 @@ void renderResetResources()
 // Fog and lighting
 // ---------------------------------------------------------------------------
 
-void renderFogf(RenderFogParameter, float) {}
-void renderFogi(RenderFogParameter, RenderFogMode) {}
-void renderFogColor(const float*) {}
+// Fog is real on this backend: the PICA200 has a fixed per-pixel fog unit
+// (a depth-indexed LUT plus a fog colour -- c3d/fog.h), so the GL-shaped
+// values carry into ds::GpuState and DsRender.cpp builds the LUT at draw
+// time (see the fog block there for the depth-direction convention). The
+// one piece of the GL surface the unit cannot express is per-fragment
+// *radial* distance (GL_FOG_DISTANCE EyeRadial): fog runs on view-plane
+// depth, the same approximation most desktop GL drivers shipped.
+void renderFogf(RenderFogParameter parameter, float value)
+{
+	switch (parameter)
+	{
+	case RenderFogParameter::Density: s_state.fogDensity = value; break;
+	case RenderFogParameter::Start:   s_state.fogStart = value;   break;
+	case RenderFogParameter::End:     s_state.fogEnd = value;     break;
+	default: break; // Mode/Color/DistanceMode arrive via their own calls
+	}
+}
+
+void renderFogi(RenderFogParameter parameter, RenderFogMode value)
+{
+	if (parameter != RenderFogParameter::Mode)
+		return; // DistanceMode: EyeRadial has no PICA spelling (see above)
+	switch (value)
+	{
+	case RenderFogMode::Exp:
+	case RenderFogMode::Exp2:
+		s_state.fogMode = value;
+		break;
+	default:
+		// Linear; EyeRadial's distance flavour folds into it.
+		s_state.fogMode = RenderFogMode::Linear;
+		break;
+	}
+}
+
+void renderFogColor(const float* values)
+{
+	// GPUREG_FOG_COLOR reads the word little-endian RGBA: red in the LOW
+	// byte, the opposite of the clear colour's 0xRRGGBBAA (citro3d writes
+	// ctx->fogClr to the register raw -- see C3Di_UpdateContext in
+	// citro3d's source). Packing R into the high byte showed as a
+	// full-red fog at night, when the vanilla fog colour is dark blue
+	// with alpha 1.0: the 0xFF alpha byte landed on the register's red
+	// channel. Every fog colour the game sets -- day near-white,
+	// underwater blue, lava, the Nether's dark, blindness -- packs
+	// through here, so this one fix covers them all.
+	if (values == nullptr)
+		return;
+	auto channel = [](float c)
+	{
+		if (!(c > 0.0f))
+			return 0u; // also catches NaN
+		if (c > 1.0f)
+			return 255u;
+		return static_cast<unsigned int>(c * 255.0f + 0.5f);
+	};
+	s_state.fogColor = (channel(values[3]) << 24) | (channel(values[2]) << 16) |
+	                   (channel(values[1]) << 8) | channel(values[0]);
+}
+
+// Still accepted and dropped, with the hardware reason: the lighting
+// family. Minecraft bakes its lighting into vertex colours and the
+// brightness attribute on the Tessellator path, so the PICA needs no
+// fixed-function lights, and the GUI/HUD draw set never queries them.
 void renderLightfv(int, RenderLightParameter, const float*) {}
 void renderLightModelAmbient(const float*) {}
 void renderColorMaterial(RenderFace, RenderColorMaterialMode) {}
 void renderShadeModel(RenderShadeModel) {}
-// All accepted and dropped: see the file header. World fog joins with the
-// terrain milestone (a PICA fog unit exists -- C3D_Fog -- but nothing on the
-// GUI/HUD path queries it, so wiring it before there is geometry to fog
-// would be untestable either way).
 
 // ---------------------------------------------------------------------------
 // Frame control
@@ -868,6 +954,13 @@ void renderFrustum(double left, double right, double bottom, double top,
                    double nearValue, double farValue)
 {
 	ds::matrix::frustum(left, right, bottom, top, nearValue, farValue);
+	// The fog LUT inverts post-projection depth into eye distance through
+	// this pair (FogLut_CalcZ, see DsRender.cpp); every fogged draw runs
+	// under the projection that produced its depths, so recording it here
+	// keeps the pair always current. renderOrtho deliberately does not:
+	// the 2D phases are unfogged.
+	s_state.projectionNear = static_cast<float>(nearValue);
+	s_state.projectionFar = static_cast<float>(farValue);
 }
 void renderOrtho(double left, double right, double bottom, double top,
                  double nearValue, double farValue)

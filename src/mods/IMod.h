@@ -43,6 +43,13 @@ public:
     virtual bool onContainerMouseClicked(GuiContainer *container, int_t x, int_t y, int_t button) { return false; }
     virtual bool onContainerKeyTyped(char_t c, int_t key) { return false; }
 
+    // Server chat hook (every chat packet, before the HUD shows it)
+    virtual void onChatMessageReceived(const std::string &message) {}
+
+    // Per-mod settings screen (Mods menu "Settings" button)
+    virtual bool hasSettings() const { return false; }
+    virtual void openSettings(Minecraft *mc) {}
+
 protected:
     std::string packPath;
 };

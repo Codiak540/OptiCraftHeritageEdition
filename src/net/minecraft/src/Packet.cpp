@@ -208,11 +208,24 @@ void Packet::addIdClassMapping(int_t id, bool clientPacket, bool serverPacket, s
 
 int_t Packet::getPacketId() const
 {
+#if defined(CTR_PLATFORM)
+	// Memoized per instance on the 3DS (see Packet.h): the entity-lane
+	// classification calls this on the reader thread and the dispatch loop
+	// calls it again per packet, and the typeid + type_info::before walk is
+	// real money at 268 MHz.
+	if (cachedPacketId >= 0)
+		return cachedPacketId;
+#endif
 	initPacketMappings();
 	auto it = packetClassToIdMap.find(std::type_index(typeid(*this)));
 	if (it == packetClassToIdMap.end())
 		throw std::runtime_error("Unregistered packet class");
+#if defined(CTR_PLATFORM)
+	cachedPacketId = it->second;
+	return cachedPacketId;
+#else
 	return it->second;
+#endif
 }
 
 std::unique_ptr<Packet> Packet::getNewPacket(int_t id)

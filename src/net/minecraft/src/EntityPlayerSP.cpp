@@ -38,7 +38,6 @@
 #include "PotionEffect.h"
 #include "Block.h"
 
-#if defined(CTR_PLATFORM)
 namespace
 {
 // Auto-jump probes (see EntityPlayerSP::queueAutoJump). The step block must be
@@ -103,7 +102,6 @@ bool autoJumpIsJumpable(World *world, int_t x, int_t y, int_t z, double feetY)
 	return true;
 }
 } // namespace
-#endif
 
 EntityPlayerSP::EntityPlayerSP(Minecraft *minecraft, World *world, Session *session, int_t i)
 	: EntityPlayer(world)
@@ -118,10 +116,8 @@ EntityPlayerSP::EntityPlayerSP(Minecraft *minecraft, World *world, Session *sess
 {
 	ensureEntityInit();
 	dimension = i;
-#if defined(CTR_PLATFORM)
 	autoJumpTime = 0;
 	autoJumpPending = false;
-#endif
 	if (session != nullptr)
 	{
 		if (!session->username.empty())
@@ -144,14 +140,10 @@ EntityPlayerSP::~EntityPlayerSP()
 
 void EntityPlayerSP::moveEntity(double d, double d1, double d2)
 {
-#if defined(CTR_PLATFORM)
 	const double prevX = posX;
 	const double prevZ = posZ;
-#endif
 	EntityPlayer::moveEntity(d, d1, d2);
-#if defined(CTR_PLATFORM)
 	queueAutoJump(prevX, prevZ, d, d2);
-#endif
 }
 
 void EntityPlayerSP::updatePlayerActionState()
@@ -167,7 +159,6 @@ void EntityPlayerSP::updatePlayerActionState()
 		renderArmPitch += (rotationPitch - renderArmPitch) * 0.5f;
 		renderArmYaw += (rotationYaw - renderArmYaw) * 0.5f;
 	}
-#if defined(CTR_PLATFORM)
 	// Consume the jump armed by queueAutoJump on the previous tick: the real hop
 	// still goes through EntityLiving's isJumping/jumpTicks path, so all this
 	// does is hold isJumping for as long as the armed window lasts.
@@ -196,10 +187,8 @@ void EntityPlayerSP::updatePlayerActionState()
 		// too, or the next manual jump would lose its sprint boost once.
 		autoJumpPending = false;
 	}
-#endif
 }
 
-#if defined(CTR_PLATFORM)
 // Arm an auto-jump when this tick's move crossed the middle of a tile and the
 // tile ahead is a one-block step with two clear blocks above it. Detection runs
 // right after the move (so the crossing is known) and consumption on the next
@@ -269,7 +258,6 @@ void EntityPlayerSP::jump()
 	if (suppressBoost && wasSprinting)
 		setSprinting(true);
 }
-#endif
 
 void EntityPlayerSP::onLivingUpdate()
 {

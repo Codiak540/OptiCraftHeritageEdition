@@ -412,5 +412,23 @@ void bind(int id, float (&uvScale)[2])
 		C3D_TexBind(0, &s_fallback);
 }
 
+void bindUnit1(int id)
+{
+	// The dynamic lightmap's unit (DsRender.cpp arms TexEnv stage 1 to
+	// sample it while the game's enableLightmap pair is armed). The same
+	// resolution rules as bind(): the 16x16 lightmap record resolves
+	// directly, an unresolved name takes the shared white block so a
+	// modulate by it is the identity -- the pre-lightmap look.
+	Record* record = id > 0 ? find(id) : nullptr;
+	if (record != nullptr && record->valid)
+	{
+		C3D_TexBind(1, &record->tex);
+		return;
+	}
+	ensureFallback();
+	if (s_fallbackReady)
+		C3D_TexBind(1, &s_fallback);
+}
+
 } // namespace texture
 } // namespace ds

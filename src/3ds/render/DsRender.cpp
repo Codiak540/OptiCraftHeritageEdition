@@ -127,6 +127,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdint>
+#include <cmath>
 
 #include "3ds/render/DsMatrix.h"
 // picasso's -h output: the uniform registers of DsShader.v.pica.
@@ -554,6 +555,145 @@ void splitCommandBufferIfNeeded()
 		C3D_FrameSplit(0);
 }
 
+// Fog (the PICA200 fog unit -- c3d/fog.h).
+//
+// The unit is fixed-function and per-pixel: it indexes a 128-entry LUT with
+// the fragment's post-projection depth, and blends the fragment toward a fog
+// colour by the value it finds there (citro3d: C3D_FogGasMode / C3D_FogColor
+// / C3D_FogLutBind). Each entry stores an 11-bit visibility value plus the
+// signed delta to the next entry, so the hardware interpolates linearly
+// between steps -- arbitrary curves for the price of one exp() per sample.
+//
+// Depth direction: with this port's remap (GL clip z [-w,+w] -> PICA
+// [-w,0], then C3D_DepthMap(true, -1, 0) storing it negated) the stored
+// depth is 0 at the far plane and +1 at the near one -- exactly what
+// FogLut_CalcZ's inversion expects (index 0 reads at `far`, index 128 at
+// `near`), so zFlip stays false. If hardware testing ever shows the fade
+// running backwards (near geometry fogged, far clear), zFlip is the single
+// knob that reverses it -- see the C3D_FogGasMode call below.
+//
+// GL's fog functions express how much fog colour to blend in; the LUT
+// stores the complement (visibility), which is also what exp() yields
+// directly, so the conversion is the 1 - fogFactor flip:
+//   Linear: clamp((end - d) / (end - start))
+//   Exp:    exp(-density * d)
+//   Exp2:   exp(-(density * d)^2)
+// The GL_FOG_DISTANCE EyeRadial flavour is approximated by plane depth --
+// the same approximation most desktop GL drivers made, and the only one
+// the unit can spell.
+
+float fogVisibility(float eyeDistance, const GpuState& state)
+{
+	switch (state.fogMode)
+	{
+	case RenderFogMode::Exp:
+		return std::exp(-state.fogDensity * eyeDistance);
+	case RenderFogMode::Exp2:
+	{
+		const float scaled = state.fogDensity * eyeDistance;
+		return std::exp(-scaled * scaled);
+	}
+	default: // Linear (EyeRadial folds into it: plane-distance fog)
+		if (state.fogEnd <= state.fogStart)
+			return eyeDistance >= state.fogEnd ? 0.0f : 1.0f;
+		const float visibility =
+		    (state.fogEnd - eyeDistance) / (state.fogEnd - state.fogStart);
+		return visibility < 0.0f ? 0.0f : (visibility > 1.0f ? 1.0f : visibility);
+	}
+}
+
+C3D_FogLut s_fogLut;
+bool s_fogLutValid = false;
+RenderFogMode s_fogLutMode = RenderFogMode::Linear;
+float s_fogLutStart = -1.0f;
+float s_fogLutEnd = -1.0f;
+float s_fogLutDensity = -1.0f;
+float s_fogLutNear = -1.0f;
+float s_fogLutFar = -1.0f;
+
+bool s_fogUnitEnabled = false;
+unsigned int s_fogAppliedColor = 0xDEADBEEFu;
+
+// The dynamic lightmap on texture unit 1 (see setLightmapTexture/
+// setLightmapActive below). Deliberately outside GpuState: GL's unit-1
+// enable applies at call time, so a replayed display-list section must
+// take the bit from the frame it replays in, not the one it was captured
+// in -- capturing it would freeze every terrain section at the lighting of
+// whichever moment it was rebuilt in.
+int s_lightmapTexture = 0;
+bool s_lightmapActive = false;
+
+// The model-wide lightmap pair (see setLightmapCoord): GL's current
+// unit-1 coordinate, in the same raw scale as the per-vertex slot. The
+// flag names which of the two kinds the mesh being flushed carries --
+// a mesh either writes the slot per vertex or lights through the pair.
+float s_lightmapCoordU = 0.0f;
+float s_lightmapCoordV = 0.0f;
+bool s_meshHasBrightness = false;
+
+void rebuildFogLut(const GpuState& state)
+{
+	// 129 samples, entry 128's value only feeding the delta of entry 127 --
+	// citro3d's own FogLut_Exp shape: data[i] is the visibility at entry i,
+	// data[128+i] the step to entry i+1.
+	float data[256];
+	for (int i = 0; i <= 128; ++i)
+	{
+		const float eyeDistance =
+		    FogLut_CalcZ(static_cast<float>(i) / 128.0f,
+		                state.projectionNear, state.projectionFar);
+		const float visibility = fogVisibility(eyeDistance, state);
+		if (i < 128)
+			data[i] = visibility;
+		if (i > 0)
+			data[i + 127] = visibility - data[i - 1];
+	}
+	FogLut_FromArray(&s_fogLut, data);
+	C3D_FogLutBind(&s_fogLut);
+
+	s_fogLutValid = true;
+	s_fogLutMode = state.fogMode;
+	s_fogLutStart = state.fogStart;
+	s_fogLutEnd = state.fogEnd;
+	s_fogLutDensity = state.fogDensity;
+	s_fogLutNear = state.projectionNear;
+	s_fogLutFar = state.projectionFar;
+}
+
+void applyFog(const GpuState& state)
+{
+	if (!state.fogEnabled)
+	{
+		if (s_fogUnitEnabled)
+		{
+			C3D_FogGasMode(GPU_NO_FOG, GPU_PLAIN_DENSITY, false);
+			s_fogUnitEnabled = false;
+		}
+		return;
+	}
+
+	// The register writes dirty citro3d's context (flushed with the next
+	// draw), so only touch the unit on a real change; a phase re-issuing
+	// the same setupFog values costs nothing here.
+	if (!s_fogUnitEnabled)
+	{
+		C3D_FogGasMode(GPU_FOG, GPU_PLAIN_DENSITY, false);
+		s_fogUnitEnabled = true;
+	}
+	if (s_fogAppliedColor != state.fogColor)
+	{
+		C3D_FogColor(state.fogColor);
+		s_fogAppliedColor = state.fogColor;
+	}
+	if (!s_fogLutValid || s_fogLutMode != state.fogMode ||
+	    s_fogLutStart != state.fogStart || s_fogLutEnd != state.fogEnd ||
+	    s_fogLutDensity != state.fogDensity ||
+	    s_fogLutNear != state.projectionNear || s_fogLutFar != state.projectionFar)
+	{
+		rebuildFogLut(state);
+	}
+}
+
 // Translate the GL-shaped state into citro3d calls and point the vertex fetch
 // at the staged copy. citro3d flushes all of this per C3D_DrawArrays, so this
 // is safe to call with different values for every draw in a frame.
@@ -608,9 +748,18 @@ void applyState(const GpuState& state, const void* vertexBase)
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, VSH_FVEC_texScale,
 	              uvScale[0], uvScale[1], 1.0f - uvScale[1], 1.0f);
 
+	// The model-wide lightmap pair (lmco): the meshes without per-vertex
+	// brightness -- entities, the first-person hand -- light through it,
+	// exactly like GL's current unit-1 coordinate for a batch that never
+	// writes one. A mesh that does carry the slot gets (0, 0) here, so
+	// the shader's sum picks the per-vertex pair alone.
+	const float lmU = s_meshHasBrightness ? 0.0f : s_lightmapCoordU;
+	const float lmV = s_meshHasBrightness ? 0.0f : s_lightmapCoordV;
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, VSH_FVEC_lmco, lmU, lmV, 0.0f, 0.0f);
+
 	// TexEnv stage 0: texel * vertex colour when texturing, vertex colour
-	// alone when not. Stages 1..5 stay the pass-through their init-time
-	// C3D_TexEnvInit left them as.
+	// alone when not. Stage 1 is the lightmap's (below); 2..5 stay the
+	// pass-through their init-time C3D_TexEnvInit left them as.
 	C3D_TexEnv* env = C3D_GetTexEnv(0);
 	C3D_TexEnvInit(env);
 	if (state.texture2d)
@@ -626,6 +775,29 @@ void applyState(const GpuState& state, const void* vertexBase)
 		C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
 	}
 
+	// TexEnv stage 1: the dynamic lightmap on texture unit 1, armed while
+	// the game's enableLightmap/disableLightmap pair brackets a pass (see
+	// setLightmapTexture/setLightmapActive). The packed brightness slot
+	// reaches the sampler as outtc1 (DsShader.v.pica). Inactive, the
+	// C3D_TexEnvInit default passes the previous stage through untouched --
+	// the pre-lightmap behaviour, and what every draw outside those passes
+	// still takes.
+	C3D_TexEnv* env1 = C3D_GetTexEnv(1);
+	C3D_TexEnvInit(env1);
+	if (s_lightmapActive)
+	{
+		texture::bindUnit1(s_lightmapTexture);
+		// MODULATE combines the first two sources; the third is a
+		// don't-care that must still name a valid source.
+		C3D_TexEnvSrc(env1, C3D_Both, GPU_PREVIOUS, GPU_TEXTURE1,
+		              GPU_PREVIOUS);
+		C3D_TexEnvFunc(env1, C3D_Both, GPU_MODULATE);
+	}
+
+	// Fog: the unit's registers only move when the state really changed
+	// (see applyFog); a phase re-issuing the same setupFog costs nothing.
+	applyFog(state);
+
 	// Vertex fetch: one buffer, five attributes, the fixed stride.
 	C3D_BufInfo* bufInfo = C3D_GetBufInfo();
 	BufInfo_Init(bufInfo);
@@ -634,6 +806,22 @@ void applyState(const GpuState& state, const void* vertexBase)
 }
 
 } // namespace
+
+void setLightmapTexture(int textureId)
+{
+	s_lightmapTexture = textureId;
+}
+
+void setLightmapActive(bool enabled)
+{
+	s_lightmapActive = enabled;
+}
+
+void setLightmapCoord(float u, float v)
+{
+	s_lightmapCoordU = u;
+	s_lightmapCoordV = v;
+}
 
 bool init()
 {
@@ -684,7 +872,13 @@ bool init()
 	AttrInfo_AddLoader(attrInfo, 1, GPU_FLOAT, 2);         // texcoord
 	AttrInfo_AddLoader(attrInfo, 2, GPU_UNSIGNED_BYTE, 4);  // colour RGBA
 	AttrInfo_AddLoader(attrInfo, 3, GPU_BYTE, 4);          // normal xyz + pad
-	AttrInfo_AddLoader(attrInfo, 4, GPU_FLOAT, 1);         // brightness
+	// Brightness: the packed lightmap word, loaded as the two vanilla
+	// unit-1 coordinates -- block light << 4 in the low half, sky light
+	// << 4 in the high one (the same pair the Wii backend memcpys out for
+	// GX, and the values the GL texture matrix scales by 1/256 and
+	// translates by 8). The vertex bytes are unchanged; only their load
+	// format differs from the old GPU_FLOAT read.
+	AttrInfo_AddLoader(attrInfo, 4, GPU_SHORT, 2);        // brightness
 
 	// Pin every TexEnv stage to its pass-through default, so stage 0 is the
 	// only one this backend ever has to think about.
@@ -1007,6 +1201,9 @@ void getViewport(int* values)
 
 bool draw(const RenderInterleavedMesh& mesh, const GpuState& state)
 {
+	// applyState's lmco push reads this: the mesh either carries the
+	// lightmap pair per vertex or lights through the model-wide one.
+	s_meshHasBrightness = mesh.hasBrightness;
 	if (mesh.data == nullptr || mesh.count <= 0)
 		return true; // Nothing to do, and the layout is representable.
 	if (mesh.positionShort || mesh.stride != kVertexStride)
@@ -1114,6 +1311,7 @@ bool draw(const RenderInterleavedMesh& mesh, const GpuState& state)
 
 bool drawLinear(const RenderInterleavedMesh& mesh, const GpuState& state)
 {
+	s_meshHasBrightness = mesh.hasBrightness; // draw() re-sets it identically below.
 	// no per-vertex colours baked => the staged path's current-colour fill is
 	// load-bearing for this mesh; it also copies out of a linear source fine.
 	if (!mesh.hasColor)

@@ -139,6 +139,8 @@
 #include "Packet201PlayerInfo.h"
 #include "Packet202PlayerAbilities.h"
 
+#include "mods/ModManager.h"
+
 // Networking uses the platform socket implementation selected by NetworkManager.
 
 NetClientHandler::NetClientHandler(Minecraft* minecraft, const std::string& host, int port)
@@ -190,6 +192,19 @@ void NetClientHandler::processReadPackets()
 
 void NetClientHandler::handleLogin(Packet1Login* packet)
 {
+    // A re-sent login packet (respawn, server world change) arrives on a live
+    // session, where the previous PlayerControllerMP still owns *this* handler.
+    // Destroying it inline would delete this handler and its NetworkManager
+    // while NetworkManager::processReadPackets() is still dispatching this
+    // very packet further down the stack -- the dispatch loop then walks the
+    // freed packet queue and data-aborts on a freed Packet (Luma: fault inside
+    // std::type_info::before(), FAR 0x19, typeid() over a garbage vptr). The
+    // Java original survived this only because GC deferred the old controller.
+    // Release the handler instead: ownership transfers to the PlayerControllerMP
+    // created below, and the now-inert old controller is safe to delete.
+    PlayerControllerMP *previous = dynamic_cast<PlayerControllerMP *>(mc->playerController);
+    if (previous != nullptr && previous->getNetClientHandler() == this)
+        previous->releaseNetClientHandler();
     delete mc->playerController;
     mc->playerController = new PlayerControllerMP(mc, this);
     playerControllerOwnsHandler = true;
@@ -906,6 +921,9 @@ void NetClientHandler::handleCollect(Packet22Collect* packet)
 
 void NetClientHandler::handleChat(Packet3Chat* packet)
 {
+    // Mods see every server chat line first (Auto-Login answers /register
+    // and /login prompts from here).
+    ModManager::getInstance().onChatMessageReceived(packet->message);
     mc->ingameGUI->addChatMessage(packet->message);
 }
 

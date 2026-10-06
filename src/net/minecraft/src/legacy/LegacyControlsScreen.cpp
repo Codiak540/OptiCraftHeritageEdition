@@ -51,7 +51,10 @@ bool reservedCaptureKey(int_t key)
 
 std::string capturePrompt()
 {
-#if PLATFORM_PS2 || PLATFORM_WII
+#if PLATFORM_PS2 || PLATFORM_WII || PLATFORM_3DS
+    // Every pad platform captures pad buttons, not keys -- and on the 3DS
+    // the capture channel (DsInput's rebind mode) is the only thing that
+    // delivers them.
     return uiText("Press a button...");
 #else
     return uiText("Press a key...");
@@ -285,13 +288,18 @@ void LegacyControlsScreen::keyTyped(char_t c, int_t key)
 
 void LegacyControlsScreen::mouseClicked(int_t x, int_t y, int_t button)
 {
-#if !PLATFORM_PS2 && !PLATFORM_WII
+#if !PLATFORM_PS2 && !PLATFORM_WII && !PLATFORM_3DS
     if (captureRow >= 0)
     {
         applyCapturedKey(-100 + button);
         return;
     }
 #else
+    // Pad platforms bind pad buttons, and the 3DS's touch panel is how the
+    // rows were opened in the first place: an accidental second tap while
+    // a capture listens must not silently bind the action to a mouse
+    // pseudo-code. B (or START, or a fresh pad press) is the way out -- the
+    // capture prompt says so on every pad platform.
     if (captureRow >= 0)
         return;
 #endif

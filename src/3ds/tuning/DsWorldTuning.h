@@ -343,9 +343,37 @@
 // arrival into the client chunk and applies block changes immediately -- no
 // parking lot, no 2/tick promotion budget, no deferred change log. Why the
 // deferred pipeline breaks on CraftBukkit specifically was not chased past
-// the rollback: it proved to be the fix, and any return to the deferred
+// the rollback at the time -- the 2026-10-06 note below is that chase. The
+// rollback proved to be the fix, and any return to the deferred
 // pipeline here must be validated against a CraftBukkit server, not just a
 // vanilla one -- that is the exact regression this rollback repaired.
+//
+// 2026-10-06: the CraftBukkit side finally got measured instead of
+// theorized (scripts/protocol_probe.py + scripts/protocol_relay.py against
+// the owner's live server -- an 18-plugin CraftBukkit stack, AuthMe among
+// them). Login burst there: the
+// teleport lands ~0.2s in, strictly before any chunk data; then 81
+// MapChunks over 81 unique columns (the 9x9 window of a view-distance-4
+// server), 0.20 MiB compressed total, every packet an includeInitialize
+// base -- zero orphan section deltas. Against the table below that is
+// 81/256 entries and 0.20/3.0 MiB: the parking lot would hold at most the
+// 32 columns outside the keep window, no budget pressure anywhere. The
+// probe runs that first read as "CraftBukkit withholds chunks" were the
+// probe's own wire bug: the 1.2.5 server writes Packet13 as (x, eye,
+// feet, z) and the real client echoes (x, feet, eye) -- the port's writer
+// does exactly that; the probe echoed the teleport verbatim, so the
+// server read its every movement packet as invalid and never dispatched
+// the player's chunk window. Auth never gated chunks either: the real
+// session's chunks arrive before the /login does. With the one
+// reproducible server-side gate (movement validity) being something the
+// real client has always sent correctly, and the plugin stack known to
+// differ from 2026-09-29 (AuthMe predates the current stack, per the
+// owner), that day's "never appear on CraftBukkit" is not
+// reconstructible; nothing found since -- static or on the wire -- shows
+// a pipeline defect. The validation requirement stands; the instruments
+// for it now exist, so a re-enable gets validated with the relay watching
+// the real 3DS session's traffic against a CraftBukkit server before
+// anything ships.
 //
 // The bounded eviction is NOT part of the rollback. PLATFORM_MP_BOUNDED_
 // CHUNK_CACHE keeps evicting live columns beyond PLATFORM_CHUNK_UNLOAD_RADIUS

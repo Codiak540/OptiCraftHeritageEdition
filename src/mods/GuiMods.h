@@ -31,6 +31,7 @@ private:
     std::string screenTitle;
     int_t selectedModIndex = -1;
     GuiButton *deleteButton = nullptr;
+    GuiButton *settingsButton = nullptr;
 
     friend class GuiSlotMods;
 };

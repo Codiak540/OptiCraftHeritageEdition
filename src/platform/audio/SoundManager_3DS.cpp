@@ -77,6 +77,7 @@ void SoundManager::tryToSetLibraryAndCodecs() {}
 #include <cstring>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "net/minecraft/src/GameSettings.h"
 #include "net/minecraft/src/EntityLiving.h"
@@ -341,14 +342,79 @@ bool decodeAdpSfx(const std::uint8_t *data, const Ps2AdpcmStream::Header &header
 	return true;
 }
 
+void freeSfxEntry(std::unordered_map<std::string, CachedSample>::iterator it);
+
+// Retired PCM. ndspChnWaveBufClear() detaches the ARM11 queue and flags the
+// channel reset, but the DSP binary finishes the buffer it is already
+// DMA-ing first (libctru issue #206: "WaveBufClear doesn't stop playback")
+// -- the stop lands a sync pass or two after the call returns. linearFree()
+// inside that window hands the block back to the allocator while the DSP
+// still reads it, and in a multiplayer sound burst the very next decode
+// takes the block and writes the new sample over the audio still playing
+// under the old sound's rate and format -- the distorted, high-pitched
+// garbage that piled up "after a while" on servers: the 4 MiB cache only
+// starts evicting once a session has heard that many distinct sounds, and
+// bursts then evict and decode back-to-back. Retirement holds the block
+// past the DSP's stop latency; the list is capped so sustained eviction
+// pressure can never park unbounded memory.
+struct RetiredPcm
+{
+	std::int16_t *pcm = nullptr;
+	std::uint64_t retireMs = 0;
+	std::size_t bytes = 0;
+};
+std::vector<RetiredPcm> s_retiredPcm;
+std::size_t s_retiredPcmBytes = 0;
+// ~8 ms is the real bound (a couple of DSP sync frames); 100 ms costs a few
+// hundred KB of slack under pressure and covers every scheduling hiccup.
+constexpr std::uint64_t kPcmRetireGraceMs = 100;
+constexpr std::size_t kPcmRetireCapBytes = 512 * 1024;
+
+void freeAgedRetiredPcm(bool drainAll)
+{
+	while (!s_retiredPcm.empty())
+	{
+		const RetiredPcm &front = s_retiredPcm.front();
+		// Free when the grace elapsed, or when the cap says the oldest
+		// block must go regardless -- the hard bound on total memory.
+		if (!drainAll && osGetTime() - front.retireMs < kPcmRetireGraceMs &&
+		    s_retiredPcmBytes <= kPcmRetireCapBytes)
+			break;
+		s_retiredPcmBytes -= front.bytes;
+		linearFree(front.pcm);
+		s_retiredPcm.erase(s_retiredPcm.begin());
+	}
+}
+
+void retireSfxPcm(std::int16_t *pcm, std::size_t bytes)
+{
+	if (pcm == nullptr)
+		return;
+	s_retiredPcm.push_back({pcm, osGetTime(), bytes});
+	s_retiredPcmBytes += bytes;
+	freeAgedRetiredPcm(false);
+}
+
 void freeSfxEntry(std::unordered_map<std::string, CachedSample>::iterator it)
 {
-	// ndsp may still be DMA-reading a buffer queued on a previous play of
-	// this sample; clear every channel that holds it before freeing.
+	// Clear only the channels whose queue actually holds this sample: a
+	// per-channel node reading NDSP_WBUF_QUEUED or NDSP_WBUF_PLAYING is on
+	// that channel's queue (ndspChnWaveBufAdd sets QUEUED under the channel
+	// lock as it links the node; the DSP sync thread moves it to DONE only
+	// as it unlinks). The previous all-channels shotgun cut every live
+	// sound on every eviction; this cuts at most the channels playing the
+	// one sample that is leaving.
 	for (int channel = CTR_SFX_FIRST_CHANNEL; channel < CTR_SFX_CHANNEL_COUNT; ++channel)
-		ndspChnWaveBufClear(channel);
+	{
+		const ndspWaveBuf &node = it->second.wave[channel];
+		if (node.status == NDSP_WBUF_QUEUED || node.status == NDSP_WBUF_PLAYING)
+			ndspChnWaveBufClear(channel);
+	}
 	s_sfxCacheBytes -= it->second.allocBytes;
-	linearFree(it->second.pcm);
+	// The pcm goes to the retirement list, not straight to linearFree():
+	// the clear above stops the channel asynchronously and the DSP may
+	// still be mid-buffer on it (see the RetiredPcm note).
+	retireSfxPcm(it->second.pcm, it->second.allocBytes);
 	s_sfxCache.erase(it);
 }
 
@@ -366,6 +432,10 @@ void evictFor(std::size_t incomingBytes)
 
 CachedSample *getDecodedSfx(const std::string &path)
 {
+	// Age out retired blocks on every lookup: this is the one call every
+	// play goes through, so the grace list turns over without needing its
+	// own timer.
+	freeAgedRetiredPcm(false);
 	const auto hit = s_sfxCache.find(path);
 	if (hit != s_sfxCache.end())
 	{
@@ -1021,6 +1091,10 @@ void SoundManager::closeMinecraft()
 		aptDspWakeup();
 		ndspExit();
 	}
+	// With the DSP down nothing can still be reading an evicted decode:
+	// drain the retirement list fully here rather than leaving it to the
+	// exit hook (which only runs on the paths that skipped this call).
+	freeAgedRetiredPcm(true);
 	loaded = false;
 }
 

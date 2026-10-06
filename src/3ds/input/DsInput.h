@@ -81,6 +81,19 @@ void dsInputSetFaceButtonCamera(bool enabled);
 // is (re)loaded or changed.
 void dsInputSetPocketTouch(bool enabled);
 
+// Pad-code claim mask (DsPadKeyCodes.h contract): one bit per pad key code,
+// bit n = DS_KEY_A + n, set for every KeyBinding whose keyCode names a pad
+// button. A claimed code re-purposes its button: DsInput stops feeding the
+// button's hardcoded click channel (L/R/X place/attack) and emits the code
+// instead, so what the Controls screen bound is ALL the button does. Codes
+// nobody claims change nothing -- the default layout ships with L/R/X
+// unclaimed, keeping place on L and attack on R/X exactly as before. B is
+// never claimable (the capture channel keeps it as the cancel button), so
+// its back role is fixed on every menu.
+// Computed by platformGameSettingsSyncControllerBindings() and pushed here
+// whenever bindings load, reset or change.
+void dsInputSetBoundPadCodes(std::uint32_t codes);
+
 const DsInputState& dsInputState();
 
 // PLATFORM_TEXT_* actions that went down since the last call: returns the

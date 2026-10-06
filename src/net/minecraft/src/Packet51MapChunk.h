@@ -20,6 +20,15 @@ public:
     int_t getPacketSize() override;
 
     bool ensureDecompressed();
+    // True while the packet holds only its compressed payload -- the state
+    // the 3DS reader-side wedge service looks for at the read-queue front
+    // (see NetworkManager::preInflateFrontQueuedChunk).
+    bool needsInflation() const;
+    // Inflate under the same live-inflated cap as the reader's decode-time
+    // pre-inflate; false = the cap is full (or the payload cannot inflate)
+    // and the caller should retry later. The wedge service runs only in the
+    // 3DS direct-import profile; the other profiles return false unchanged.
+    bool preInflate();
     std::vector<byte_t> takeCompressedData();
 
     int_t xCh = 0;

@@ -1249,6 +1249,12 @@ void GuiIngame::renderGameplayBottomPanel(float_t partialTick)
 	// looked on hardware.
 	zLevel = 0.0f;
 
+	// The side-swap setting lands here, once per frame: both this draw and
+	// DsInput's hit-test read touchHud::swappedSides, so a mid-session
+	// toggle applies on the next frame and the tappable surface can never
+	// disagree with the drawn one.
+	touchHud::swappedSides = mc->gameSettings != nullptr && mc->gameSettings->touchHudSwap;
+
 	// Pocket-Edition-style pad tap (see DsInput): a short touch on the
 	// camera pad. On a block it places/interacts (button 1); on air it
 	// swings/hits (button 0). The USE path (eat food, draw bow, block)
@@ -1353,7 +1359,7 @@ void GuiIngame::renderGameplayBottomPanel(float_t partialTick)
 		// labels and the border scale with it.
 		const float_t mapScale = static_cast<float_t>(touchHud::MINIMAP_SIZE) / 64.0f;
 		renderPushMatrix();
-		renderTranslate(static_cast<float_t>(touchHud::MINIMAP_X),
+		renderTranslate(static_cast<float_t>(touchHud::minimapX()),
 			static_cast<float_t>(touchHud::MINIMAP_Y) - 6.0f * mapScale, 0.0f);
 		renderScale(mapScale, mapScale, 1.0f);
 		minimap.render(this, 70, touchHud::PANEL_HEIGHT, partialTick);
@@ -1372,13 +1378,14 @@ void GuiIngame::renderGameplayBottomPanel(float_t partialTick)
 	RenderHelper::disableStandardItemLighting();
 
 	// Action buttons down the right edge: inventory (chest front), crafting
-	// (workbench top), pause (procedural bars).
+	// (workbench top), pause (procedural bars), jump (procedural up arrow).
 	drawTouchHudButton(touchHud::BUTTON_INVENTORY_Y, "/terrain.png", 27);
 	// Creative cannot craft (Minecraft's own key handler refuses the
 	// screen there), so the button hides with the mode.
 	if (mc->playerController == nullptr || !mc->playerController->isInCreativeMode())
 		drawTouchHudButton(touchHud::BUTTON_CRAFTING_Y, "/terrain.png", 43);
 	drawTouchHudButton(touchHud::BUTTON_PAUSE_Y, nullptr, 0);
+	drawTouchHudButton(touchHud::BUTTON_JUMP_Y, nullptr, 1);
 }
 
 void GuiIngame::renderTouchChestIcon(int_t x, int_t y)
@@ -1430,22 +1437,37 @@ void GuiIngame::renderTouchChestIcon(int_t x, int_t y)
 void GuiIngame::drawTouchHudButton(int_t y, const char *iconTexture, int_t iconTile)
 {
 	zLevel = 0.0f;
-	// A 40x40 tile: translucent black fill, a light frame, and a 24x24 icon
-	// drawn from the game's own terrain atlas -- the same convention the
-	// dual-screen main-menu button icons use.
-	drawRect(touchHud::BUTTON_X, y, touchHud::BUTTON_X + touchHud::BUTTON_W, y + touchHud::BUTTON_H,
+	// A BUTTON_W x BUTTON_H tile: translucent black fill, a light frame,
+	// and a 24x24 icon drawn from the game's own terrain atlas -- the same
+	// convention the dual-screen main-menu button icons use. The column
+	// follows the side-swap setting (buttonX), so the drawn and tappable
+	// columns move together.
+	const int_t bx = touchHud::buttonX();
+	drawRect(bx, y, bx + touchHud::BUTTON_W, y + touchHud::BUTTON_H,
 		static_cast<int_t>(0xB0000000u));
-	drawRect(touchHud::BUTTON_X, y, touchHud::BUTTON_X + touchHud::BUTTON_W, y + 1, 0x80ffffff);
-	drawRect(touchHud::BUTTON_X, y + touchHud::BUTTON_H - 1,
-		touchHud::BUTTON_X + touchHud::BUTTON_W, y + touchHud::BUTTON_H, 0x80000000);
+	drawRect(bx, y, bx + touchHud::BUTTON_W, y + 1, 0x80ffffff);
+	drawRect(bx, y + touchHud::BUTTON_H - 1,
+		bx + touchHud::BUTTON_W, y + touchHud::BUTTON_H, 0x80000000);
 
-	const int_t iconX = touchHud::BUTTON_X + (touchHud::BUTTON_W - 24) / 2;
+	const int_t iconX = bx + (touchHud::BUTTON_W - 24) / 2;
 	const int_t iconY = y + (touchHud::BUTTON_H - 24) / 2;
 	if (iconTexture == nullptr)
 	{
-		// Pause: the universal two-bar glyph, plain quads.
-		drawRect(iconX + 6, iconY + 2, iconX + 10, iconY + 22, 0xffffffff);
-		drawRect(iconX + 14, iconY + 2, iconX + 18, iconY + 22, 0xffffffff);
+		if (iconTile == 0)
+		{
+			// Pause: the universal two-bar glyph, plain quads.
+			drawRect(iconX + 6, iconY + 2, iconX + 10, iconY + 22, 0xffffffff);
+			drawRect(iconX + 14, iconY + 2, iconX + 18, iconY + 22, 0xffffffff);
+			return;
+		}
+		// Jump: a block arrow pointing up, the same plain-quad style as the
+		// pause bars so the two procedural glyphs read as a pair -- a
+		// three-step chevron head over a centred stem, inside the 24x24
+		// cell the terrain-tile icons use.
+		drawRect(iconX + 10, iconY + 2, iconX + 14, iconY + 6, 0xffffffff);
+		drawRect(iconX + 8, iconY + 6, iconX + 16, iconY + 10, 0xffffffff);
+		drawRect(iconX + 6, iconY + 10, iconX + 18, iconY + 14, 0xffffffff);
+		drawRect(iconX + 10, iconY + 14, iconX + 14, iconY + 22, 0xffffffff);
 		return;
 	}
 

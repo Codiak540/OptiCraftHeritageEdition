@@ -156,6 +156,28 @@ bool Packet51MapChunk::ensureDecompressed()
     return true;
 }
 
+bool Packet51MapChunk::needsInflation() const
+{
+    return chunkData.empty() && !compressedChunk.empty();
+}
+
+bool Packet51MapChunk::preInflate()
+{
+#if defined(CTR_PLATFORM) && !PLATFORM_MP_DEFERRED_CHUNKS
+    // Same room accounting as the decode-time pre-inflate: the live cap
+    // bounds the inflated buffers behind the queue, whichever thread
+    // inflates and whichever packet takes the slot.
+    if (liveInflatedChunkPackets.load(std::memory_order_acquire) >= kMaxLiveInflatedChunkPackets)
+        return false;
+    return ensureDecompressed();
+#else
+    // The wedge service is 3DS-only: the deferred pipelines must keep their
+    // compressed payload (see readPacketData), and the desktop already
+    // inflated at decode time.
+    return false;
+#endif
+}
+
 std::vector<byte_t> Packet51MapChunk::takeCompressedData()
 {
     return std::move(compressedChunk);

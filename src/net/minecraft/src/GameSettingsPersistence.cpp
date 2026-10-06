@@ -206,6 +206,8 @@ void GameSettings::loadOptions()
 					touchMap = value == "true";
 				if (key == "touchCoords")
 					touchCoords = value == "true";
+				if (key == "touchHudSwap")
+					touchHudSwap = value == "true";
 				if (key == "autoJump")
 					autoJump = value == "true";
 				if (key == "pocketTouch")
@@ -428,10 +430,10 @@ void GameSettings::saveOptions()
 		"music", "sound", "invertYMouse", "mouseSensitivity", "fov", "viewDistance",
 		"guiScale", "particles", "bobView", "anaglyph3d", "advancedOpengl", "fpsLimit",
 		"difficulty", "fancyGraphics", "ao", "skin", "lastServer", "lang", "playerName", "selectedSkin", "selectedSkinP2", "legacyUI",
-		"legacyLook", "legacyCrafting", "legacyCreative", "legacyGuiScaleRestore",
+		"legacyLook", "legacyCrafting", "legacyCreative", "autoJump", "legacyGuiScaleRestore",
 		"alternativeControllerLayout", "wiiAlternativeControls", "controllerDeadzone", "wiiStickDeadzone",
 #if defined(CTR_PLATFORM)
-		"faceButtonCamera", "touchMap", "touchCoords", "autoJump", "pocketTouch", "toggleShift",
+		"faceButtonCamera", "touchMap", "touchCoords", "touchHudSwap", "pocketTouch", "toggleShift",
 #endif
 		"ofFogFancy", "ofFogOff", "ofFogStart", "ofLoadFar", "ofPreloadedChunks", "ofOcclusionFancy",
 		"ofSmoothFps", "ofSmoothInput", "ofBrightness", "ofAoLevel", "ofClouds",
@@ -514,11 +516,12 @@ void GameSettings::saveOptions()
 	printwriter << "legacyGuiScaleRestore:" << legacyGuiScaleRestore << "\n";
 	printwriter << "alternativeControllerLayout:" << (alternativeControllerLayout ? "true" : "false") << "\n";
 	printwriter << "controllerDeadzone:" << controllerDeadzone << "\n";
+	printwriter << "autoJump:" << (autoJump ? "true" : "false") << "\n";
 #if defined(CTR_PLATFORM)
 	printwriter << "faceButtonCamera:" << (faceButtonCamera ? "true" : "false") << "\n";
 	printwriter << "touchMap:" << (touchMap ? "true" : "false") << "\n";
 	printwriter << "touchCoords:" << (touchCoords ? "true" : "false") << "\n";
-	printwriter << "autoJump:" << (autoJump ? "true" : "false") << "\n";
+	printwriter << "touchHudSwap:" << (touchHudSwap ? "true" : "false") << "\n";
 	printwriter << "pocketTouch:" << (pocketTouch ? "true" : "false") << "\n";
 	printwriter << "toggleShift:" << (toggleShift ? "true" : "false") << "\n";
 #endif

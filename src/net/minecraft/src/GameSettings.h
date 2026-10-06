@@ -134,13 +134,16 @@ public:
 	// faceButtonCamera; meaningless on the other platforms.
 	bool touchMap;
 	bool touchCoords;
+	// 3DS only: swap the bottom panel's side columns -- minimap to the right
+	// edge, action buttons to the left (TouchHudLayout's swappedSides). Off
+	// by default. Stored like faceButtonCamera; meaningless elsewhere.
+	bool touchHudSwap;
 	// 3DS only: the Pocket-Edition touch gestures on the camera pad (tap to
 	// place/swing, hold to break/use). On by default — that is how the pad
 	// shipped. Stored like faceButtonCamera; meaningless on other platforms.
 	bool pocketTouch;
-	// 3DS only: auto-jump one-block ledges while walking forward (see
-	// EntityPlayerSP::queueAutoJump). Off by default. Stored like
-	// faceButtonCamera; meaningless on the other platforms.
+	// Auto-jump one-block ledges while walking forward (see
+	// EntityPlayerSP::queueAutoJump) -- every platform, off by default.
 	bool autoJump;
 	// 3DS only: toggle-sneak. When on, a press of the sneak input (SELECT
 	// hold on 3DS, Left Shift on desktop, R3 on PS2) latches crouch until

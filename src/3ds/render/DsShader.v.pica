@@ -24,7 +24,9 @@
 ;   v1 float2     texcoord                          (bytes 12..19)
 ;   v2 u8x4       colour, RGBA, raw 0..255          (bytes 20..23)
 ;   v3 s8x4       normal xyz + pad, raw -128..127   (bytes 24..27)
-;   v4 float      brightness (lightmap coordinate)  (bytes 28..31)
+;   v4 s16x2      brightness: the packed lightmap word as the vanilla
+;                 unit-1 coordinate pair -- block light << 4 (low half),
+;                 sky light << 4 (high half)         (bytes 28..31)
 ;
 ; The PICA200 vertex loader does NOT normalise integer attribute formats:
 ; GPUREG_ATTRIBBUFFERS_FORMAT carries only a 2-bit type per attribute with no
@@ -36,10 +38,16 @@
 ; texScale exists because PICA textures must be power-of-two and within
 ; 8..1024 while the game's are not always: DsTexture.cpp allocates the
 ; rounded-up size and passes (actual/padded, actual/padded) here so UVs keep
-; addressing the real image. The lightmap is deliberately not applied in this
-; milestone; it will ride in through a second texture unit in TexEnv.
+; addressing the real image. The 16x16 dynamic lightmap rides in through
+; texture unit 1: the packed brightness below (loaded as the two s16 of the
+; vanilla lightmap pair) becomes the coordinate in outtc1, and DsRender.cpp
+; arms TexEnv stage 1 to modulate it in while the game's
+; enableLightmap/disableLightmap pair brackets the terrain, entity and hand
+; passes -- the same maths the GL path's unit-1 texture matrix applies
+; (scale 1/256, translate 8: a half texel into the cell the two 4-bit
+; fields index).
 
-.fvec projection[4], modelView[4], texScale
+.fvec projection[4], modelView[4], texScale, lmco
 
 ; Constants
 .constf myconst(0.0, 1.0, -1.0, -0.5)
@@ -47,10 +55,15 @@
 .alias  ones  myconst.yyyy ; Vector full of ones
 .constf colourScale(0.00392156862745098, 0.00392156862745098, 0.00392156862745098, 0.00392156862745098)
 .alias  inv255 colourScale.xxxx ; 1/255 splatted: rescale the raw u8x4 colour to [0,1]
+.constf lightmapScale(0.00390625, 0.00390625, 0.00390625, 0.00390625)
+.alias  inv256 lightmapScale.xxxx ; 1/256 splatted: the GL unit-1 texture matrix scale
+.constf lightmapOffset(8.0, 8.0, 8.0, 8.0)
+.alias  lmoff lightmapOffset.xxxx ; the matrix's +8 half-texel translate
 
 ; Outputs
 .out outpos position
 .out outtc0 texcoord0
+.out outtc1 texcoord1
 .out outclr color
 
 ; Inputs (aliases for convenience)
@@ -108,6 +121,38 @@
 	; sky. The constant is the first source for the same two-source ALU
 	; reason texScale is above.
 	mul outclr, inv255, inclr
+
+	; Lightmap coordinate for texture unit 1. Two raw pairs sum into it,
+	; and exactly one is nonzero for any given mesh:
+	;
+	;   * inbri -- the packed brightness word, loaded as two s16 (block
+	;     light << 4 in x, sky light << 4 in y). The tessellator writes
+	;     the slot for every vertex of a mesh that called setBrightness
+	;     (terrain, particles); every other mesh loads (0, 0).
+	;   * lmco -- the model-wide pair RenderManager, the first-person
+	;     hand and the special-case renderers set per draw through
+	;     OpenGlHelper's setLightmapTextureCoords, in the same raw scale.
+	;     The flush passes (0, 0) for meshes that carry the slot, so a
+	;     mesh lights either per vertex or per model -- the same select
+	;     the GL tessellator makes by emitting (or not emitting) the
+	;     glMultiTexCoord2 that overrides the unit's current coordinate,
+	;     which is exactly what lmco models.
+	;
+	; The sum then takes the GL unit-1 texture matrix (scale 1/256,
+	; translate 8: a half texel into the 16x16 lightmap cell the two
+	; 4-bit fields index). U lands directly; V is mirrored because this
+	; target's sampler reads V=0 at the LAST stored row while the
+	; lightmap's full upload arrives in Java row order (sky light grows
+	; with the row index -- see the upload notes in DsTexture.cpp), so v
+	; flips through 1 - v to land on the right cell. z/w stay
+	; well-formed like outtc0's.
+	mov r4, zeros
+	add r4.xy, lmco.xy, inbri.xy
+	add r4.xy, lmoff, r4.xy
+	mul r4.xy, inv256, r4.xy
+	add r4.y, ones, -r4.y
+	mov r4.w, ones
+	mov outtc1, r4
 
 	end
 .end

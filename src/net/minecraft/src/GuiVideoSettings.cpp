@@ -41,24 +41,28 @@ void GuiVideoSettings::initGui()
 		EnumOptions::ANAGLYPH,        // g
 		EnumOptions::VIEW_BOBBING,    // f
 		EnumOptions::GUI_SCALE,       // m
-		EnumOptions::ADVANCED_OPENGL  // h
+		EnumOptions::ADVANCED_OPENGL, // h
+		// Fog is live on every console again: the PICA200 fog unit is wired
+		// (RenderAPI_CTR_3DS implements the fog calls, DsRender.cpp builds
+		// the depth-indexed LUT), so both fog controls drive real values on
+		// the 3DS too. Fancy fog itself stays a desktop shader feature
+		// (renderSupportsFeature reports it unsupported), so there the Fog
+		// button cycles Fast <-> OFF.
+		EnumOptions::FOG_FANCY,
+		EnumOptions::FOG_START
 #if !defined(CTR_PLATFORM)
 		,
-		EnumOptions::FOG_FANCY,
-		EnumOptions::FOG_START,
 		// Brightness (ofBrightness) reaches the picture through the
-		// lightBrightnessTable/lightmap, which this console's mesh-baked
+		// lightBrightnessTable/lightmap, which the 3DS's mesh-baked
 		// lighting never re-reads once a section is built -- and nothing
 		// invalidates the meshes when the table changes, so the slider has
 		// no visible effect on the 3DS.
 		EnumOptions::BRIGHTNESS
 #else
-		// FOG_FANCY, FOG_START and BRIGHTNESS are hidden on the 3DS: the
-		// console has no PICA fog unit (RenderAPI_CTR_3DS stubs
-		// renderFogi/renderFogf/renderFogColor and RenderTerrainAPI_CTR_3DS
-		// stubs renderTerrainSetFog), so both fog controls drive nothing,
-		// and the brightness slider writes a table the mesh-baked lighting
-		// never re-reads. Hidden rather than offered dead.
+		// BRIGHTNESS stays hidden on the 3DS: the slider writes a table the
+		// mesh-baked lighting never re-reads. (The fog entries above used
+		// to hide here with it, back when the backend's fog calls were
+		// stubs and the controls would have been offered dead.)
 #endif
 	};
 

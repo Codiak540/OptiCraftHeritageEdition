@@ -44,6 +44,10 @@ public:
     void onDrawContainer(GuiContainer *container, int_t mouseX, int_t mouseY);
     bool onContainerMouseClicked(GuiContainer *container, int_t x, int_t y, int_t button);
     bool onContainerKeyTyped(char_t c, int_t key);
+    void onChatMessageReceived(const std::string &message);
+
+    // Opens the settings screen of the mod with the given id (if it has one)
+    void openModSettings(Minecraft *mc, const std::string &modId);
 
 private:
     ModManager();

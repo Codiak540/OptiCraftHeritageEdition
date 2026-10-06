@@ -9,6 +9,7 @@
 #include "toomanyitems/TooManyItemsMod.h"
 #include "reiminimap/ReiMinimapMod.h"
 #include "strongholdlocator/StrongholdLocatorMod.h"
+#include "autologin/AutoLoginMod.h"
 
 #include <cstdio>
 
@@ -157,6 +158,10 @@ void ModManager::scanAndLoadPacks()
         {
             newMod = std::make_unique<StrongholdLocatorMod>();
         }
+        else if (pack.id == "autologin")
+        {
+            newMod = std::make_unique<AutoLoginMod>();
+        }
         else
         {
             newMod = std::make_unique<DynamicMod>(pack);
@@ -238,6 +243,8 @@ bool ModManager::installModPack(const std::string &sourcePath, std::string &outE
             newMod = std::make_unique<ReiMinimapMod>();
         else if (info.id == "strongholdlocator")
             newMod = std::make_unique<StrongholdLocatorMod>();
+        else if (info.id == "autologin")
+            newMod = std::make_unique<AutoLoginMod>();
         else
             newMod = std::make_unique<DynamicMod>(info);
 
@@ -411,4 +418,20 @@ bool ModManager::onContainerKeyTyped(char_t c, int_t key)
         }
     }
     return false;
+}
+
+void ModManager::onChatMessageReceived(const std::string &message)
+{
+    for (auto &mod : mods)
+    {
+        if (mod->isEnabled())
+            mod->onChatMessageReceived(message);
+    }
+}
+
+void ModManager::openModSettings(Minecraft *mc, const std::string &modId)
+{
+    IMod *mod = getMod(modId);
+    if (mod != nullptr && mod->hasSettings())
+        mod->openSettings(mc);
 }

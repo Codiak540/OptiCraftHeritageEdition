@@ -47,5 +47,12 @@ void upload(int id, int x, int y, int width, int height, const void* rgba);
 // as plain vertex colour rather than sampling undefined texels.
 void bind(int id, float (&uvScale)[2]);
 
+// Bind to unit 1 -- the dynamic lightmap's slot (DsRender.cpp's TexEnv
+// stage 1 samples it while the game's enableLightmap pair brackets a pass).
+// Same resolution rule as bind(): the 16x16 lightmap record resolves
+// directly, an id without storage takes the shared white fallback so the
+// modulate stays the identity.
+void bindUnit1(int id);
+
 } // namespace texture
 } // namespace ds
