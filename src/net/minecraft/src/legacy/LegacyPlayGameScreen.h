@@ -21,6 +21,18 @@ protected:
 
 private:
     void rebuildButtons();
+    // Activating a world row opens its action rows (Play/Rename/Delete/Back)
+    // in place of the list, the way the Legacy console editions did; this is
+    // where the rename/delete options the common select-world menu exposes
+    // live in the Legacy UI.
+    void openWorldActions(int_t saveIndex);
+    void closeWorldActions();
+    // The delete-confirmation callback: a confirmed delete reloads the save
+    // list, and a still-open action panel would land on whichever world
+    // shifts into the deleted one's index -- showing that world's rows right
+    // after deleting another. Close the panel on confirm only; a cancel
+    // returns to the panel Delete was pressed in.
+    void deleteWorld(bool confirmed, int_t index) override;
     void drawLegacyScene(float_t partialTick);
     void drawEntryIcons();
     void drawScrollIndicators();
@@ -39,6 +51,10 @@ private:
     int_t visibleWorldCount;
     int_t selectedControlIndex;
     int_t hoveredControlIndex;
+    // World-action mode: while set, the panel shows the action rows for
+    // saveList[actionWorldIndex] instead of the world list.
+    int_t actionWorldIndex;
+    bool inWorldActions;
     int_t tutorialMessageTicks;
     std::string tutorialMessage;
     int_t lastMouseX;

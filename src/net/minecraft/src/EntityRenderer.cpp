@@ -1182,7 +1182,7 @@ void EntityRenderer::updateCameraAndRender(float partialTicks)
     {
         WorldInfo *worldInfo = settingsWorld->getWorldInfo();
         if (!Config::isWeatherEnabled() && worldInfo != nullptr
-#if PLATFORM_PS2
+#if PLATFORM_PS2 || PLATFORM_3DS
             // Local weather simulation settings must not clear server rain.
             // Rain/snow and splash visibility have separate rendering options.
             && !settingsWorld->multiplayerWorld
@@ -1507,6 +1507,21 @@ void EntityRenderer::updateCameraAndRender(float partialTicks)
         // the pass itself (GuiMainMenu draws its top half on the top screen
         // first). Passes must never nest, so the wrapper stops at End and
         // the keyboard below opens its own.
+#if defined(CTR_PLATFORM)
+        // With no world loaded nothing else paints the top LCD this frame, so
+        // it would keep scanning whatever stale frames the double-buffered
+        // swap left behind (title art, loading frames), visibly mixed with
+        // each other. Give every non-managing screen the same live panorama
+        // backdrop the panel pass draws below, in the full-display projection
+        // setupOverlayRendering installed above. Managing screens paint the
+        // top themselves; screens over a live world keep the world behind
+        // them and are skipped.
+        if (mc->theWorld == nullptr && !screen->managesBottomPanelPass())
+        {
+            legacyDrawPanorama(mc, mc->displayWidth, mc->displayHeight,
+                legacyScenePanoramaTimer(), partialTicks, 0.0f);
+        }
+#endif
         const bool bottomPanelPass =
             !screen->managesBottomPanelPass() && renderBottomPanelBegin();
 #if defined(CTR_PLATFORM)

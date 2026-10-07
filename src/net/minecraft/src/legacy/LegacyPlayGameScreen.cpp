@@ -20,6 +20,7 @@
 #include "net/minecraft/src/BlockGrass.h"
 #include "net/minecraft/src/FontRenderer.h"
 #include "net/minecraft/src/GuiButton.h"
+#include "net/minecraft/src/GuiRenameWorld.h"
 #include "net/minecraft/src/Minecraft.h"
 #include "net/minecraft/src/RenderEngine.h"
 #include "net/minecraft/src/SoundManager.h"
@@ -35,8 +36,17 @@ enum LegacyPlayButtonId
 {
     BUTTON_CREATE_WORLD = 100,
     BUTTON_TUTORIAL = 101,
-    BUTTON_WORLD_BASE = 200
+    BUTTON_WORLD_BASE = 200,
+    // World-action rows. Kept far above BUTTON_WORLD_BASE, which grows with
+    // the save count (BUTTON_WORLD_BASE + saveIndex), so no reachable save
+    // list can ever collide with them.
+    BUTTON_WORLD_ACTION_PLAY = 1000,
+    BUTTON_WORLD_ACTION_RENAME = 1001,
+    BUTTON_WORLD_ACTION_DELETE = 1002,
+    BUTTON_WORLD_ACTION_BACK = 1003
 };
+
+constexpr int_t WORLD_ACTION_ROW_COUNT = 4;
 
 constexpr int_t PLAY_PANEL_TARGET_HEIGHT = 274;
 constexpr int_t PLAY_CONTENT_INSET = 10;
@@ -102,6 +112,14 @@ Block *entryIconBlock(int_t buttonId)
         return Block::grass;
     if (buttonId == BUTTON_TUTORIAL)
         return Block::workbench;
+    if (buttonId == BUTTON_WORLD_ACTION_PLAY)
+        return Block::grass;
+    if (buttonId == BUTTON_WORLD_ACTION_RENAME)
+        return Block::bookShelf;
+    if (buttonId == BUTTON_WORLD_ACTION_DELETE)
+        return Block::tnt;
+    if (buttonId == BUTTON_WORLD_ACTION_BACK)
+        return Block::cobblestone;
     if (buttonId < BUTTON_WORLD_BASE)
         return nullptr;
 
@@ -174,7 +192,8 @@ void drawPanelTitle(FontRenderer *font, const std::string &text, int_t centerX, 
 
 LegacyPlayGameScreen::LegacyPlayGameScreen(GuiScreen *parent)
     : GuiSelectWorld(parent), page(0), firstWorldIndex(0), visibleWorldCount(0), selectedControlIndex(0),
-      hoveredControlIndex(-1), tutorialMessageTicks(0), lastMouseX(-1), lastMouseY(-1), panoramaAvailable(false)
+      hoveredControlIndex(-1), actionWorldIndex(-1), inWorldActions(false), tutorialMessageTicks(0),
+      lastMouseX(-1), lastMouseY(-1), panoramaAvailable(false)
 {
 }
 
@@ -208,32 +227,57 @@ void LegacyPlayGameScreen::initGui()
 void LegacyPlayGameScreen::rebuildButtons()
 {
     hoveredControlIndex = -1;
-    for (GuiButton *button : controlList)
-        delete button;
-    controlList.clear();
+    // clearControlList() also drops the mouse capture: activating a world row
+    // rebuilds the panel from inside mouseClicked, and the release path
+    // (mouseMovedOrUp) would otherwise call mouseReleased() on the freed row.
+    clearControlList();
 
-    const int_t pageSize = std::max<int_t>(1, maxVisibleWorlds());
-    const int_t lastPage = maxPage();
-    page = std::max<int_t>(0, std::min<int_t>(page, lastPage));
-    firstWorldIndex = page * pageSize;
-    visibleWorldCount = std::min<int_t>(pageSize,
-        std::max<int_t>(0, static_cast<int_t>(saveList.size()) - firstWorldIndex));
-
-    const int_t rows = 2 + visibleWorldCount;
-    layout = buildPlayLayout(width, height, rows);
-
-    int_t row = 0;
-    controlList.push_back(new LegacyGuiButton(BUTTON_CREATE_WORLD, layout.contentX, layout.rowY(row++),
-        layout.contentWidth, layout.rowHeight, uiText("Create New World")));
-    controlList.push_back(new LegacyGuiButton(BUTTON_TUTORIAL, layout.contentX, layout.rowY(row++),
-        layout.contentWidth, layout.rowHeight, uiText("Play Tutorial")));
-
-    for (int_t i = 0; i < visibleWorldCount; ++i)
+    if (inWorldActions &&
+        (actionWorldIndex < 0 || static_cast<std::size_t>(actionWorldIndex) >= saveList.size()))
     {
-        const int_t saveIndex = firstWorldIndex + i;
-        controlList.push_back(new LegacyGuiButton(BUTTON_WORLD_BASE + saveIndex,
-            layout.contentX, layout.rowY(row++), layout.contentWidth, layout.rowHeight,
-            getSaveName(saveIndex)));
+        // The save vanished while its actions were open (a confirmed delete
+        // reloads the list) -- land back on the world list.
+        inWorldActions = false;
+    }
+
+    if (inWorldActions)
+    {
+        layout = buildPlayLayout(width, height, WORLD_ACTION_ROW_COUNT);
+        int_t row = 0;
+        controlList.push_back(new LegacyGuiButton(BUTTON_WORLD_ACTION_PLAY, layout.contentX,
+            layout.rowY(row++), layout.contentWidth, layout.rowHeight, uiText("Play World")));
+        controlList.push_back(new LegacyGuiButton(BUTTON_WORLD_ACTION_RENAME, layout.contentX,
+            layout.rowY(row++), layout.contentWidth, layout.rowHeight, uiText("Rename World")));
+        controlList.push_back(new LegacyGuiButton(BUTTON_WORLD_ACTION_DELETE, layout.contentX,
+            layout.rowY(row++), layout.contentWidth, layout.rowHeight, uiText("Delete World")));
+        controlList.push_back(new LegacyGuiButton(BUTTON_WORLD_ACTION_BACK, layout.contentX,
+            layout.rowY(row++), layout.contentWidth, layout.rowHeight, uiText("Back")));
+    }
+    else
+    {
+        const int_t pageSize = std::max<int_t>(1, maxVisibleWorlds());
+        const int_t lastPage = maxPage();
+        page = std::max<int_t>(0, std::min<int_t>(page, lastPage));
+        firstWorldIndex = page * pageSize;
+        visibleWorldCount = std::min<int_t>(pageSize,
+            std::max<int_t>(0, static_cast<int_t>(saveList.size()) - firstWorldIndex));
+
+        const int_t rows = 2 + visibleWorldCount;
+        layout = buildPlayLayout(width, height, rows);
+
+        int_t row = 0;
+        controlList.push_back(new LegacyGuiButton(BUTTON_CREATE_WORLD, layout.contentX, layout.rowY(row++),
+            layout.contentWidth, layout.rowHeight, uiText("Create New World")));
+        controlList.push_back(new LegacyGuiButton(BUTTON_TUTORIAL, layout.contentX, layout.rowY(row++),
+            layout.contentWidth, layout.rowHeight, uiText("Play Tutorial")));
+
+        for (int_t i = 0; i < visibleWorldCount; ++i)
+        {
+            const int_t saveIndex = firstWorldIndex + i;
+            controlList.push_back(new LegacyGuiButton(BUTTON_WORLD_BASE + saveIndex,
+                layout.contentX, layout.rowY(row++), layout.contentWidth, layout.rowHeight,
+                getSaveName(saveIndex)));
+        }
     }
 
     if (controlList.empty())
@@ -242,6 +286,51 @@ void LegacyPlayGameScreen::rebuildButtons()
         selectedControlIndex = std::max<int_t>(0,
             std::min<int_t>(selectedControlIndex, static_cast<int_t>(controlList.size()) - 1));
     syncSelectedButton();
+}
+
+void LegacyPlayGameScreen::openWorldActions(int_t saveIndex)
+{
+    if (saveIndex < 0 || static_cast<std::size_t>(saveIndex) >= saveList.size())
+        return;
+    actionWorldIndex = saveIndex;
+    inWorldActions = true;
+    // Play is the row the pad lands on first, so A-A starts the world -- the
+    // same two-step play the common select-world menu needs.
+    selectedControlIndex = 0;
+    rebuildButtons();
+}
+
+void LegacyPlayGameScreen::closeWorldActions()
+{
+    const int_t saveIndex = actionWorldIndex;
+    inWorldActions = false;
+    actionWorldIndex = -1;
+    if (saveIndex >= 0 && static_cast<std::size_t>(saveIndex) < saveList.size())
+        page = saveIndex / std::max<int_t>(1, maxVisibleWorlds());
+    rebuildButtons();
+    // Put the cursor back on the world row the actions belonged to.
+    const int_t controlIndex = 2 + (saveIndex - firstWorldIndex);
+    if (saveIndex >= firstWorldIndex && saveIndex < firstWorldIndex + visibleWorldCount &&
+        controlIndex >= 0 && controlIndex < static_cast<int_t>(controlList.size()) &&
+        controlList[controlIndex] != nullptr && controlList[controlIndex]->id == BUTTON_WORLD_BASE + saveIndex)
+    {
+        selectedControlIndex = controlIndex;
+        syncSelectedButton();
+    }
+}
+
+void LegacyPlayGameScreen::deleteWorld(bool confirmed, int_t index)
+{
+    // See the header: a confirmed delete reloads the list, and the panel's
+    // index would then name the world that shifted into the deleted one's
+    // place -- so the decision ends the panel. A cancel keeps it: the
+    // player returns to the same rows Delete was pressed in.
+    if (confirmed && inWorldActions)
+    {
+        inWorldActions = false;
+        actionWorldIndex = -1;
+    }
+    GuiSelectWorld::deleteWorld(confirmed, index);
 }
 
 void LegacyPlayGameScreen::syncSelectedButton()
@@ -289,7 +378,7 @@ void LegacyPlayGameScreen::moveSelection(int_t direction)
             selectControl(selectedControlIndex - 1);
             mc->sndManager->playSoundFX("random.focus", 1.0f, 1.0f);
         }
-        else if (page > 0)
+        else if (!inWorldActions && page > 0)
         {
             --page;
             rebuildButtons();
@@ -304,7 +393,7 @@ void LegacyPlayGameScreen::moveSelection(int_t direction)
         selectControl(selectedControlIndex + 1);
         mc->sndManager->playSoundFX("random.focus", 1.0f, 1.0f);
     }
-    else if (page < maxPage())
+    else if (!inWorldActions && page < maxPage())
     {
         ++page;
         rebuildButtons();
@@ -325,7 +414,10 @@ void LegacyPlayGameScreen::updateScreen()
     {
         if (mc->sndManager != nullptr)
             mc->sndManager->playSoundFX("random.back", 1.0f, 1.0f);
-        mc->displayGuiScreen(parentScreen);
+        if (inWorldActions)
+            closeWorldActions();
+        else
+            mc->displayGuiScreen(parentScreen);
         return;
     }
 #endif
@@ -344,7 +436,10 @@ void LegacyPlayGameScreen::updateScreen()
     if ((pad.pressed & PLATFORM_TEXT_BACK) != 0)
     {
         mc->sndManager->playSoundFX("random.back", 1.0f, 1.0f);
-        mc->displayGuiScreen(parentScreen);
+        if (inWorldActions)
+            closeWorldActions();
+        else
+            mc->displayGuiScreen(parentScreen);
     }
 #endif
 #endif
@@ -369,11 +464,32 @@ void LegacyPlayGameScreen::actionPerformed(GuiButton *button)
         }
         return;
     }
-    if (button->id >= BUTTON_WORLD_BASE)
+    if (button->id == BUTTON_WORLD_ACTION_PLAY)
     {
-        const int_t index = button->id - BUTTON_WORLD_BASE;
-        if (index >= 0 && index < static_cast<int_t>(saveList.size()))
-            selectWorld(index);
+        selectWorld(actionWorldIndex);
+        return;
+    }
+    if (button->id == BUTTON_WORLD_ACTION_RENAME)
+    {
+        mc->displayGuiScreen(new GuiRenameWorld(this, getSaveFileName(actionWorldIndex)));
+        return;
+    }
+    if (button->id == BUTTON_WORLD_ACTION_DELETE)
+    {
+        requestWorldDelete(actionWorldIndex);
+        return;
+    }
+    if (button->id == BUTTON_WORLD_ACTION_BACK)
+    {
+        closeWorldActions();
+        return;
+    }
+    if (button->id >= BUTTON_WORLD_BASE && button->id < BUTTON_WORLD_ACTION_PLAY)
+    {
+        // Activating a world row opens its action rows instead of starting it
+        // directly, so the rename/delete options the common menu has are
+        // reachable here too.
+        openWorldActions(button->id - BUTTON_WORLD_BASE);
     }
 }
 
@@ -383,7 +499,10 @@ void LegacyPlayGameScreen::keyTyped(char_t c, int_t key)
     if (key == 1)
     {
         mc->sndManager->playSoundFX("random.back", 1.0f, 1.0f);
-        mc->displayGuiScreen(parentScreen);
+        if (inWorldActions)
+            closeWorldActions();
+        else
+            mc->displayGuiScreen(parentScreen);
         return;
     }
 #if !PLATFORM_PS2 && !PLATFORM_WII
@@ -485,13 +604,24 @@ void LegacyPlayGameScreen::drawScreen(int_t mouseX, int_t mouseY, float_t partia
     }
 
     drawLegacyScene(partialTick);
-    drawPanelTitle(fontRenderer, uiText("Start Game"), width / 2, layout.panelY + 8);
+    if (inWorldActions)
+    {
+        std::string title = getSaveName(actionWorldIndex);
+        if (fontRenderer != nullptr)
+            title = fontRenderer->trimStringToWidth(title, layout.panelWidth - PLAY_CONTENT_INSET * 2);
+        drawPanelTitle(fontRenderer, title, width / 2, layout.panelY + 8);
+    }
+    else
+    {
+        drawPanelTitle(fontRenderer, uiText("Start Game"), width / 2, layout.panelY + 8);
+    }
     GuiScreen::drawScreen(mouseX, mouseY, partialTick);
     drawEntryIcons();
-    drawScrollIndicators();
+    if (!inWorldActions)
+        drawScrollIndicators();
     drawMenuControlHints();
 
-    if (saveList.empty())
+    if (!inWorldActions && saveList.empty())
         drawPanelTitle(fontRenderer, uiText("No Games Found"), width / 2, layout.rowY(2) + 10);
     if (tutorialMessageTicks > 0 && !tutorialMessage.empty())
         drawCenteredString(fontRenderer, tutorialMessage, width / 2,

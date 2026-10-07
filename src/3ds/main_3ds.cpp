@@ -18,6 +18,7 @@
 #include "java/String.h"
 #include "net/minecraft/src/ThreadedFileIOBase.h"
 #include "3ds/DsBootstrap.h"
+#include "3ds/input/DsCirclePadPro.h"
 #include "3ds/system/DsEarlyCrash.h"
 
 // Main-thread stack size override: libctru's crt0 ships a weak 32 KiB
@@ -124,6 +125,13 @@ void stopSurvivingWorkerThreads()
 {
 	try
 	{
+		// The Circle Pad Pro ir:USER worker self-wakes (20 ms exchange
+		// waits, the 1 s connect rest) and its stack lives on the heap
+		// _exit unmaps -- the exact family this handler exists for. The
+		// normal shutdown path already stopped it in shutdownFinalize();
+		// here it catches the crash and early-exit paths, before aptExit
+		// below settles the system handshake.
+		DsCirclePadPro::shutdown();
 		dsStopMusicStreamAtExit();
 		ThreadedFileIOBase::threadedIOInstance.shutdown();
 

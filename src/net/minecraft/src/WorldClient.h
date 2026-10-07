@@ -66,7 +66,7 @@ public:
 	bool setBlock(int_t x, int_t y, int_t z, int_t blockId) override;
 	bool setBlockAndMetadataAndInvalidate(int_t x, int_t y, int_t z, int_t blockId, int_t metadata);
 	void sendQuittingDisconnectingPacket() override;
-#if PLATFORM_PS2
+#if PLATFORM_PS2 || PLATFORM_3DS
 	// Server weather events set an instantaneous value. Update both interpolation
 	// endpoints; otherwise every render tick fades from a stale previous value.
 	void setRainStrength(float strength) { World::setRainStrength(strength); }

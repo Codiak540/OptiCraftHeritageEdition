@@ -25,6 +25,10 @@ protected:
 	void loadSaves();
 	std::string getSaveFileName(int_t index);
 	std::string getSaveName(int_t index);
+	// Shared delete flow: arms `deleting` and opens the GuiYesNo confirmation.
+	// Also used by the Legacy play-game list, whose world rows live outside
+	// this class' button ids.
+	void requestWorldDelete(int_t index);
 
 public:
 	void actionPerformed(GuiButton *button) override;

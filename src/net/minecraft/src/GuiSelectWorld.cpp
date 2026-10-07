@@ -100,24 +100,26 @@ void GuiSelectWorld::actionPerformed(GuiButton *button)
 	if (!button->enabled) return;
 
 	if (button->id == 2)
-	{
-		std::string name = getSaveName(selectedWorld);
-		if (!name.empty())
-		{
-			deleting = true;
-			StringTranslate *tr = StringTranslate::getInstance();
-			std::string q   = tr->translateKey("selectWorld.deleteQuestion");
-			std::string w   = "'" + name + "' " + tr->translateKey("selectWorld.deleteWarning");
-			std::string yes = tr->translateKey("selectWorld.deleteButton");
-			std::string no  = tr->translateKey("gui.cancel");
-			mc->displayGuiScreen(new GuiYesNo(this, q, w, yes, no, selectedWorld));
-		}
-	}
+		requestWorldDelete(selectedWorld);
 	else if (button->id == 1) selectWorld(selectedWorld);
 	else if (button->id == 3) mc->displayGuiScreen(new GuiCreateWorld(this));
 	else if (button->id == 6) mc->displayGuiScreen(new GuiRenameWorld(this, getSaveFileName(selectedWorld)));
 	else if (button->id == 0) mc->displayGuiScreen(parentScreen);
 	else worldSlotContainer->actionPerformed(button);
+}
+
+void GuiSelectWorld::requestWorldDelete(int_t index)
+{
+	std::string name = getSaveName(index);
+	if (name.empty())
+		return;
+	deleting = true;
+	StringTranslate *tr = StringTranslate::getInstance();
+	std::string q   = tr->translateKey("selectWorld.deleteQuestion");
+	std::string w   = "'" + name + "' " + tr->translateKey("selectWorld.deleteWarning");
+	std::string yes = tr->translateKey("selectWorld.deleteButton");
+	std::string no  = tr->translateKey("gui.cancel");
+	mc->displayGuiScreen(new GuiYesNo(this, q, w, yes, no, index));
 }
 
 void GuiSelectWorld::selectWorld(int_t i)

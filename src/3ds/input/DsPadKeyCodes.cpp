@@ -17,6 +17,9 @@ const char *dsPadKeyName(int key)
 		case DS_KEY_DPAD_DOWN: return "D-Pad Down";
 		case DS_KEY_DPAD_LEFT: return "D-Pad Left";
 		case DS_KEY_DPAD_RIGHT: return "D-Pad Right";
+		// The unbind code: the Controls screen shows "None" for a binding
+		// that no button carries (the four analog-superseded movement binds).
+		case DS_KEY_NONE: return "None";
 		default: return nullptr;
 	}
 }

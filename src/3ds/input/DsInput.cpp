@@ -19,6 +19,8 @@
 //   D-pad   UP/DOWN/LEFT/RIGHT               UP       -> open chat (multiplayer)
 //                                                         LEFT/RIGHT -> hotbar wheel
 //                                                         +1/-1; DOWN -> F5 (perspective)
+//                                                         (each role yields to a bound
+//                                                         code that claims it)
 //   START   ENTER     only while typing      pause     -> KEY_ESCAPE
 //   ZL/ZR   --                               hotbar wheel +1/-1 (New 3DS, or a
 //                                          Circle Pad Pro on an Old 3DS/XL)
@@ -41,7 +43,8 @@
 //   capture can land on any of them -- B stays the cancel (PS2 reserves its
 //   back button identically) and START the fixed escape. A binding that
 //   claims a code re-purposes the button: the claimed L/R/X stops feeding
-//   its hardcoded click channel and the press fires the bound action
+//   its hardcoded click channel, the claimed D-pad direction stops feeding
+//   its fixed role (wheel/chat/F5), and the press fires the bound action
 //   alone; unclaimed buttons keep the decided layout untouched (see
 //   g_boundPadCodes / updateGameplay's rebind channel).
 //   touch      -> menus: absolute pointer + click. Gameplay: LOOK ONLY (panel
@@ -85,6 +88,10 @@
 #include <3ds.h>
 
 #include "3ds/input/DsPadKeyCodes.h"
+// Circle Pad Pro accessory worker (Old 3DS ir:USER stream): its sample is
+// folded into the HID snapshot every poll, and init/shutdown ride
+// dsInputInit / the platform teardown paths.
+#include "3ds/input/DsCirclePadPro.h"
 #include "lwjgl/Keyboard.h"
 #include "lwjgl/Mouse.h"
 #include "platform/ConsoleInputClock.h"
@@ -141,6 +148,13 @@ std::uint32_t g_latchedPressed = 0;
 // all set SPACE) or to none at all (START).
 std::uint32_t g_prevHeld = 0;
 
+// Previous poll's Circle Pad Pro button mask (DsCirclePadPro::sample):
+// the accessory worker publishes held state only, so its press/release
+// edges are differenced here against the same frame's sample. Zero on
+// New 3DS (no worker) and whenever no accessory is linked, so it never
+// contributes anything there.
+std::uint32_t g_prevCppHeld = 0;
+
 // Previous poll's touch sample. The panel reports an ABSOLUTE contact point,
 // but the mouse queue wants relative motion too, so deltas are differenced
 // here -- the same job the Wii's IR producer does in WiiPointer.cpp.
@@ -152,6 +166,18 @@ std::uint32_t g_prevHeld = 0;
 // (inventory, hotbar slots) never saw the press at all -- the pause button
 // alone worked, because its check is event-driven inside the drain loop.
 int g_widgetKeyDown = 0;
+
+// The touch-HUD action widgets' bound codes, refreshed by
+// dsInputSetTouchHudActionCodes() whenever bindings load, reset or change.
+// A widget stands for an ACTION, not a button -- unlike the physical pad,
+// whose channels speak each button's own code, the on-screen Jump button
+// must fire whatever keyBindJump currently names: a rebind that moves jump
+// off A would otherwise leave the widget pushing a code no binding reads
+// while the physical button moved on. Zero = the action's binding is off
+// the pad entirely (keyboard code, mouse pseudo-key or DS_KEY_NONE), and
+// the widget stands down rather than push a dead code.
+int g_touchJumpKeyCode = DS_KEY_A;
+int g_touchInventoryKeyCode = DS_KEY_Y;
 
 // Press a gameplay touch-HUD widget's action key. The crafting button opens
 // the inventory's own 2x2 grid -- the owner's call, the same screen
@@ -165,10 +191,10 @@ void pressTouchHudWidget(touchHud::WidgetHit hit)
 		key = lwjgl::Keyboard::KEY_1 + hit.slot;
 		break;
 	case touchHud::Widget::Inventory:
-		// The 3DS inventory binding rides the pad's Y-button code (the
-		// same code the physical Y pushes through the gameplay channel);
-		// KEY_E only reached a desktop binding nobody re-set.
-		key = DS_KEY_Y;
+		// keyBindInventory's current code: the widget follows the binding,
+		// so a rebind that moves inventory off Y moves the on-screen button
+		// with it (the physical Y keeps speaking its own DS_KEY_Y).
+		key = g_touchInventoryKeyCode;
 		break;
 	case touchHud::Widget::Crafting:
 		// Handled on the game side (GuiIngame opens the legacy crafting
@@ -181,16 +207,16 @@ void pressTouchHudWidget(touchHud::WidgetHit hit)
 		key = lwjgl::Keyboard::KEY_ESCAPE;
 		break;
 	case touchHud::Widget::Jump:
-		// The gameplay jump channel code -- the same one GP_JUMP pushes for
-		// whichever physical button currently carries jump (the face-button
-		// camera layout moves the button, never the code). Latched like the
-		// others: key down on contact, up on lift, so a held finger is a
-		// held jump.
-		key = DS_KEY_A;
+		// keyBindJump's current code -- the widget follows the binding like
+		// the inventory one above. Latched like the others: key down on
+		// contact, up on lift, so a held finger is a held jump.
+		key = g_touchJumpKeyCode;
 		break;
 	default:
 		return;
 	}
+	if (key == 0)
+		return; // the action's binding left the pad: nothing to push
 	if (g_widgetKeyDown != 0 && g_widgetKeyDown != key)
 		lwjgl::Keyboard::detail::pushKey(g_widgetKeyDown, false);
 	g_widgetKeyDown = key;
@@ -274,35 +300,22 @@ constexpr int kFaceJumpHoldPolls = 5;
 // pushed.
 constexpr float kFaceCameraPixelsPerSec = 480.0f;
 
-// Circle Pad Pro / New 3DS C-Stick: libctru keeps the ir:rst service -- the
-// shared memory both right-stick sources report through (3dbrew
-// "IRRST_Shared_Memory") -- off on Old hardware: hidInit() consults the weak
-// hidShouldUseIrrst() hook, whose stock answer is APT_CheckNew3DS, New
-// models only. Overriding the hook makes hidInit() bring ir:rst up on every
-// console, and is libctru's own intended way for homebrew to opt into the
-// Circle Pad Pro: the CPP is an Old-3DS/XL IR accessory whose right pad and
-// ZL/ZR report through that very shared memory, with pad bits meant to be
-// ORd into HID's (ZL/ZR = bits 14/15, the same values hid.h's KEY_ZL/KEY_ZR
-// carry). Nothing downstream changes: hidScanInput() already folds
-// irrstKeysHeld() into its key masks, so the ZL/ZR hotbar impulses and the
-// hidCstickRead() snapshot below light up on their own.
-//
-// Consoles with no right stick attached -- the Old 2DS cannot even clip a
-// CPP on -- keep reading a centred, all-zero state: without the accessory
-// the IR module never writes a shared-memory entry, and irrstScanInput()
-// gates every field on that entry being fresh, so the look channel and the
-// triggers stay inert exactly as before. Boot is safe too: __appInit()
-// ignores hidInit()'s return value, so even a hypothetical console without
-// the ir:rst service just leaves the refcount at zero, where
-// irrstScanInput()/irrstKeysHeld() are no-ops. The one real cost:
-// IRRST_Initialize(10, 0) makes the IR module poll for the accessory even
-// when none is present -- the same thing every CPP-compatible retail
-// cartridge does while running. hidExit() pairs the irrstExit() on every
-// exit path (it honours usingIrrst, which this override sets).
-extern "C" bool hidShouldUseIrrst(void)
-{
-	return true;
-}
+// Right-stick source selection, per model. This file used to override the
+// weak hidShouldUseIrrst() hook to return true on EVERY console, betting
+// the Circle Pad Pro would stream through the ir:rst shared memory the way
+// the New 3DS internal C-stick does. On real hardware it does not: ir:rst
+// is the New model's path, and every hardware-proven Old-3DS CPP
+// implementation -- retail compatible cartridges, Red Viper's homebrew --
+// drives the accessory over the raw ir:USER protocol instead. That is what
+// DsCirclePadPro is: a worker thread that owns the IRNOP session (connect,
+// calibrate, poll "read input") from dsInputInit on Old hardware, its
+// sample folded into every poll below. New 3DS keeps the stock answer --
+// irrstInit on, the internal C-stick and its ZL/ZR through the shared
+// memory -- and Old hardware now keeps ir:rst OFF: two services would
+// otherwise contend for the console's single IR transceiver, which the
+// accessory link needs exclusive. No definition is linked here on purpose:
+// hidShouldUseIrrst resolves to libctru's weak default (APT_CheckNew3DS),
+// which is exactly the wanted behavior.
 
 // Right-stick camera state (New 3DS C-Stick / Circle Pad Pro). The stick
 // self-centres well, but a resting offset must not creep the view, so the
@@ -337,7 +350,8 @@ constexpr std::uint32_t GP_DPAD_RIGHT  = 1u << 8; // wheel -1 (next slot)
 // the inventory (2026-09-29, 3DS).
 constexpr std::uint32_t GP_BACK        = 1u << 9;
 // New 3DS triggers, and the Circle Pad Pro's shoulder pair on Old hardware
-// (both report through ir:rst -- see the hidShouldUseIrrst override above).
+// (the internal pair arrives through ir:rst with HID's scan; the accessory
+// pair comes with the DsCirclePadPro worker's sample folded in above).
 // They share the hotbar wheel with the D-pad's horizontal pair rather than
 // folding into GP_DPAD_LEFT/RIGHT: the D-pad bits also carry menu
 // navigation while a screen is open, and ZL/ZR must not step the GUI. The
@@ -379,6 +393,11 @@ std::uint32_t g_boundPadCodes = 0;
 // The KEY_* subset of a claimed button set, precomputed for the click-channel
 // yield in updateGameplay().
 std::uint32_t g_claimedClickButtons = 0;
+// The GP_DPAD_* subset of a claimed button set, precomputed for the fixed
+// role yield in updateGameplay() (wheel impulses, chat, F5): a binding that
+// claims a D-pad code re-purposes the press, so the hardcoded role must not
+// fire under it -- the same yield a claimed L/R/X performs on its click.
+std::uint32_t g_claimedDpadGp = 0;
 
 // Pad-code emission state (updateGameplay's rebind channel): the previous
 // poll's emitted-code mask for edge diffing, and the previous poll's
@@ -664,10 +683,13 @@ void updateGameplay(u32 keys, bool touchDown)
 	//     A/Y/SELECT are absent here because their GP_* pushes below
 	//     already carry their codes; B/X fall away with the rest of the
 	//     diamond in face-camera mode, which keeps the camera the camera.
-	//     The D-pad's fixed roles stay alongside the code (a binding there
-	//     is a both-roles button by choice; the defaults claim the codes
-	//     only through the vestigial movement bindings, which the analog
-	//     stick superseded and nothing reads).
+	//     A claimed D-pad direction yields its fixed role entirely
+	//     (g_claimedDpadGp masks the wheel/chat/F5 triggers), so the bound
+	//     action is ALL the press does; with nothing claimed the shipped
+	//     layout keeps every fixed role. The four movement binds live at
+	//     DS_KEY_NONE (GameSettingsBackend_3DS), so by default no code
+	//     here has a reader and the D-pad steps the hotbar, opens the
+	//     chat and cycles the camera exactly as before the remap.
 	std::uint32_t codesActive = 0;
 	if (rebindCapture)
 		codesActive = keys & kRebindableButtons;
@@ -711,8 +733,16 @@ void updateGameplay(u32 keys, bool touchDown)
 	// (header table). ZL/ZR (New 3DS, Circle Pad Pro alike) join the same
 	// wheel as dedicated impulse bits, so the player can hold the D-pad free
 	// for the camera.
-	if (pressed & (GP_DPAD_LEFT | GP_SLOT_PREV))  lwjgl::Mouse::detail::pushWheel(1, x, y);
-	if (pressed & (GP_DPAD_RIGHT | GP_SLOT_NEXT)) lwjgl::Mouse::detail::pushWheel(-1, x, y);
+	//
+	// The three fixed D-pad roles below (wheel, chat, F5) yield to a claim,
+	// the same yield the L/R/X clicks perform through g_claimedClickButtons:
+	// a binding that claims a D-pad code is ALL the press does, so the
+	// hardcoded role must not fire under it. The claimed directions are
+	// masked out of the press edges first; ZL/ZR carry no code to claim and
+	// keep their wheel.
+	const std::uint32_t pressedDpadFree = pressed & ~g_claimedDpadGp;
+	if (pressedDpadFree & (GP_DPAD_LEFT | GP_SLOT_PREV))  lwjgl::Mouse::detail::pushWheel(1, x, y);
+	if (pressedDpadFree & (GP_DPAD_RIGHT | GP_SLOT_NEXT)) lwjgl::Mouse::detail::pushWheel(-1, x, y);
 
 	// Chat: KEY_T is what keyBindChat is bound to (GameSettings' fixed
 	// default), and pushing it from a pad button is how the Wii already does
@@ -720,7 +750,8 @@ void updateGameplay(u32 keys, bool touchDown)
 	// action since the wheel took LEFT/RIGHT, so it opens the chat where the
 	// game has one (Minecraft::runTick opens it in multiplayer). Edge-driven,
 	// and unreachable with a screen open: this whole channel is off in menus.
-	if (pressed & GP_DPAD_UP)
+	// Yields to a claim like every fixed D-pad role (see the wheel above).
+	if (pressedDpadFree & GP_DPAD_UP)
 	{
 		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_T, true);
 		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_T, false);
@@ -730,7 +761,8 @@ void updateGameplay(u32 keys, bool touchDown)
 	// button was spare, so it takes the desktop's F5: cycling the player's
 	// perspective (Minecraft::runTick). Both edges like the chat push, and
 	// menus keep the D-pad for navigation so this stays gameplay-only.
-	if (pressed & GP_DPAD_DOWN)
+	// Yields to a claim like every fixed D-pad role.
+	if (pressedDpadFree & GP_DPAD_DOWN)
 	{
 		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_F5, true);
 		lwjgl::Keyboard::detail::pushKey(lwjgl::Keyboard::KEY_F5, false);
@@ -957,6 +989,7 @@ void dsInputInit(int screenW, int screenH)
 	g_state = DsInputState{};
 	g_latchedPressed = 0;
 	g_prevHeld = 0;
+	g_prevCppHeld = 0;
 	g_prevTouchDown = false;
 	g_prevTouchX = 0;
 	g_prevTouchY = 0;
@@ -982,8 +1015,19 @@ void dsInputInit(int screenW, int screenH)
 	g_prevBtn1 = false;
 	g_boundPadCodes = 0;
 	g_claimedClickButtons = 0;
+	g_claimedDpadGp = 0;
 	g_prevRebindCapture = false;
 	g_prevRebindCodes = 0;
+	// Bindings push these in from GameSettings right after init; the
+	// defaults hold until that sync lands (dsInputSetTouchHudActionCodes).
+	g_touchJumpKeyCode = DS_KEY_A;
+	g_touchInventoryKeyCode = DS_KEY_Y;
+
+	// Circle Pad Pro accessory worker (Old 3DS): idempotent, and a no-op
+	// on New 3DS where the internal C-stick already arrives through ir:rst.
+	// Its shutdown counterparts are ClientPlatformPolicy_3DS's
+	// shutdownFinalize and stopSurvivingWorkerThreads in main_3ds.cpp.
+	DsCirclePadPro::init();
 }
 
 void dsInputSetFaceButtonCamera(bool enabled)
@@ -1018,6 +1062,32 @@ void dsInputSetBoundPadCodes(std::uint32_t codes)
 	if (codes & (1u << (DS_KEY_L - DS_KEY_A))) g_claimedClickButtons |= KEY_L;
 	if (codes & (1u << (DS_KEY_R - DS_KEY_A))) g_claimedClickButtons |= KEY_R;
 	if (codes & (1u << (DS_KEY_X - DS_KEY_A))) g_claimedClickButtons |= KEY_X;
+	// The fixed D-pad role yield (g_claimedDpadGp): wheel, chat and F5
+	// stand down under a claimed direction. Without this half a claimed
+	// D-pad would fire its bound action AND its hardcoded role together --
+	// the overlap class the 2026-10-06 hardware report surfaced through
+	// the vestigial movement binds, which used to park on these codes.
+	g_claimedDpadGp = 0;
+	if (codes & (1u << (DS_KEY_DPAD_UP - DS_KEY_A)))    g_claimedDpadGp |= GP_DPAD_UP;
+	if (codes & (1u << (DS_KEY_DPAD_DOWN - DS_KEY_A)))  g_claimedDpadGp |= GP_DPAD_DOWN;
+	if (codes & (1u << (DS_KEY_DPAD_LEFT - DS_KEY_A)))  g_claimedDpadGp |= GP_DPAD_LEFT;
+	if (codes & (1u << (DS_KEY_DPAD_RIGHT - DS_KEY_A))) g_claimedDpadGp |= GP_DPAD_RIGHT;
+}
+
+void dsInputSetTouchHudActionCodes(int jumpKeyCode, int inventoryKeyCode)
+{
+	// Only a real pad button can back a touch widget's action: anything
+	// else (a hand-edited keyboard code, a mouse pseudo-key, DS_KEY_NONE)
+	// parks the widget dead rather than push a code some other binding
+	// might read -- DS_KEY_NONE especially, since 0 cannot serve here (see
+	// DsPadKeyCodes.h: character events carry key 0 through
+	// KeyBinding::setKeyBindState).
+	const auto sanitize = [](int keyCode) -> int
+	{
+		return (keyCode >= DS_KEY_A && keyCode < DS_KEY_SENTINEL_END) ? keyCode : 0;
+	};
+	g_touchJumpKeyCode = sanitize(jumpKeyCode);
+	g_touchInventoryKeyCode = sanitize(inventoryKeyCode);
 }
 
 void dsInputPoll(bool inMenu)
@@ -1026,11 +1096,22 @@ void dsInputPoll(bool inMenu)
 	// per scan, so every read below must come from the same one, and callers
 	// (lwjgl::Display::processMessages) never have to remember to scan.
 	hidScanInput();
-	const u32 heldKeysRaw = hidKeysHeld();
+	u32 heldKeysRaw = hidKeysHeld();
 	// Never name locals keysDown/keysUp: hid.h's compatibility macros
 	// (#define keysDown hidKeysDown) would rewrite the tokens.
-	const u32 keysPressed = hidKeysDown();
-	const u32 keysReleased = hidKeysUp();
+	u32 keysPressed = hidKeysDown();
+	u32 keysReleased = hidKeysUp();
+
+	// Circle Pad Pro (Old 3DS, ir:USER worker) folds in right after HID's
+	// own scan: its buttons join the held mask, and its edges are differenced
+	// against the previous poll's sample here, because hidScanInput() knows
+	// nothing about the accessory. Worker absent (New 3DS) or nothing linked
+	// -> held 0, so the OR and both edge sets are no-ops.
+	const DsCirclePadPro::Sample cpp = DsCirclePadPro::sample();
+	heldKeysRaw |= cpp.held;
+	keysPressed |= cpp.held & ~g_prevCppHeld;
+	keysReleased |= g_prevCppHeld & ~cpp.held;
+	g_prevCppHeld = cpp.held;
 
 	// Which channel the gameplay buttons route to this frame. Read by
 	// updateGameplay() below rather than threaded through every helper.
@@ -1058,13 +1139,23 @@ void dsInputPoll(bool inMenu)
 	// Right stick (New 3DS C-Stick / Circle Pad Pro) -> raw -1..1 with the
 	// same axis conventions as the circle pad above (Y negated into
 	// down-positive, so "nub up reads negative" the way every downstream
-	// consumer expects). hidScanInput() already refreshed libctru's cache
-	// through irrstScanInput() -- hidInit() starts ir:rst on every model
-	// thanks to the hidShouldUseIrrst() override above -- and with nothing
-	// attached the call returns the zeroed cache, so the axes read as a
-	// centred stick.
+	// consumer expects). Source by model: the accessory's calibrated pad
+	// wins while its worker reports a live link (Old 3DS, same up-positive
+	// orientation the left pad and the C-stick report, so the negation
+	// covers it too); otherwise the read comes from HID's cache -- the New
+	// 3DS internal C-stick through ir:rst, and a centred zero on Old
+	// hardware, where ir:rst stays closed (hidShouldUseIrrst's stock gate,
+	// no override anymore) and the CPP is off or unlinked.
 	circlePosition cstick = {};
-	hidCstickRead(&cstick);
+	if (cpp.connected)
+	{
+		cstick.dx = cpp.dx;
+		cstick.dy = cpp.dy;
+	}
+	else
+	{
+		hidCstickRead(&cstick);
+	}
 	g_state.cstickX = std::clamp(static_cast<float>(cstick.dx) / kCirclePadMax, -1.0f, 1.0f);
 	g_state.cstickY = std::clamp(static_cast<float>(-cstick.dy) / kCirclePadMax, -1.0f, 1.0f);
 
@@ -1310,15 +1401,31 @@ const char* dsInputDebugLine()
 	// report nullptr until dsInputInit() has run.
 	if (!g_initialized)
 		return nullptr;
+	// Circle Pad Pro marker for hardware sessions: "cpp-" = worker alive
+	// but no accessory linked (check power/pairing/the IR window), "cppNN"
+	// = linked with the accessory's raw 0..31 battery reading, and the n
+	// axes then show the pad live. No marker = New 3DS (internal C-stick)
+	// or the worker could not start (which is logged at MC_LOG_LEVEL>=1).
+	char cppPart[12] = "";
+	if (DsCirclePadPro::available())
+	{
+		const DsCirclePadPro::Sample cpp = DsCirclePadPro::sample();
+		if (cpp.connected)
+			std::snprintf(cppPart, sizeof(cppPart), " cpp%u",
+			              static_cast<unsigned>(cpp.battery));
+		else
+			std::snprintf(cppPart, sizeof(cppPart), " cpp-");
+	}
 	std::snprintf(g_debugLine, sizeof(g_debugLine),
-	              "held=%03X t%c %d,%d cp%+.2f,%+.2f n%+.2f,%+.2f",
+	              "held=%03X t%c %d,%d cp%+.2f,%+.2f n%+.2f,%+.2f%s",
 	              static_cast<unsigned>(g_state.held),
 	              g_state.pointerActive ? '+' : '-',
 	              g_state.pointerX, g_state.pointerY,
 	              static_cast<double>(g_state.stickX),
 	              static_cast<double>(g_state.stickY),
 	              static_cast<double>(g_state.cstickX),
-	              static_cast<double>(g_state.cstickY));
+	              static_cast<double>(g_state.cstickY),
+	              cppPart);
 	return g_debugLine;
 }
 

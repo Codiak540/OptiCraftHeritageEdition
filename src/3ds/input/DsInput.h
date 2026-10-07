@@ -35,11 +35,13 @@ struct DsInputState
     float stickY = 0.0f;
 
     // Right stick (New 3DS C-Stick, or a Circle Pad Pro clipped onto an Old
-    // 3DS/XL -- DsInput.cpp overrides libctru's weak hidShouldUseIrrst() so
-    // hidInit brings ir:rst up on every model), same raw -1..1 axis contract
-    // as the circle pad fields (Y down-positive, nub up reads negative).
-    // With no right stick attached the ir:rst entries never refresh and
-    // these stay 0 -- the gameplay look channel is inert rather than absent,
+    // 3DS/XL -- DsInput.cpp folds the DsCirclePadPro ir:USER worker's
+    // sample in on Old hardware, while libctru's stock hidShouldUseIrrst()
+    // gate keeps the New model's internal nub reporting through ir:rst),
+    // same raw -1..1 axis contract as the circle pad fields (Y
+    // down-positive, nub up reads negative).
+    // With no right stick attached (nothing linked, nothing present) these
+    // stay 0 -- the gameplay look channel is inert rather than absent,
     // and the shared snapshot's right-stick fields read a centred stick.
     float cstickX = 0.0f;
     float cstickY = 0.0f;
@@ -93,6 +95,14 @@ void dsInputSetPocketTouch(bool enabled);
 // Computed by platformGameSettingsSyncControllerBindings() and pushed here
 // whenever bindings load, reset or change.
 void dsInputSetBoundPadCodes(std::uint32_t codes);
+
+// The touch-HUD action widgets' codes: keyBindJump's and keyBindInventory's
+// current codes, pushed by the same GameSettings sync. The on-screen Jump
+// and Inventory buttons stand for the ACTIONS, so they must fire whatever
+// the binding currently names -- not the physical A/Y codes, which a rebind
+// can move away from under them. A code outside the pad range parks the
+// matching widget dead (nothing to push) instead of firing a stale binding.
+void dsInputSetTouchHudActionCodes(int jumpKeyCode, int inventoryKeyCode);
 
 const DsInputState& dsInputState();
 

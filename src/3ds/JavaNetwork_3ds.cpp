@@ -7,6 +7,7 @@
 #include "platform/Mutex.h"
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -42,12 +43,37 @@ namespace
 // cancels (the UI would sit in that join until the kernel gives up), and a
 // server-list poll would hold its worker just as long. Run the whole
 // blocking attempt -- literal-IP check, DNS, socket(), connect() -- on a
-// helper thread and cap the owner's wait at the same 4 seconds the Wii
-// enforces. The helper owns the descriptor it creates until the hand-off: on
+// helper thread and cap the owner's wait (the handshake at the same 4
+// seconds the Wii enforces; the name lookup gets its own budget, below).
+// The helper owns the descriptor it creates until the hand-off: on
 // timeout the owner marks the attempt abandoned and the helper closes the
 // socket whenever the kernel answers, so a late success can neither leak an
 // fd nor hand a recycled descriptor to a caller that already gave up.
+// The name lookup gets its own, larger budget. Every other platform gives
+// DNS unlimited time: PC's SDL_net blocks in the host resolver, and PS2's
+// gethostbyname / the Wii's net_gethostbyname run uncapped on the calling
+// thread -- only the TCP handshake gets the Wii's 4-second select. Capping
+// DNS with the handshake meant a console whose resolver answers in 4-10 s
+// read as "timed out" on hardware while the same list pinged fine inside
+// Azahar, whose HLE resolver answers from the host PC instantly.
 constexpr int connectTimeoutSeconds = 4;
+constexpr int nameLookupTimeoutSeconds = 10;
+
+// Where the helper is. The owner's budget depends on the phase, so a slow
+// name lookup is never billed against the handshake's window.
+enum class ConnectPhase
+{
+	Starting = 0,
+	Resolving = 1,
+	Connecting = 2,
+};
+
+long long steadyMs()
+{
+	return std::chrono::duration_cast<std::chrono::milliseconds>(
+	           std::chrono::steady_clock::now().time_since_epoch())
+	    .count();
+}
 
 struct ConnectAttempt
 {
@@ -57,9 +83,15 @@ struct ConnectAttempt
 	bool abandoned = false;
 	int fd = -1;
 	int error = 0;
+	// Progress markers, written by the helper and read by the owner between
+	// waits. Atomics rather than mutex state: the owner samples them
+	// without holding the lock, and each value only ever moves forward.
+	std::atomic<int> phase{static_cast<int>(ConnectPhase::Starting)};
+	std::atomic<long long> phaseStartMs{0};
 };
 
-int openBlockingConnection(const std::string &host, int port)
+int openBlockingConnection(const std::string &host, int port,
+                          const std::shared_ptr<ConnectAttempt> &progress)
 {
 	sockaddr_in target{};
 	target.sin_family = AF_INET;
@@ -69,16 +101,54 @@ int openBlockingConnection(const std::string &host, int port)
 	// that will never resolve, and a raw address is the common case.
 	if (inet_aton(host.c_str(), &target.sin_addr) == 0)
 	{
-		hostent *resolved = gethostbyname(host.c_str());
-		if (resolved == nullptr || resolved->h_addr_list == nullptr ||
-		    resolved->h_addr_list[0] == nullptr)
+		if (progress != nullptr)
 		{
-			// No DNS-specific code exists in newlib; report the closest one so
-			// the owner's log line still says why the attempt never started.
+			// Start marker first, phase second: the owner that samples
+			// between the two stores must never see the new phase billed
+			// against a zero start time (it would read as an instant
+			// timeout).
+			progress->phaseStartMs.store(steadyMs(), std::memory_order_release);
+			progress->phase.store(static_cast<int>(ConnectPhase::Resolving),
+			                       std::memory_order_release);
+		}
+		// getaddrinfo, not gethostbyname: both forward the query to the SOC
+		// service, which resolves it with the DNS servers configured on the
+		// console's Wi-Fi connection, but they are different service
+		// commands -- and only this one is proven on real hardware, being
+		// the resolver libcurl rides for the QR download, the one hostname
+		// path this port has already validated on a console. It also
+		// allocates its results per call, where gethostbyname answers from
+		// a single static hostent shared by every caller.
+		addrinfo hints{};
+		hints.ai_family = AF_INET;
+		hints.ai_socktype = SOCK_STREAM;
+		addrinfo *resolvedHead = nullptr;
+		if (getaddrinfo(host.c_str(), nullptr, &hints, &resolvedHead) != 0 ||
+		    resolvedHead == nullptr)
+		{
+			// No DNS-specific errno exists on this stack; the closest one
+			// keeps the owner's debug log honest about where this died.
 			errno = EHOSTUNREACH;
 			return -1;
 		}
-		std::memcpy(&target.sin_addr, resolved->h_addr_list[0], sizeof(target.sin_addr));
+		bool resolvedOk = false;
+		for (addrinfo *entry = resolvedHead; entry != nullptr; entry = entry->ai_next)
+		{
+			if (entry->ai_family == AF_INET && entry->ai_addr != nullptr)
+			{
+				std::memcpy(&target.sin_addr,
+				            &reinterpret_cast<sockaddr_in *>(entry->ai_addr)->sin_addr,
+				            sizeof(target.sin_addr));
+				resolvedOk = true;
+				break;
+			}
+		}
+		freeaddrinfo(resolvedHead);
+		if (!resolvedOk)
+		{
+			errno = EHOSTUNREACH;
+			return -1;
+		}
 	}
 
 	const int newFd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -91,33 +161,44 @@ int openBlockingConnection(const std::string &host, int port)
 	const int noDelay = 1;
 	(void)::setsockopt(newFd, IPPROTO_TCP, TCP_NODELAY, &noDelay, sizeof(noDelay));
 
-	// Deeper kernel queues for the one burst this profile really meets: the
-	// map-chunk fan-in right after the spawn teleport. libctru's sys/socket.h
-	// lists SO_RCVBUF/SO_SNDBUF among its implemented options (they carry
-	// none of the "no effect?" markers its inert ones do), and the default
-	// receive window is small enough that a server-side burst lands as loss
-	// and retransmits while the game thread drains at its bounded import
-	// rate -- the retransmits are what inflate the effective ping during a
-	// chunk storm. The sizes stay modest against the 1 MB soc:U context
-	// block; a stack that refuses them keeps its defaults, and the one
-	// log line tells a hardware session which happened (0 = honoured,
-	// -1 = refused).
-	const int receiveQueueBytes = 96 * 1024;
-	const int sendQueueBytes = 32 * 1024;
-	const int rcvBufResult =
-		::setsockopt(newFd, SOL_SOCKET, SO_RCVBUF, &receiveQueueBytes, sizeof(receiveQueueBytes));
-	const int sndBufResult =
-		::setsockopt(newFd, SOL_SOCKET, SO_SNDBUF, &sendQueueBytes, sizeof(sendQueueBytes));
-	MC_LOG_INFO("network", "[3DS] socket queues: SO_RCVBUF=%d SO_SNDBUF=%d\n",
-	            rcvBufResult, sndBufResult);
+	// No SO_RCVBUF/SO_SNDBUF here on purpose: they were tried (1e467a2) and
+	// reverted -- deeper queues only claim socInit()'s fixed 1 MB pool and
+	// matched the exact window where hardware pings and joins died while
+	// the emulator stayed fine. Re-add only with a hardware A/B, never
+	// from an emulator reading.
 
-	// Bounded, interruptible sends (see DsSocket::write, which replaced the
-	// original unbounded blocking send: a stalled peer must fail the write
-	// instead of wedging the write thread forever, or the outbound pipe dies
-	// with no code ever noticing -- blocks come back and mobs ignore you).
-	(void)0;
-
+	if (progress != nullptr)
+	{
+		// The handshake clock starts here, not at the attempt: the owner's
+		// 4-second budget for this phase must not bill the seconds the name
+		// lookup spent -- that is what turned a slow resolver into a
+		// guaranteed "timed out" row on hardware. Start marker before the
+		// phase, same as the lookup block above.
+		progress->phaseStartMs.store(steadyMs(), std::memory_order_release);
+		progress->phase.store(static_cast<int>(ConnectPhase::Connecting),
+		                      std::memory_order_release);
+	}
 	if (::connect(newFd, reinterpret_cast<sockaddr *>(&target), sizeof(target)) < 0)
+	{
+		const int errorCode = errno;
+		::close(newFd);
+		errno = errorCode;
+		return -1;
+	}
+
+	// Established: switch the socket to non-blocking now -- the same order
+	// the PS2 backend uses (FIONBIO after the handshake, which itself stays
+	// blocking, and fatal when it fails). Every socket call on this stack
+	// is a synchronous IPC round-trip, so a blocking recv()/send() parks
+	// the calling thread inside the kernel until the peer moves; with
+	// O_NONBLOCK an empty receive queue and a full send queue both come
+	// back as EWOULDBLOCK, and the select()-sliced waits in read() and
+	// write() -- including the write path's 10-second budget -- are what
+	// actually govern both loops. The SOC service honors the flag: it is
+	// what devkitPro's sockets example runs accept() on, and what ftpd
+	// serves every connection with.
+	const int currentFlags = ::fcntl(newFd, F_GETFL, 0);
+	if (currentFlags < 0 || ::fcntl(newFd, F_SETFL, currentFlags | O_NONBLOCK) < 0)
 	{
 		const int errorCode = errno;
 		::close(newFd);
@@ -133,7 +214,7 @@ int openBlockingConnection(const std::string &host, int port)
 void runConnectAttempt(const std::shared_ptr<ConnectAttempt> &attempt,
                        const std::string &host, int port)
 {
-	const int newFd = openBlockingConnection(host, port);
+	const int newFd = openBlockingConnection(host, port, attempt);
 	const int errorCode = newFd < 0 ? errno : 0;
 	int closeLate = -1;
 	{
@@ -168,8 +249,22 @@ public:
 		receivedBytes.store(0, std::memory_order_release);
 		sentBytes.store(0, std::memory_order_release);
 		remoteAddress = host + ":" + std::to_string(port);
-		if (host.empty() || port < 1 || port > 65535 || !DsNetwork::initialize())
+		if (host.empty() || port < 1 || port > 65535)
 			return false;
+		// Same preflight ThreadConnectToServer runs, but for every connect
+		// -- which includes the five server-list pings: a console whose
+		// radio is off would otherwise burn the whole 4-second budget per
+		// row inside the SOC kernel. It is one ac:u round-trip when the
+		// radio is up, and when the radio is off it also tries to switch
+		// it back on before giving up.
+		if (!DsNetwork::wifiPreflightError().empty())
+			return false;
+		if (!DsNetwork::initialize())
+			return false;
+		// DHCP grace for a just-enabled radio or a fresh socInit: bounded,
+		// once per session, worker thread only. Ignored on failure -- the
+		// handshake below times out and reports it either way.
+		DsNetwork::waitForInterfaceAddress();
 
 		MC_LOG_INFO("network", "[3DS] TCP connect: %s\n", remoteAddress.c_str());
 		McLog::flush();
@@ -183,9 +278,40 @@ public:
 		std::thread(&runConnectAttempt, attempt, host, port).detach();
 
 		std::unique_lock<std::mutex> lock(attempt->mutex);
-		const bool finishedInTime = attempt->condition.wait_for(
-			lock, std::chrono::seconds(connectTimeoutSeconds),
+		const long long attemptStartMs = steadyMs();
+		bool finishedInTime = attempt->condition.wait_for(
+			lock, std::chrono::milliseconds(200),
 			[&attempt] { return attempt->finished; });
+		while (!finishedInTime)
+		{
+			// The budget follows the phase: the handshake keeps the Wii's
+			// 4 seconds, the name lookup gets its own larger window (see
+			// nameLookupTimeoutSeconds), and a helper that never reported
+			// a phase is billed against the attempt start, so a starved
+			// worker surfaces as the plain 4-second timeout rather than
+			// parking the row forever. Slices, not one long wait, so a
+			// phase change re-prices the remainder mid-attempt.
+			const long long nowMs = steadyMs();
+			const int phaseValue = attempt->phase.load(std::memory_order_acquire);
+			const long long phaseStartMs =
+				attempt->phaseStartMs.load(std::memory_order_acquire);
+			const int budgetSeconds =
+				phaseValue == static_cast<int>(ConnectPhase::Resolving)
+					? nameLookupTimeoutSeconds
+					: connectTimeoutSeconds;
+			const long long elapsedMs =
+				phaseValue == static_cast<int>(ConnectPhase::Starting)
+					? nowMs - attemptStartMs
+					: nowMs - phaseStartMs;
+			const long long remainingMs = budgetSeconds * 1000LL - elapsedMs;
+			if (remainingMs <= 0)
+				break;
+			const auto slice = remainingMs < 200
+				? std::chrono::milliseconds(remainingMs)
+				: std::chrono::milliseconds(200);
+			finishedInTime = attempt->condition.wait_for(
+				lock, slice, [&attempt] { return attempt->finished; });
+		}
 		if (!finishedInTime)
 		{
 			// The kernel still owns the attempt; the helper closes the fd if
@@ -221,25 +347,35 @@ public:
 		    closing.load(std::memory_order_acquire))
 			return -1;
 
-		// The Wii's interruptible shape: wait in select slices so a
-		// close()/interruptRead() from another thread takes effect promptly
-		// instead of after a whole blocking recv. Because select() says
-		// "readable" only when data or EOF is queued, the recv below returns
-		// without hanging, which also keeps it clear of a close() that lands
-		// while it is in flight.
+		// The PS2 backend reads from a non-blocking socket and only waits
+		// between attempts; these sockets are O_NONBLOCK too (see
+		// openBlockingConnection), so ask recv() first: with data already
+		// queued -- every packet during a map stream -- one IPC
+		// round-trip returns it, where the select-first shape paid two.
 		//
-		// The slice is 20 ms, not the 100 ms the Wii path uses: on a 3DS the
-		// reader thread shares the second core with the writer, and this
-		// slice is pure added latency for every inbound packet that arrives
-		// while the socket was idle -- up to a tenth of a second before the
-		// server's entity/chat/keepalive traffic even reaches the decode,
-		// on top of the radio RTT. 20 ms keeps close() responsiveness at a
-		// worst case of one slice while capping that tax at a thirtieth of
-		// a second; the extra wake-ups cost nothing on a core the game
-		// thread never runs on.
+		// The wait runs in 20 ms slices (not the Wii's 100 ms) so a
+		// close()/interruptRead() from another thread takes effect promptly
+		// and an idle-arriving packet is never held for more than a slice;
+		// the PS2 buys the same liveness with a 2 ms busy-poll, which on
+		// this console -- where the reader shares its core with the writer
+		// and the CPP worker -- is pure scheduling pressure for the same
+		// result.
 		while (!closing.load(std::memory_order_acquire) &&
 		       !readInterrupted.load(std::memory_order_acquire))
 		{
+			const int count = static_cast<int>(
+				::recv(socketFd, buffer, static_cast<std::size_t>(length), 0));
+			if (count > 0)
+			{
+				receivedBytes.fetch_add(static_cast<std::size_t>(count),
+				                         std::memory_order_relaxed);
+				return count;
+			}
+			if (count == 0)
+				return -1; // peer closed
+			if (errno != EAGAIN && errno != EWOULDBLOCK)
+				return -1; // real read error
+
 			fd_set readSet;
 			struct timeval tv{};
 			tv.tv_sec = 0;
@@ -250,29 +386,16 @@ public:
 
 			const int ready = ::select(socketFd + 1, &readSet, nullptr, nullptr, &tv);
 			// Re-check after the wait: close() may have retired this
-			// descriptor while select() slept, and its number can already have
-			// been recycled by a later connection.
+			// descriptor while select() slept, and its number can already
+			// have been recycled by a later connection.
 			if (fd.load(std::memory_order_acquire) != socketFd ||
 			    closing.load(std::memory_order_acquire) ||
 			    readInterrupted.load(std::memory_order_acquire))
 				return -1;
 			if (ready < 0)
 				return -1;
-			if (ready == 0)
-				continue; // slice elapsed, re-check the flags
-
-			if (FD_ISSET(socketFd, &readSet))
-			{
-				const int count = static_cast<int>(
-					::recv(socketFd, buffer, static_cast<std::size_t>(length), 0));
-				if (count > 0)
-				{
-					receivedBytes.fetch_add(static_cast<std::size_t>(count),
-					                         std::memory_order_relaxed);
-					return count;
-				}
-				return -1; // peer closed or read error
-			}
+			// ready == 0 (slice elapsed) or readable: loop, and the
+			// non-blocking recv re-samples for real.
 		}
 		return -1;
 	}

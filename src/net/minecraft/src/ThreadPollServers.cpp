@@ -51,7 +51,11 @@ void ThreadPollServers::run(std::shared_ptr<ServerNBTStorage> server)
             server->pollRetryCount = 0;
         }
 #else
-        server->lag = latency;
+        // -1 means the poll already diagnosed a failure; overwriting it
+        // with the elapsed time (as this used to, unconditionally) turned
+        // every failed ping into a fake sub-second lag reading.
+        if (server->lag != -1)
+            server->lag = latency;
 #endif
     }
     catch (...)

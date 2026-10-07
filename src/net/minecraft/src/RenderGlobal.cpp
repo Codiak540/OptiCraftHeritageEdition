@@ -2010,11 +2010,12 @@ void RenderGlobal::renderClouds(float f)
 	byte_t byte0 = 32;
 #if defined(CTR_PLATFORM)
 	// Vanilla's 512-block cloud band rides 108 blocks up -- beyond the
-	// 3DS's 64-block far plane, so the whole layer clipped away and clouds
-	// never showed. Keep the world-anchored UV drift but pull the band and
-	// its height inside the far plane (the geometry is camera-relative
-	// either way); the band stays wider than the visible disc, like
-	// vanilla's does against its own far plane.
+	// 3DS's far plane (Config::getRenderDistanceFine(), 32 blocks), so the
+	// whole layer clips away and clouds never show when enabled. Keep the
+	// world-anchored UV drift but pull the band and its height inside the
+	// far plane (the geometry is camera-relative either way); the band stays
+	// wider than the visible disc, like vanilla's does against its own far
+	// plane.
 	const int_t bandHalf = (std::min<int_t>(256,
 		static_cast<int_t>(Config::getRenderDistanceFine() * 1.2f) + byte0 - 1) / byte0) * byte0;
 #else

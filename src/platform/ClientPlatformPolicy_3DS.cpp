@@ -7,6 +7,8 @@
 #include <3ds.h>
 #include <citro3d.h>
 
+#include "3ds/input/DsCirclePadPro.h"
+
 namespace ClientPlatformPolicy
 {
 int initialWidth()
@@ -124,6 +126,14 @@ void shutdownFinalize()
     // shutdownFlush). gfxExit() below is the moonlight-n3ds posture on
     // every path: it signals and joins the GSP event thread without
     // touching the pipeline, so it stays unconditional.
+    //
+    // The Circle Pad Pro worker stops first, before anything unmaps: its
+    // 8 KiB stack lives on the application heap this exit(0) path hands to
+    // _exit, and the thread self-wakes (20 ms exchange waits, the 1 s
+    // connect rest) -- the same family as the GSP event thread above. It
+    // is idempotent, so stopSurvivingWorkerThreads() calling it again on
+    // the crash/exit paths is a no-op, and vice versa.
+    DsCirclePadPro::shutdown();
     if (!lwjgl::Display::isCloseRequested())
     {
         if (C3D_FrameBegin(C3D_FRAME_SYNCDRAW))

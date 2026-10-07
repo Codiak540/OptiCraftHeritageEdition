@@ -244,6 +244,9 @@ std::string StringTranslate::translateUi(const std::string &english)
         if (english == "Cancel") return "Cancelar";
         if (english == "Back") return "Volver";
         if (english == "OK") return "OK";
+        if (english == "Play World") return "Jugar";
+        if (english == "Rename World") return "Renombrar";
+        if (english == "Delete World") return "Eliminar";
     }
     return english;
 }
