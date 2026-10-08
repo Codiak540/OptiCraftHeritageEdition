@@ -30,6 +30,7 @@
 #include <cstddef>
 
 #include "3ds/DsSwkbd.h"
+#include "3ds/input/DsCirclePadPro.h"
 #include "3ds/input/DsInput.h"
 #include "3ds/render/DsRender.h"
 
@@ -66,6 +67,42 @@ u32 g_suspendRestoreLimit = 0;
 
 void aptStateHook(APT_HookType hook, void *)
 {
+	// Circle Pad Pro worker vs the system's power state: the ir:USER session
+	// it drives must never ride a sleep transition. The 2026-10 Old 2DS
+	// Luma3DS dump (crash_dump_00000000.dmp, parsed with
+	// LumaTeam/luma3ds_exception_dump_parser) is a data abort INSIDE the ir
+	// system module (process "ir", title 0004013000003302, core 1): on the
+	// lid close it wrote byte 1 to 0x1000200E -- a hardware register page
+	// that module does not even have mapped (second-level Translation fault,
+	// a write) -- so the console crashed system-side, not in the game. The
+	// game's only tie to that module is the CPP worker's IRNOP session. The
+	// endless initialize/connect/teardown cycle that worker used to run on
+	// CPP-less Old hardware -- a state no retail title holds -- is gone
+	// (bounded probe, then parked; see DsCirclePadPro.cpp); this teardown
+	// is the other half of the same posture: whatever the worker's state,
+	// its session must not survive into the freeze, and ONWAKEUP/ONRESTORE
+	// re-arm it into a fresh probe afterwards.
+	//
+	// ONSLEEP is the in-game lid close: libctru runs it from aptMainLoop()
+	// BEFORE APT_ReplySleepNotificationComplete(), so the teardown lands
+	// while this process is still scheduled -- guaranteed before the system
+	// commits to sleeping. ONSUSPEND covers the HOME-menu park: the park
+	// keeps this process's other threads running, and libctru answers
+	// SLEEP_ENTER itself for an inactive app (no ONSLEEP ever fires from
+	// there), so the session must already be down when the park begins.
+	// ONWAKEUP and ONRESTORE (the HOME return arrives as APTCMD_WAKEUP_PAUSE)
+	// bring it back; a library-applet return deliberately never fires
+	// ONRESTORE (APTCMD_WAKEUP), which the dsInputPoll re-arm covers anyway.
+	if (hook == APTHOOK_ONSLEEP || (hook == APTHOOK_ONSUSPEND && !dsSwkbdActive()))
+		DsCirclePadPro::shutdown(); // idempotent; New 3DS never runs the worker
+	else if (hook == APTHOOK_ONWAKEUP || hook == APTHOOK_ONRESTORE)
+		DsCirclePadPro::init();      // likewise idempotent; New 3DS early-outs
+
+	// swkbd skips both blocks above on purpose: aptLaunchLibraryApplet fires
+	// ONSUSPEND from DsSwkbd's helper thread, and shutdown()/init() are
+	// main-thread-only calls -- the dialog's own teardown lives in
+	// processMessages(), which runs on this thread.
+
 	if (g_suspendRestoreLimit == 0)
 		return; // no core-1 share was granted at boot; nothing to move
 	if (hook == APTHOOK_ONSUSPEND)
@@ -159,7 +196,23 @@ void processMessages()
 	const bool appletActive = dsSwkbdActive();
 	ds::setAppletForeground(appletActive);
 	if (appletActive)
+	{
+		// The swkbd dialog is the third lid-close window: a library applet
+		// never suspends this process (the frame loop keeps running -- the
+		// "don't pause the game while typing" behaviour above), and libctru
+		// answers sleep for an inactive app without ever firing the
+		// ONSLEEP teardown in aptStateHook(), so the system can freeze us
+		// mid-dialog with the CPP worker's IRNOP session live -- the same
+		// ir-module fault that teardown exists for. The worker is useless
+		// while the dialog owns the foreground anyway (dsInputPoll below is
+		// skipped for the whole dialog, so no sample is ever read), so
+		// stand it down here on the main thread. Idempotent: only the first
+		// dialog frame pays the join, and the dsInputPoll re-arm brings the
+		// worker back within a couple of seconds of the dialog closing --
+		// the CPP worker's clip-on-any-time reconnect absorbs the rest.
+		DsCirclePadPro::shutdown();
 		return;
+	}
 
 	// libctru's per-frame pump: it handles sleep mode and HOME-menu jumps and
 	// reports whether the app should keep running. The false case is the

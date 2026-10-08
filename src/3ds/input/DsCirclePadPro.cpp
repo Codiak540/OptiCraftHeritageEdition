@@ -25,10 +25,19 @@
 //              -> stream (read-input requests at the accessory's own
 //                 32 ms period while the shared header reports the link)
 //
-// and on any failure tears the session down and starts over, so the
-// accessory can be clipped on, powered off, put to sleep or unclipped at
-// any moment -- input simply goes quiet and resumes with the link. Every
-// wait includes the shutdown event, so stop is prompt from any state.
+// and on a failure tears the session down and tries the next round -- but
+// the retry is BOUNDED. No retail title cycles the IRNOP machinery forever
+// (they carry ir:USER only while establishing or holding a link), and the
+// 2026-10 Old 2DS crash dump -- a data abort inside the ir system module
+// on lid close, parsed from Luma's crash_dump_00000000.dmp -- was taken
+// with this worker's endless initialize/connect/teardown loop churning a
+// CPP-less console. kProbeRoundsMax rounds without a calibrated link end
+// the episode: the session is torn down and the worker parks on the exit
+// event (no IRNOP traffic at all) until shutdown() reaps it, with the
+// next probe riding the aptStateHook wake/restore re-init or a fresh
+// boot. A clip-on while budget remains still links immediately; one
+// after it waits for the next wake. Every wait includes the shutdown
+// event, so stop is prompt from any state, parked included.
 //
 // OWNERSHIP / SHUTDOWN
 // --------------------
@@ -103,6 +112,13 @@ constexpr u64 kConnectWaitNs = 14ull * 1000000ull;
 constexpr int kConnectAttempts = 4;
 constexpr u64 kRetryRestNs = 1000ull * 1000000ull;
 
+// Probe budget: rounds without a calibrated link before the worker parks
+// (see workerMain). A present, awake accessory answers round one, so this
+// window only exists for the clip-on-at-boot and after-wake cases; no
+// retail title cycles IRNOP indefinitely, and the endless retry this
+// replaces was the prime suspect of the ir-module crash (file header).
+constexpr int kProbeRoundsMax = 15;
+
 // shared-memory header.connection_status while the link carries input.
 constexpr std::uint8_t kConnectionStatusStreaming = 2;
 
@@ -168,17 +184,18 @@ bool g_started = false;      // init() completed; guards init()/shutdown()
 // a persistent cursor would.
 unsigned g_recvCursor = 0;
 
-// Per-episode link diagnostics. A user's debug.log (level >= 1) could show
-// the worker up with the accessory never linking and say nothing about
-// WHICH half failed (the 2026-10-07 report): "no accessory answered" is the
-// clip-off / battery-dead / asleep case, "linked but calibration failed"
-// is a protocol or device problem. Each logs once per link-loss episode
-// and resets on a successful link, so a session without a CPP costs one
-// INFO line and a healthy session costs none. Level-0 builds compile
-// them out entirely -- the cppe overlay marker covers that case
-// (startError, above).
-int g_failedConnectRounds = 0;
-bool g_noAccessoryLogged = false;
+// Probe budget and per-episode link diagnostics. g_probeRounds counts
+// consecutive rounds without a CALIBRATED link -- nothing answered, or a
+// device answered whose calibration never validated -- because either way
+// the IRNOP machinery is the thing cycling. init() resets it for a fresh
+// worker, a calibrated link resets it mid-session, and reaching
+// kProbeRoundsMax parks the worker (workerMain). The calibration WARN
+// separates the two failure classes in a user's debug.log (the 2026-10-07
+// report): "linked but calibration failed" is a protocol or device
+// problem, not a clip-off / battery-dead / asleep console. It logs once
+// per episode; level-0 builds compile it out entirely -- the cppe overlay
+// marker covers that case (startError, above).
+int g_probeRounds = 0;
 bool g_calibrationFailedLogged = false;
 
 // Published state (worker -> game thread). The position packs into one
@@ -700,6 +717,7 @@ enum class CycleOutcome
 {
 	Exit,
 	Retry,
+	Park, // probe budget spent with no calibrated link; await shutdown
 };
 
 // One full session attempt. Every exit path closes the per-cycle events
@@ -711,6 +729,11 @@ CycleOutcome runCycle()
 {
 	if (R_FAILED(initializeIrnop()))
 	{
+		// A rejected InitializeIrnop (another process holds the console's
+		// one ir:USER session) is module churn like any other round.
+		++g_probeRounds;
+		if (g_probeRounds >= kProbeRoundsMax)
+			return CycleOutcome::Park;
 		if (restThenContinue(kRetryRestNs))
 			return CycleOutcome::Exit;
 		return CycleOutcome::Retry;
@@ -724,6 +747,9 @@ CycleOutcome runCycle()
 	{
 		closeEvents(connEvent, recvEvent);
 		teardownIrnop();
+		++g_probeRounds;
+		if (g_probeRounds >= kProbeRoundsMax)
+			return CycleOutcome::Park;
 		if (restThenContinue(kRetryRestNs))
 			return CycleOutcome::Exit;
 		return CycleOutcome::Retry;
@@ -763,16 +789,12 @@ CycleOutcome runCycle()
 	}
 	if (!linked)
 	{
-		// One line per episode, not per round: the retry loop runs forever
-		// by design (the CPP can be clipped on at any moment), and a log
-		// line every second would drown everything after it.
-		++g_failedConnectRounds;
-		if (g_failedConnectRounds == 10 && !g_noAccessoryLogged)
+		++g_probeRounds;
+		if (g_probeRounds >= kProbeRoundsMax)
 		{
-			MC_LOG_INFO("3ds", "Circle Pad Pro: no accessory answered %d connect "
-			              "rounds (check it is clipped on, powered and awake)\n",
-			              g_failedConnectRounds);
-			g_noAccessoryLogged = true;
+			closeEvents(connEvent, recvEvent);
+			teardownIrnop();
+			return CycleOutcome::Park;
 		}
 		closeEvents(connEvent, recvEvent);
 		teardownIrnop();
@@ -780,10 +802,9 @@ CycleOutcome runCycle()
 			return CycleOutcome::Exit;
 		return CycleOutcome::Retry;
 	}
-	// The accessory answered: a new episode begins the next time it goes
-	// quiet, so the diagnostics above may speak again after a link loss.
-	g_failedConnectRounds = 0;
-	g_noAccessoryLogged = false;
+	// The accessory answered. The probe budget does NOT reset here -- a
+	// device that answers but never calibrates must not reset its own
+	// budget every round -- only a validated calibration does, below.
 
 	// --- calibrate --------------------------------------------------
 	Calibration cal;
@@ -797,13 +818,20 @@ CycleOutcome runCycle()
 	if (io == Io::Fail)
 	{
 		// A connected accessory whose calibration block never validates is
-		// the distinct failure class the connect-phase line cannot name:
-		// the IR link itself is fine, so battery/clip advice would send the
-		// user hunting the wrong end. Once per episode, like above.
+		// the distinct failure class the connect phase cannot name: the IR
+		// link itself is fine, so battery/clip advice would send the user
+		// hunting the wrong end. Once per episode.
 		if (!g_calibrationFailedLogged)
 		{
 			MC_LOG_WARN("3ds", "Circle Pad Pro: linked but calibration never validated\n");
 			g_calibrationFailedLogged = true;
+		}
+		++g_probeRounds;
+		if (g_probeRounds >= kProbeRoundsMax)
+		{
+			closeEvents(connEvent, recvEvent);
+			teardownIrnop();
+			return CycleOutcome::Park;
 		}
 		closeEvents(connEvent, recvEvent);
 		teardownIrnop();
@@ -811,6 +839,7 @@ CycleOutcome runCycle()
 			return CycleOutcome::Exit;
 		return CycleOutcome::Retry;
 	}
+	g_probeRounds = 0;
 	g_calibrationFailedLogged = false;
 	MC_LOG_INFO("3ds", "Circle Pad Pro: linked and calibrated\n");
 
@@ -872,8 +901,32 @@ void workerMain(void*)
 {
 	for (;;)
 	{
-		if (runCycle() == CycleOutcome::Exit)
+		switch (runCycle())
+		{
+		case CycleOutcome::Retry:
+			break;
+		case CycleOutcome::Park:
+			// Budget spent: the session is torn down and every handle the
+			// cycle held is closed by now, so park on the exit event --
+			// zero IRNOP traffic, zero ir-module churn, 8 KiB of stack --
+			// until shutdown() reaps the thread (sleep/HOME/swkbd teardown
+			// or process exit). The aptStateHook init() on wake/restore
+			// starts the next probe; dsInputPoll's re-arm sees available()
+			// stay true and leaves the parked worker alone.
+			//
+			// One line here, once per worker, for every park route (no
+			// accessory, a link that never calibrates, or a module that
+			// kept rejecting the session): the parked state is the normal
+			// outcome on a CPP-less console, not a fault -- INFO, not WARN.
+			MC_LOG_INFO("3ds", "Circle Pad Pro: no link in %d probe "
+			              "rounds; standing down until the next wake\n",
+			              g_probeRounds);
+			publishIdle();
+			svcWaitSynchronization(g_exitEvent, U64_MAX);
 			return;
+		case CycleOutcome::Exit:
+			return;
+		}
 	}
 }
 
@@ -971,6 +1024,11 @@ void init()
 		releaseSession();
 		return;
 	}
+
+	// Fresh probe budget and clean diagnostics for this worker: a parked
+	// worker's spent episode must not bleed into the new session.
+	g_probeRounds = 0;
+	g_calibrationFailedLogged = false;
 
 	// Owned thread (not detached): shutdown's join then threadFree is the
 	// clean shape -- a detached worker frees its own Thread struct on exit,

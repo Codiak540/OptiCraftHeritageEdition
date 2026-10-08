@@ -16,9 +16,15 @@
 // homebrew implementation drive; ir:rst does not carry the accessory there
 // (see DsInput.cpp's hidShouldUseIrrst note).
 //
-// The worker lives on its own thread and retries forever, so the accessory
-// can be clipped on, powered on, put to sleep or unclipped at any time:
-// the game never blocks, and input simply resumes when the IR link does.
+// The worker lives on its own thread behind a bounded probe: while budget
+// remains, the accessory can be clipped on, powered on, woken or unclipped
+// at any time and input simply resumes with the link; once the budget is
+// spent with nothing calibrated the worker tears the IRNOP session down
+// and parks (no IR traffic), and the next probe rides a wake, a HOME
+// return, a closed system dialog (the dsInputPoll re-arm) or a fresh
+// boot -- no retail title cycles the IR machinery forever (see the .cpp
+// for the hardware report behind that bound). The game never blocks
+// either way.
 
 #pragma once
 

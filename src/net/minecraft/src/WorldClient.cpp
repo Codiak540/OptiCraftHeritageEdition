@@ -1187,6 +1187,29 @@ void WorldClient::applyNetworkPosition(Entity *entity, double x, double y, doubl
 
 bool WorldClient::entityJoinedWorld(Entity *entity)
 {
+	// CONTRACT -- read before touching this override's return value. Vanilla
+	// pairs the call with "if (!joined) delete" (EntityGhast/EntityBlaze
+	// fireballs, EntityAIArrowAttack's arrows, Entity::dropItem and the whole
+	// Block* drop family), and those callers run on multiplayer CLIENTS, where
+	// mob AI ticks client-side. This override used to push the entity into
+	// knownEntities/entitySpawnQueue and still answer false when its column
+	// was missing -- a column the bounded console caches (3DS
+	// trimClientChunkCache, PLATFORM_MP_BOUNDED_CHUNK_CACHE) evict routinely.
+	// The caller then freed an entity this world still listed; the dangling
+	// pointer rode knownEntities into ~WorldClient()'s re-adopt, and ~World()
+	// deleted it a second time through a freelist-garbage vtable slot -- the
+	// 2026-10-08 Old 2DS MP respawn crash (crash_dump_00000001.dmp: prefetch
+	// abort PC=0 inside ~World()'s deleteWorldOwnedEntity loop). From here on,
+	// false means "this world adopted nothing", exactly as in Java.
+	//
+	// The one legitimate park-for-retry caller pre-registers: addEntityToWorld()
+	// adds the entity to knownEntities BEFORE calling here ("assign the server
+	// ID before publishing"), so membership on entry marks a network spawn
+	// whose lifetime already belongs to this world. Only those park on a
+	// missing column; everything else answers false untouched, so the
+	// spawn-or-free family frees safely. The chunk-detach path and
+	// applyNetworkPosition() requeue directly and never pass through here, and
+	// players bypass the column check in World::entityJoinedWorld entirely.
 #if PLATFORM_PS2
 	if (entity == nullptr || entity->isDead)
 		return false;
@@ -1195,15 +1218,21 @@ bool WorldClient::entityJoinedWorld(Entity *entity)
 	if (!isActiveClientEntity(entity) && !chunkExists(
 		MathHelper::floor_double(entity->posX / 16.0), MathHelper::floor_double(entity->posZ / 16.0)))
 	{
-		knownEntities.add(entity);
+		if (!knownEntities.contains(entity))
+			return false; // client-side spawn-or-free: unowned, caller frees
 		entitySpawnQueue.add(entity);
-		return false;
+		return true;      // network spawn: adopted, parked until the column arrives
 	}
 #endif
-	bool added = World::entityJoinedWorld(entity);
-	knownEntities.add(entity);
-	if (!added) entitySpawnQueue.add(entity);
-	return added;
+	if (entity == nullptr)
+		return false; // defensive: contains() must not probe a null key
+	const bool preRegistered = knownEntities.contains(entity);
+	const bool added = World::entityJoinedWorld(entity);
+	if (added)
+		knownEntities.add(entity);     // membership for the skin/unload bookkeeping
+	else if (preRegistered)
+		entitySpawnQueue.add(entity);  // network spawn waiting for its column
+	return added || preRegistered;
 }
 
 void WorldClient::setEntityDead(Entity *entity)
