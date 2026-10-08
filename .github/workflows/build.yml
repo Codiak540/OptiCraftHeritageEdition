@@ -202,6 +202,7 @@ jobs:
           # dkp-pacman -- plain `pacman` is the Arch name only and is NOT on
           # PATH here (2026-10-02: `pacman: not found`). --needed keeps the
           # step a no-op if a future image bakes the portlibs in.
+          HTTP_USER_AGENT="dkp-apt"
           DKP_PACMAN="$(command -v dkp-pacman || command -v pacman || true)"
           if [ -z "$DKP_PACMAN" ]; then
             echo "::error::the devkitpro/devkitarm image ships neither dkp-pacman nor pacman"
@@ -278,6 +279,7 @@ jobs:
           # different makerom. If this pin is ever lifted, check the
           # container's glibc against the release binary first.
           MAKEROM_VER=0.18.3
+          HTTP_USER_AGENT="dkp-apt"
           curl -fsSL -o /tmp/makerom.zip \
             "https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v${MAKEROM_VER}/makerom-v${MAKEROM_VER}-ubuntu_x86_64.zip"
           ( cd /tmp && unzip -qo makerom.zip && cp makerom /usr/local/bin/makerom \
