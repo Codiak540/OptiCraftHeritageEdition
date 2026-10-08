@@ -98,11 +98,17 @@ void LegacyCreateWorldScreen::initGui()
         layout.rowY(2), layout.contentWidth, layout.rowHeight, tr->translateKey("selectWorld.mapType")));
 
     delete textboxWorldName;
-    textboxWorldName = new GuiTextField(fontRenderer, layout.contentX, layout.rowY(0), layout.contentWidth, textFieldHeight);
+    // The parent pointer is load-bearing, not cosmetic: without it
+    // setFocused() never reaches notifyTextFieldFocus(), the screen's
+    // focusedTextField stays null, and GuiScreen::handleInput's
+    // dropForeignField() clears the virtual keyboard's focus every frame
+    // before tick() can open the system applet -- the field could never
+    // be edited on 3DS.
+    textboxWorldName = new GuiTextField(this, fontRenderer, layout.contentX, layout.rowY(0), layout.contentWidth, textFieldHeight, "");
     textboxWorldName->setText(localizedNewWorldText);
 
     delete textboxSeed;
-    textboxSeed = new GuiTextField(fontRenderer, layout.contentX, layout.rowY(0), layout.contentWidth, textFieldHeight);
+    textboxSeed = new GuiTextField(this, fontRenderer, layout.contentX, layout.rowY(0), layout.contentWidth, textFieldHeight, "");
     textboxSeed->setText(seed);
 
     updateFolderName();
@@ -190,7 +196,18 @@ void LegacyCreateWorldScreen::syncSelectedControl()
     // Selecting the text row is not the same as editing it. The virtual keyboard
     // closes by clearing field focus; do not immediately re-focus it on the next
     // selection sync or D-pad navigation becomes trapped on row 0.
+#if defined(CTR_PLATFORM)
+    // ...but a touch sitting ON row 0 (hover == 0, which with the live-
+    // pointer gate in updatePointerHover means a finger resting on it) is
+    // the player holding the field, not navigating away from it: the
+    // async system keyboard opens from field focus, and clearing it here
+    // -- every drawScreen while the finger rests on the row -- kills the
+    // pending applet open before tick() ever launches it. Only a hover
+    // past row 0, or a selection that already left it, takes focus away.
+    if (selectedControlIndex != 0 || hoveredControlIndex > 0)
+#else
     if (selectedControlIndex != 0 || hoveredControlIndex >= 0)
+#endif
     {
         textboxWorldName->setFocused(false);
         textboxSeed->setFocused(false);
@@ -210,7 +227,15 @@ void LegacyCreateWorldScreen::updatePointerHover(int_t mouseX, int_t mouseY)
     // the virtual keyboard closes.
     (void)mouseX;
     (void)mouseY;
-#elif PLATFORM_WII
+#elif PLATFORM_WII || PLATFORM_3DS
+    // Same rule as legacyHoveredSelectableButton: on a pointer console only a
+    // LIVE pointer may hover. The 3DS keeps the last finger sample after lift
+    // (Mouse_3ds), so without the gate the stale position -- the tap on the
+    // name field that opened the keyboard, the button that opened this
+    // screen -- kept a row hovered forever, and moveSelection()/
+    // adjustSelection() refuse to run while something is hovered: the D-pad
+    // could not move the selection down from row 0 until a fresh touch
+    // happened to land off every control (2026-10-07, create-world screen).
     if (platformMenuPointerActive())
 #endif
     {
@@ -438,10 +463,19 @@ void LegacyCreateWorldScreen::keyTyped(char_t c, int_t key)
     }
     if (key == 28 || c == '\r')
     {
+#if defined(CTR_PLATFORM)
+        // Row 0 owns the text field: confirming on it focuses the field so
+        // the system keyboard opens, exactly like activateSelection() does
+        // for a tap. Moving away instead (the other consoles' behavior)
+        // would leave pad players with no way to open it at all, since this
+        // screen has no PS2/WII-style pad block on the 3DS.
+        activateSelection();
+#else
         if (selectedControlIndex == 0)
             moveSelection(1);
         else
             activateSelection();
+#endif
         return;
     }
 #endif

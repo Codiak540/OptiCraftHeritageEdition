@@ -5,13 +5,18 @@
 
 #include "GuiMultiplayer.h"
 #include "ServerNBTStorage.h"
-#ifdef PS2_PLATFORM
+#if defined(PS2_PLATFORM) || defined(CTR_PLATFORM)
 #include "java/System.h"
 #endif
 
 void ThreadPollServers::start(const std::shared_ptr<ServerNBTStorage> &server)
 {
 #if defined(WII_PLATFORM) || defined(PS2_PLATFORM)
+    // Inline on the caller: both consoles drive the list from the game
+    // loop and their connects answer within bounded waits. The 3DS shares
+    // the schedule (one in flight, the retry ladder below) but not this
+    // half -- its single-core game thread must not absorb a row's DNS or
+    // handshake, so each poll keeps its detached worker.
     run(server);
 #else
     std::thread(&ThreadPollServers::run, server).detach();
@@ -33,7 +38,12 @@ void ThreadPollServers::run(std::shared_ptr<ServerNBTStorage> server)
         const auto endTime = std::chrono::steady_clock::now();
         const long_t latency = (long_t)std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
         std::lock_guard<std::mutex> guard(server->stateMutex);
-#ifdef PS2_PLATFORM
+#if defined(PS2_PLATFORM) || defined(CTR_PLATFORM)
+        // The retry ladder: a failed row re-polls every 5 s, three times,
+        // then stands down until the player refreshes the list (a new
+        // GuiMultiplayer re-polls everything). On the 3DS this is what
+        // keeps a dead row from re-arming a handshake -- and re-claiming
+        // the shared soc:U session -- forever.
         if (server->lag == -1)
         {
             if (server->pollRetryCount < 3)
@@ -64,7 +74,7 @@ void ThreadPollServers::run(std::shared_ptr<ServerNBTStorage> server)
         server->lag = -1;
         server->motd = "\xC2\xA7" "4Can't reach server";
         server->playerCount.clear();
-#ifdef PS2_PLATFORM
+#if defined(PS2_PLATFORM) || defined(CTR_PLATFORM)
         if (server->pollRetryCount < 3)
         {
             ++server->pollRetryCount;

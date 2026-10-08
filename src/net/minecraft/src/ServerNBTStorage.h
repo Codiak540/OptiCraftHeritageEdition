@@ -21,7 +21,11 @@ public:
 	jstring motd;
 	long_t lag;
 	bool polled;
-#ifdef PS2_PLATFORM
+#if defined(PS2_PLATFORM) || defined(CTR_PLATFORM)
+	// The poll-retry ladder (GuiSlotServer / ThreadPollServers): both
+	// consoles poll their rows through one narrow pipe -- the IOP RPC
+	// bridge there, the single soc:U session here -- and gate dead rows so
+	// they cannot re-claim it forever.
 	long_t nextPollTime;
 	int_t pollRetryCount;
 #endif

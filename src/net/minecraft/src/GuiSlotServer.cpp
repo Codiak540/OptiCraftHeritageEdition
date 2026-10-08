@@ -72,7 +72,15 @@ void GuiSlotServer::drawSlot(int_t index, int_t x, int_t y, int_t, Tessellator *
         playerCount = server->playerCount;
         lag = server->lag;
         polled = server->polled;
-#ifdef PS2_PLATFORM
+#if defined(PS2_PLATFORM) || defined(CTR_PLATFORM)
+        // The PS2 poll schedule, and on the 3DS for the same reason: one
+        // poll in flight, failed rows retried on a 5-second ladder and
+        // gated after three. Both consoles funnel every socket command
+        // through one narrow pipe (the IOP RPC bridge there, the single
+        // soc:U session here), so concurrent rows only contend for it --
+        // and a dead row's bounded wait is what keeps every later row's
+        // DNS and handshake moving. PC and the Wii interleave freely and
+        // keep the wider budget.
         constexpr int_t maxPollThreads = 1;
         const long_t now = System::currentTimeMillis();
         const bool retryDue = server->polled && server->lag == -1 &&
@@ -85,7 +93,7 @@ void GuiSlotServer::drawSlot(int_t index, int_t x, int_t y, int_t, Tessellator *
         {
             server->polled = true;
             server->lag = -2;
-#ifdef PS2_PLATFORM
+#if defined(PS2_PLATFORM) || defined(CTR_PLATFORM)
             server->nextPollTime = 0;
 #endif
             server->motd.clear();

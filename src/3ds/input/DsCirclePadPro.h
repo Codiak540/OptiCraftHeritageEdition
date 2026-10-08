@@ -56,6 +56,13 @@ struct Sample
 // the internal C-stick arrives through ir:rst and no accessory exists -- or
 // when the ir:USER service cannot be reached, in which case the console
 // simply has no right-pad input at all, like any Old 3DS sans CPP.
+//
+// A failed start may be retried: a later call begins a fresh attempt (the
+// previous one's resources were already released), so dsInputPoll() re-arms
+// it every couple of seconds until the worker runs. That covers loaders
+// whose services are not all reachable on the very first attempt -- the
+// 2026-10 report where the .cia linked the accessory but the HBL .3dsx of
+// the same build never did.
 void init();
 
 // Signal the worker to stop, join it, and release its IR resources.
@@ -71,6 +78,21 @@ Sample sample();
 // Diagnostic surface only -- sample() already reports everything gameplay
 // needs, and a New 3DS answers false by design.
 bool available();
+
+// Whether init() got past the New-3DS early-out and really tried to start
+// the worker. Stays false on New 3DS by design, so dsInputPoll() can tell
+// "nothing to do" apart from "tried and failed" when deciding to retry.
+bool startAttempted();
+
+// The stage that stopped the last start attempt, or 0 when the worker runs
+// (or nothing was attempted yet). A libctru Result where the stage has one
+// (ir:USER handle, memory block, exit event), 1 for the shared-memory
+// allocation and 2 for the worker-thread creation, which have none.
+// Survives MC_LOG_LEVEL=0, where init()'s MC_LOG_WARN lines are compiled
+// out -- dsInputDebugLine() renders a nonzero code into the overlay, so a
+// ".3dsx links nothing, .cia links fine" report can be told apart from a
+// dead accessory or an unseated clip without rebuilding with logs on.
+std::uint32_t startError();
 
 } // namespace DsCirclePadPro
 

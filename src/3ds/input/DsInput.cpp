@@ -324,6 +324,13 @@ constexpr float kFaceCameraPixelsPerSec = 480.0f;
 // the camera reads DsInputState's RAW axes, because the deadzone lives in the
 // backend half and must not be applied twice.
 constexpr float kCStickDeadzone = 0.20f;
+// Pace of the Circle Pad Pro late-start retries below: a failed init() is
+// re-armed from the poll until the worker runs, so a service that was not
+// reachable on the very first attempt (the 2026-10 HBL .3dsx report, where
+// the same build's .cia linked the accessory at once) still gets picked up
+// mid-session instead of staying dead until relaunch.
+constexpr int kCppRetryMs = 2000;
+int g_cppRetryLastMs = 0;
 int g_cstickCameraLastMs = 0;          // poll timestamp, frame-rate-free rate
 float g_cstickAccumX = 0.0f;           // sub-pixel remainders: a gentle nudge
 float g_cstickAccumY = 0.0f;           // at 60 fps moves <1 px per poll
@@ -1028,6 +1035,7 @@ void dsInputInit(int screenW, int screenH)
 	// Its shutdown counterparts are ClientPlatformPolicy_3DS's
 	// shutdownFinalize and stopSurvivingWorkerThreads in main_3ds.cpp.
 	DsCirclePadPro::init();
+	g_cppRetryLastMs = 0;
 }
 
 void dsInputSetFaceButtonCamera(bool enabled)
@@ -1101,6 +1109,22 @@ void dsInputPoll(bool inMenu)
 	// (#define keysDown hidKeysDown) would rewrite the tokens.
 	u32 keysPressed = hidKeysDown();
 	u32 keysReleased = hidKeysUp();
+
+	// Circle Pad Pro late start: init() runs once from dsInputInit(), but a
+	// service the worker needs may only become reachable after boot (or the
+	// first attempt raced the loader), so a failed start is re-armed here
+	// until the worker runs. Gated on startAttempted() so New 3DS -- where
+	// init() early-outs by design and there is nothing to start -- never
+	// pays even the APT check; a running worker short-circuits first.
+	if (!DsCirclePadPro::available() && DsCirclePadPro::startAttempted())
+	{
+		const int nowMs = consoleInputNowMs();
+		if (nowMs - g_cppRetryLastMs >= kCppRetryMs)
+		{
+			g_cppRetryLastMs = nowMs;
+			DsCirclePadPro::init();
+		}
+	}
 
 	// Circle Pad Pro (Old 3DS, ir:USER worker) folds in right after HID's
 	// own scan: its buttons join the held mask, and its edges are differenced
@@ -1404,9 +1428,13 @@ const char* dsInputDebugLine()
 	// Circle Pad Pro marker for hardware sessions: "cpp-" = worker alive
 	// but no accessory linked (check power/pairing/the IR window), "cppNN"
 	// = linked with the accessory's raw 0..31 battery reading, and the n
-	// axes then show the pad live. No marker = New 3DS (internal C-stick)
-	// or the worker could not start (which is logged at MC_LOG_LEVEL>=1).
-	char cppPart[12] = "";
+	// axes then show the pad live. "cppeXXXXXXXX" = the worker never
+	// started and why (the startError() code: a libctru Result, 1 = shared
+	// memory, 2 = worker thread) -- the .3dsx-vs-.cia tell for loader or
+	// service-reachability reports. No marker = New 3DS (internal C-stick)
+	// or the worker could not start before the diagnostic surface existed
+	// (which is logged at MC_LOG_LEVEL>=1).
+	char cppPart[16] = "";
 	if (DsCirclePadPro::available())
 	{
 		const DsCirclePadPro::Sample cpp = DsCirclePadPro::sample();
@@ -1415,6 +1443,11 @@ const char* dsInputDebugLine()
 			              static_cast<unsigned>(cpp.battery));
 		else
 			std::snprintf(cppPart, sizeof(cppPart), " cpp-");
+	}
+	else if (DsCirclePadPro::startAttempted() && DsCirclePadPro::startError() != 0)
+	{
+		std::snprintf(cppPart, sizeof(cppPart), " cppe%08X",
+		              static_cast<unsigned>(DsCirclePadPro::startError()));
 	}
 	std::snprintf(g_debugLine, sizeof(g_debugLine),
 	              "held=%03X t%c %d,%d cp%+.2f,%+.2f n%+.2f,%+.2f%s",

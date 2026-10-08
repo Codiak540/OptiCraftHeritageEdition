@@ -168,6 +168,19 @@ bool g_started = false;      // init() completed; guards init()/shutdown()
 // a persistent cursor would.
 unsigned g_recvCursor = 0;
 
+// Per-episode link diagnostics. A user's debug.log (level >= 1) could show
+// the worker up with the accessory never linking and say nothing about
+// WHICH half failed (the 2026-10-07 report): "no accessory answered" is the
+// clip-off / battery-dead / asleep case, "linked but calibration failed"
+// is a protocol or device problem. Each logs once per link-loss episode
+// and resets on a successful link, so a session without a CPP costs one
+// INFO line and a healthy session costs none. Level-0 builds compile
+// them out entirely -- the cppe overlay marker covers that case
+// (startError, above).
+int g_failedConnectRounds = 0;
+bool g_noAccessoryLogged = false;
+bool g_calibrationFailedLogged = false;
+
 // Published state (worker -> game thread). The position packs into one
 // word so a sample can never tear axes from two updates, and the
 // connected flag carries a release so readers that see it also see the
@@ -176,6 +189,14 @@ std::atomic<std::uint32_t> g_packedPos{0}; // dx:16 | dy:16
 std::atomic<std::uint32_t> g_held{0};
 std::atomic<std::uint8_t> g_battery{0};
 std::atomic<bool> g_connected{false};
+
+// Last start-attempt outcome, for the startAttempted()/startError()
+// diagnostic surface (see the header): written by init() on its own thread
+// context (the main thread, from dsInputInit/dsInputPoll) and read from the
+// debug-line formatter, so both are atomic. Deliberately NOT cleared by
+// shutdown(): a worker that never started must keep saying why.
+std::atomic<bool> g_startAttempted{false};
+std::atomic<std::uint32_t> g_startError{0};
 
 void publishLive(std::int16_t dx, std::int16_t dy, std::uint32_t held, std::uint8_t battery)
 {
@@ -742,12 +763,27 @@ CycleOutcome runCycle()
 	}
 	if (!linked)
 	{
+		// One line per episode, not per round: the retry loop runs forever
+		// by design (the CPP can be clipped on at any moment), and a log
+		// line every second would drown everything after it.
+		++g_failedConnectRounds;
+		if (g_failedConnectRounds == 10 && !g_noAccessoryLogged)
+		{
+			MC_LOG_INFO("3ds", "Circle Pad Pro: no accessory answered %d connect "
+			              "rounds (check it is clipped on, powered and awake)\n",
+			              g_failedConnectRounds);
+			g_noAccessoryLogged = true;
+		}
 		closeEvents(connEvent, recvEvent);
 		teardownIrnop();
 		if (restThenContinue(kRetryRestNs))
 			return CycleOutcome::Exit;
 		return CycleOutcome::Retry;
 	}
+	// The accessory answered: a new episode begins the next time it goes
+	// quiet, so the diagnostics above may speak again after a link loss.
+	g_failedConnectRounds = 0;
+	g_noAccessoryLogged = false;
 
 	// --- calibrate --------------------------------------------------
 	Calibration cal;
@@ -760,12 +796,22 @@ CycleOutcome runCycle()
 	}
 	if (io == Io::Fail)
 	{
+		// A connected accessory whose calibration block never validates is
+		// the distinct failure class the connect-phase line cannot name:
+		// the IR link itself is fine, so battery/clip advice would send the
+		// user hunting the wrong end. Once per episode, like above.
+		if (!g_calibrationFailedLogged)
+		{
+			MC_LOG_WARN("3ds", "Circle Pad Pro: linked but calibration never validated\n");
+			g_calibrationFailedLogged = true;
+		}
 		closeEvents(connEvent, recvEvent);
 		teardownIrnop();
 		if (restThenContinue(kRetryRestNs))
 			return CycleOutcome::Exit;
 		return CycleOutcome::Retry;
 	}
+	g_calibrationFailedLogged = false;
 	MC_LOG_INFO("3ds", "Circle Pad Pro: linked and calibrated\n");
 
 	// --- stream -----------------------------------------------------
@@ -879,10 +925,17 @@ void init()
 	if (isNew3ds)
 		return;
 
+	// A real attempt starts here (past the New-3DS early-out): mark it and
+	// clear the previous attempt's error, so a retry that succeeds does not
+	// keep reporting the old failure.
+	g_startAttempted.store(true, std::memory_order_relaxed);
+	g_startError.store(0, std::memory_order_relaxed);
+
 	g_sharedMem = memalign(0x1000, kSharedMemSize);
 	if (!g_sharedMem)
 	{
 		MC_LOG_WARN("3ds", "CPP: shared memory allocation failed\n");
+		g_startError.store(1, std::memory_order_relaxed);
 		return;
 	}
 
@@ -891,6 +944,7 @@ void init()
 	{
 		MC_LOG_WARN("3ds", "CPP: ir:USER unavailable (%08lX)\n",
 		            static_cast<unsigned long>(static_cast<std::uint32_t>(r)));
+		g_startError.store(static_cast<std::uint32_t>(r), std::memory_order_relaxed);
 		releaseSession();
 		return;
 	}
@@ -903,6 +957,7 @@ void init()
 	{
 		MC_LOG_WARN("3ds", "CPP: shared memory block failed (%08lX)\n",
 		            static_cast<unsigned long>(static_cast<std::uint32_t>(r)));
+		g_startError.store(static_cast<std::uint32_t>(r), std::memory_order_relaxed);
 		releaseSession();
 		return;
 	}
@@ -912,6 +967,7 @@ void init()
 	{
 		MC_LOG_WARN("3ds", "CPP: exit event failed (%08lX)\n",
 		            static_cast<unsigned long>(static_cast<std::uint32_t>(r)));
+		g_startError.store(static_cast<std::uint32_t>(r), std::memory_order_relaxed);
 		releaseSession();
 		return;
 	}
@@ -924,6 +980,7 @@ void init()
 	if (!g_thread)
 	{
 		MC_LOG_WARN("3ds", "CPP: worker thread could not start\n");
+		g_startError.store(2, std::memory_order_relaxed);
 		releaseSession();
 		return;
 	}
@@ -970,6 +1027,16 @@ Sample sample()
 bool available()
 {
 	return g_started;
+}
+
+bool startAttempted()
+{
+	return g_startAttempted.load(std::memory_order_relaxed);
+}
+
+std::uint32_t startError()
+{
+	return g_startError.load(std::memory_order_relaxed);
 }
 
 } // namespace DsCirclePadPro

@@ -928,6 +928,18 @@ void Minecraft::run()
         // CPU/GPU frame-time split for the F3 overlay (see cpuUsagePercent /
         // gpuUsagePercent in Minecraft.h). Accumulated every loop iteration,
         // turned into a percentage once a second below.
+        //
+        // This is a frame-time split, NOT hardware utilization: the "GPU"
+        // share is the time the frame spends inside Display::update() (the
+        // swap + message pump), the "CPU" share is everything else. On the
+        // 3DS the labels are nearly inverted: Display::update() is present
+        // bookkeeping plus aptMainLoop and the input scan (cheap), while the
+        // real present wait -- C3D_FrameBegin(C3D_FRAME_SYNCDRAW) pacing the
+        // frame from inside the next render pass -- lands in the "CPU"
+        // share. A 98/2 reading there is the healthy shape of a CPU-bound
+        // port whose PICA200 eats the display lists and idles; it does NOT
+        // mean software rendering (the rasterizer runs on the GPU, and the
+        // tick/mesh time dominating the "CPU" share is the actual wall).
         long_t cpuGpuFrameNs = 0L;
         long_t cpuGpuSwapNs = 0L;
 

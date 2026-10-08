@@ -4,7 +4,7 @@
 
 ServerNBTStorage::ServerNBTStorage(const jstring &serverName, const jstring &serverHost) :
 	name(serverName), host(serverHost), playerCount(), motd(), lag(0), polled(false)
-#ifdef PS2_PLATFORM
+#if defined(PS2_PLATFORM) || defined(CTR_PLATFORM)
 	, nextPollTime(0), pollRetryCount(0)
 #endif
 {

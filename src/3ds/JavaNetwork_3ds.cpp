@@ -34,30 +34,48 @@ namespace JavaNetwork
 namespace
 {
 
-// libctru's connect() is one synchronous kernel IPC: it returns only once the
-// SOC service finishes the TCP handshake or gives up, and neither fcntl nor
-// FIONBIO shortens it -- there is no non-blocking branch to poll, so the
-// Wii's "connect() + select(4 s)" pattern has no EINPROGRESS to wait on.
-// Two callers would otherwise absorb the kernel's whole SYN-retry window:
-// GuiConnecting's destructor join()s the connect thread when the player
-// cancels (the UI would sit in that join until the kernel gives up), and a
-// server-list poll would hold its worker just as long. Run the whole
-// blocking attempt -- literal-IP check, DNS, socket(), connect() -- on a
-// helper thread and cap the owner's wait (the handshake at the same 4
-// seconds the Wii enforces; the name lookup gets its own budget, below).
+// Every socket call on this stack is one synchronous IPC round-trip on the
+// process's single soc:U session: while one command is in flight, every
+// other socket operation from any thread queues behind it. A blocking
+// connect() to a host that never answers -- a powered-off box on the LAN --
+// therefore holds the whole session hostage for the kernel's SYN-retry
+// window, and a server-list poll to that box starves every other row's DNS
+// behind it (2026-10-07: with the local server off, the remote one would
+// not ping at all; with it on, both pinged). The Wii starts its handshake
+// the way this file now does too, and the SOC service does honor
+// non-blocking sockets in connect() on hardware: ftpd, RetroArch and
+// MegaZeux all ride non-blocking connects on real consoles, and
+// devkitPro/libctru#412 documents the quirks this implementation works
+// around. Two of those quirks shape the wait below:
+//   * a failing connect never flags writability, so one long select()
+//     would hold the session for the entire budget -- the very monopoly
+//     this shape exists to remove. The wait runs in short slices instead,
+//     like the read path, so other rows interleave their commands between
+//     them;
+//   * getsockopt(SO_ERROR) answers in the service's own untranslated
+//     encoding (-26 being raw EINPROGRESS), so completion is probed with a
+//     second connect(): 0/EISCONN = established, EALREADY = still in
+//     flight, anything else = the failure. Same workaround ftpd and
+//     RetroArch ship.
+// The helper thread stays for what still has no non-blocking branch on
+// this stack: the name lookup, which the SOC resolver answers in its own
+// time. It caps the owner's wait so GuiConnecting's destructor join (a
+// player cancelling a join) and a server-list poll never sit inside it.
 // The helper owns the descriptor it creates until the hand-off: on
-// timeout the owner marks the attempt abandoned and the helper closes the
-// socket whenever the kernel answers, so a late success can neither leak an
-// fd nor hand a recycled descriptor to a caller that already gave up.
+// timeout the owner marks the attempt abandoned, the handshake notices
+// between slices and closes the socket, so a late success can neither
+// leak an fd nor hand a recycled descriptor to a caller that already gave
+// up.
 // The name lookup gets its own, larger budget. Every other platform gives
 // DNS unlimited time: PC's SDL_net blocks in the host resolver, and PS2's
 // gethostbyname / the Wii's net_gethostbyname run uncapped on the calling
-// thread -- only the TCP handshake gets the Wii's 4-second select. Capping
+// thread -- only the TCP handshake gets the Wii's 4-second wait. Capping
 // DNS with the handshake meant a console whose resolver answers in 4-10 s
 // read as "timed out" on hardware while the same list pinged fine inside
 // Azahar, whose HLE resolver answers from the host PC instantly.
 constexpr int connectTimeoutSeconds = 4;
 constexpr int nameLookupTimeoutSeconds = 10;
+constexpr int connectSliceMs = 100;
 
 // Where the helper is. The owner's budget depends on the phase, so a slow
 // name lookup is never billed against the handshake's window.
@@ -178,7 +196,14 @@ int openBlockingConnection(const std::string &host, int port,
 		progress->phase.store(static_cast<int>(ConnectPhase::Connecting),
 		                      std::memory_order_release);
 	}
-	if (::connect(newFd, reinterpret_cast<sockaddr *>(&target), sizeof(target)) < 0)
+
+	// The Wii's handshake shape (see the file comment): non-blocking socket
+	// up front, so connect() answers EINPROGRESS at once instead of parking
+	// this helper inside one unanswerable IPC on the shared soc:U session.
+	// The established socket stays non-blocking -- that is the invariant
+	// the O_NONBLOCK reads and writes below are written against.
+	const int startFlags = ::fcntl(newFd, F_GETFL, 0);
+	if (startFlags < 0 || ::fcntl(newFd, F_SETFL, startFlags | O_NONBLOCK) < 0)
 	{
 		const int errorCode = errno;
 		::close(newFd);
@@ -186,24 +211,95 @@ int openBlockingConnection(const std::string &host, int port,
 		return -1;
 	}
 
-	// Established: switch the socket to non-blocking now -- the same order
-	// the PS2 backend uses (FIONBIO after the handshake, which itself stays
-	// blocking, and fatal when it fails). Every socket call on this stack
-	// is a synchronous IPC round-trip, so a blocking recv()/send() parks
-	// the calling thread inside the kernel until the peer moves; with
-	// O_NONBLOCK an empty receive queue and a full send queue both come
-	// back as EWOULDBLOCK, and the select()-sliced waits in read() and
-	// write() -- including the write path's 10-second budget -- are what
-	// actually govern both loops. The SOC service honors the flag: it is
-	// what devkitPro's sockets example runs accept() on, and what ftpd
-	// serves every connection with.
-	const int currentFlags = ::fcntl(newFd, F_GETFL, 0);
-	if (currentFlags < 0 || ::fcntl(newFd, F_SETFL, currentFlags | O_NONBLOCK) < 0)
+	if (::connect(newFd, reinterpret_cast<sockaddr *>(&target), sizeof(target)) < 0)
 	{
-		const int errorCode = errno;
-		::close(newFd);
-		errno = errorCode;
-		return -1;
+		const int connectErrno = errno;
+		if (connectErrno != EISCONN)
+		{
+			// EINPROGRESS (or a stack's EWOULDBLOCK) is the normal start of
+			// an async handshake; EALREADY is a re-probe landing mid-flight.
+			// Anything else failed outright.
+			if (connectErrno != EINPROGRESS && connectErrno != EALREADY &&
+			    connectErrno != EWOULDBLOCK && connectErrno != EAGAIN)
+			{
+				::close(newFd);
+				errno = connectErrno;
+				return -1;
+			}
+
+			const long long connectStartMs = steadyMs();
+			bool established = false;
+			while (true)
+			{
+				// An abandoned attempt must stop slicing promptly: its owner
+				// already reported the row dead and nobody is left to read a
+				// late success.
+				if (progress != nullptr)
+				{
+					std::lock_guard<std::mutex> guard(progress->mutex);
+					if (progress->abandoned)
+					{
+						::close(newFd);
+						errno = ETIMEDOUT;
+						return -1;
+					}
+				}
+				const long long remainingMs =
+				    static_cast<long long>(connectTimeoutSeconds) * 1000LL -
+				    (steadyMs() - connectStartMs);
+				if (remainingMs <= 0)
+					break;
+
+				// Short slices, never one long wait: a failing connect never
+				// flags writability (libctru#412), so a single select() with
+				// the full budget would just hold the session for all of it.
+				fd_set writeSet;
+				struct timeval tv{};
+				tv.tv_sec = 0;
+				tv.tv_usec = static_cast<long>(
+				                 remainingMs < connectSliceMs ? remainingMs : connectSliceMs) *
+				             1000;
+				FD_ZERO(&writeSet);
+				FD_SET(newFd, &writeSet);
+				const int ready = ::select(newFd + 1, nullptr, &writeSet, nullptr, &tv);
+				if (ready < 0)
+				{
+					const int errorCode = errno;
+					::close(newFd);
+					errno = errorCode;
+					return -1;
+				}
+				if (ready == 0)
+					continue; // slice elapsed: re-check abandoned and budget
+
+				// Writable: probe completion with a second connect() -- the
+				// SO_ERROR path answers in the service's untranslated
+				// encoding (file comment). The established socket answers
+				// EISCONN, not 0 (libctru#412 measured exactly that on
+				// hardware; an emulator's HLE answers 0 instead, so accept
+				// both). EALREADY (or a stack's EWOULDBLOCK) means the
+				// handshake is somehow still in flight; keep slicing and
+				// let the budget cap it.
+				if (::connect(newFd, reinterpret_cast<sockaddr *>(&target), sizeof(target)) == 0 ||
+				    errno == EISCONN)
+				{
+					established = true;
+					break;
+				}
+				if (errno == EALREADY || errno == EINPROGRESS || errno == EWOULDBLOCK)
+					continue; // still in flight; keep slicing
+				const int errorCode = errno;
+				::close(newFd);
+				errno = errorCode;
+				return -1;
+			}
+			if (!established)
+			{
+				::close(newFd);
+				errno = ETIMEDOUT;
+				return -1;
+			}
+		}
 	}
 	return newFd;
 }
@@ -270,11 +366,13 @@ public:
 		McLog::flush();
 
 		const std::shared_ptr<ConnectAttempt> attempt = std::make_shared<ConnectAttempt>();
-		// Detached: the helper can outlive this call by the kernel's retry
-		// window (see the comment above connectTimeoutSeconds). It keeps the
-		// attempt state alive through the shared_ptr std::thread copies, and
-		// libctru frees a detached thread's own stack when it exits
-		// (threadExit() tears down thread->detached threads with threadFree).
+		// Detached: the helper can outlive this call while a name lookup the
+		// service has not answered still runs (see the comment above
+		// connectTimeoutSeconds -- the handshake itself now ends within the
+		// owner's budget). It keeps the attempt state alive through the
+		// shared_ptr std::thread copies, and libctru frees a detached
+		// thread's own stack when it exits (threadExit() tears down
+		// thread->detached threads with threadFree).
 		std::thread(&runConnectAttempt, attempt, host, port).detach();
 
 		std::unique_lock<std::mutex> lock(attempt->mutex);
