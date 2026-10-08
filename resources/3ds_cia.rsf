@@ -107,20 +107,9 @@ AccessControlInfo:
   FileSystemAccess:
    - DirectSdmc
 
-  # 64 MB application mode at 268 MHz, on EVERY model. A non-Legacy
-  # SystemModeExt marks the title New-3DS-only (the SDK keeps those keys in
-  # a separate ExtApplication descriptor for a reason), and the system then
-  # refuses to launch it on an Old 3DS/2DS before a single instruction runs:
-  # ErrDisp "SD card was removed" on the test O2DS (2026-09-28), while the
-  # same game ran fine as .3dsx there (the Homebrew Loader reads no exheader)
-  # and in Azahar (which does not apply the gate). Legacy / 268MHz / L2 off /
-  # Core2 off is what the SDK's own Application template and every proven
-  # homebrew CIA (FBI, Checkpoint) ship. The New-3DS clock boost is applied
-  # at RUNTIME instead: main_3ds.cpp calls osSetSpeedupEnable() on consoles
-  # that take it, and the game's footprint already fits the 64 MB the .3dsx
-  # demonstrably ran in on the same Old 2DS.
+  # Run in Extended Mode in o3DS. No reason to limit ourselves to 64MB here. TODO: Make a branch that's singleplayer-only that has access to 96MB Extended mode (in which mode wifi doesn't work)
   MemoryType              : Application
-  SystemMode              : 64MB
+  SystemMode              : 80MB
   IdealProcessor          : 0
   AffinityMask            : 1
   Priority                : 16
