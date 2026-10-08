@@ -4220,25 +4220,57 @@ void RenderBlocks::renderTopFace(Block *block, tess_coord_t d, tess_coord_t d1, 
 	tess_coord_t d15 = (tess_coord_t)d2 + (tess_coord_t)block->maxZ;
 	if (enableAO)
 	{
-		tessellator->setColorOpaque_F(colorRedTopLeft, colorGreenTopLeft, colorBlueTopLeft);
-		tessellator->setBrightness(brightnessTopLeft);
-		tessellator->addVertexWithUV(d12, d13, d15, d4, d6);
-		tessellator->setColorOpaque_F(colorRedBottomLeft, colorGreenBottomLeft, colorBlueBottomLeft);
-		tessellator->setBrightness(brightnessBottomLeft);
-		tessellator->addVertexWithUV(d12, d13, d14, d7, d9);
-		tessellator->setColorOpaque_F(colorRedBottomRight, colorGreenBottomRight, colorBlueBottomRight);
-		tessellator->setBrightness(brightnessBottomRight);
-		tessellator->addVertexWithUV(d11, d13, d14, d3, d5);
-		tessellator->setColorOpaque_F(colorRedTopRight, colorGreenTopRight, colorBlueTopRight);
-		tessellator->setBrightness(brightnessTopRight);
-		tessellator->addVertexWithUV(d11, d13, d15, d8, d10);
+		if (i != -1) { // If should use texture
+			tessellator->setColorOpaque_F(colorRedTopLeft, colorGreenTopLeft, colorBlueTopLeft);
+			tessellator->setBrightness(brightnessTopLeft);
+			tessellator->addVertexWithUV(d11, d13, d15, d8, d10);
+			tessellator->setColorOpaque_F(colorRedBottomLeft, colorGreenBottomLeft, colorBlueBottomLeft);
+			tessellator->setBrightness(brightnessBottomLeft);
+			tessellator->addVertexWithUV(d11, d13, d14, d3, d5);
+			tessellator->setColorOpaque_F(colorRedBottomRight, colorGreenBottomRight, colorBlueBottomRight);
+			tessellator->setBrightness(brightnessBottomRight);
+			tessellator->addVertexWithUV(d12, d13, d14, d7, d9);
+			tessellator->setColorOpaque_F(colorRedTopRight, colorGreenTopRight, colorBlueTopRight);
+			tessellator->setBrightness(brightnessTopRight);
+			tessellator->addVertexWithUV(d12, d13, d15, d4, d6);
+		}
+		else {
+			int_t color = block->blockMaterial->materialMapColor->colorValue;
+			float r = ((color >> 16) & 0xFF) / 255.0f;
+			float g = ((color >> 8)  & 0xFF) / 255.0f;
+			float b = (color & 0xFF) / 255.0f;
+
+			tessellator->setColorOpaque_F(r, g, b);
+
+
+			tessellator->addVertex(d11, d13, d15);
+			tessellator->addVertex(d11, d13, d14);
+			tessellator->addVertex(d12, d13, d14);
+			tessellator->addVertex(d12, d13, d15);
+		}
 	}
 	else
 	{
-		tessellator->addVertexWithUV(d12, d13, d15, d4, d6);
-		tessellator->addVertexWithUV(d12, d13, d14, d7, d9);
-		tessellator->addVertexWithUV(d11, d13, d14, d3, d5);
-		tessellator->addVertexWithUV(d11, d13, d15, d8, d10);
+		if (i != -1) {
+			tessellator->addVertexWithUV(d11, d13, d15, d8, d10);
+			tessellator->addVertexWithUV(d11, d13, d14, d3, d5);
+			tessellator->addVertexWithUV(d12, d13, d14, d7, d9);
+			tessellator->addVertexWithUV(d12, d13, d15, d4, d6);
+		}
+		else {
+			int_t color = block->blockMaterial->materialMapColor->colorValue;
+			float r = ((color >> 16) & 0xFF) / 255.0f;
+			float g = ((color >> 8)  & 0xFF) / 255.0f;
+			float b = (color & 0xFF) / 255.0f;
+
+			tessellator->setColorOpaque_F(r, g, b);
+
+
+			tessellator->addVertex(d11, d13, d15);
+			tessellator->addVertex(d11, d13, d14);
+			tessellator->addVertex(d12, d13, d14);
+			tessellator->addVertex(d12, d13, d15);
+		}
 	}
 	restoreNaturalTextureTransform();
 }
@@ -4328,25 +4360,57 @@ void RenderBlocks::renderEastFace(Block *block, tess_coord_t d, tess_coord_t d1,
 	tess_coord_t d16 = (tess_coord_t)d2 + (tess_coord_t)block->minZ;
 	if (enableAO)
 	{
-		tessellator->setColorOpaque_F(colorRedTopLeft, colorGreenTopLeft, colorBlueTopLeft);
-		tessellator->setBrightness(brightnessTopLeft);
-		tessellator->addVertexWithUV(d12, d15, d16, d8, d10);
-		tessellator->setColorOpaque_F(colorRedBottomLeft, colorGreenBottomLeft, colorBlueBottomLeft);
-		tessellator->setBrightness(brightnessBottomLeft);
-		tessellator->addVertexWithUV(d13, d15, d16, d3, d5);
-		tessellator->setColorOpaque_F(colorRedBottomRight, colorGreenBottomRight, colorBlueBottomRight);
-		tessellator->setBrightness(brightnessBottomRight);
-		tessellator->addVertexWithUV(d13, d14, d16, d9, d11);
-		tessellator->setColorOpaque_F(colorRedTopRight, colorGreenTopRight, colorBlueTopRight);
-		tessellator->setBrightness(brightnessTopRight);
-		tessellator->addVertexWithUV(d12, d14, d16, d4, d6);
+		if (i != -1) { // If should use texture
+			tessellator->setColorOpaque_F(colorRedTopLeft, colorGreenTopLeft, colorBlueTopLeft);
+			tessellator->setBrightness(brightnessTopLeft);
+			tessellator->addVertexWithUV(d11, d13, d15, d8, d10);
+			tessellator->setColorOpaque_F(colorRedBottomLeft, colorGreenBottomLeft, colorBlueBottomLeft);
+			tessellator->setBrightness(brightnessBottomLeft);
+			tessellator->addVertexWithUV(d11, d13, d14, d3, d5);
+			tessellator->setColorOpaque_F(colorRedBottomRight, colorGreenBottomRight, colorBlueBottomRight);
+			tessellator->setBrightness(brightnessBottomRight);
+			tessellator->addVertexWithUV(d12, d13, d14, d7, d9);
+			tessellator->setColorOpaque_F(colorRedTopRight, colorGreenTopRight, colorBlueTopRight);
+			tessellator->setBrightness(brightnessTopRight);
+			tessellator->addVertexWithUV(d12, d13, d15, d4, d6);
+		}
+		else {
+			int_t color = block->blockMaterial->materialMapColor->colorValue;
+			float r = ((color >> 16) & 0xFF) / 255.0f;
+			float g = ((color >> 8)  & 0xFF) / 255.0f;
+			float b = (color & 0xFF) / 255.0f;
+
+			tessellator->setColorOpaque_F(r, g, b);
+
+
+			tessellator->addVertex(d11, d13, d15);
+			tessellator->addVertex(d11, d13, d14);
+			tessellator->addVertex(d12, d13, d14);
+			tessellator->addVertex(d12, d13, d15);
+		}
 	}
 	else
 	{
-		tessellator->addVertexWithUV(d12, d15, d16, d8, d10);
-		tessellator->addVertexWithUV(d13, d15, d16, d3, d5);
-		tessellator->addVertexWithUV(d13, d14, d16, d9, d11);
-		tessellator->addVertexWithUV(d12, d14, d16, d4, d6);
+		if (i != -1) {
+			tessellator->addVertexWithUV(d11, d13, d15, d8, d10);
+			tessellator->addVertexWithUV(d11, d13, d14, d3, d5);
+			tessellator->addVertexWithUV(d12, d13, d14, d7, d9);
+			tessellator->addVertexWithUV(d12, d13, d15, d4, d6);
+		}
+		else {
+			int_t color = block->blockMaterial->materialMapColor->colorValue;
+			float r = ((color >> 16) & 0xFF) / 255.0f;
+			float g = ((color >> 8)  & 0xFF) / 255.0f;
+			float b = (color & 0xFF) / 255.0f;
+
+			tessellator->setColorOpaque_F(r, g, b);
+
+
+			tessellator->addVertex(d11, d13, d15);
+			tessellator->addVertex(d11, d13, d14);
+			tessellator->addVertex(d12, d13, d14);
+			tessellator->addVertex(d12, d13, d15);
+		}
 	}
 	restoreNaturalTextureTransform();
 }
@@ -4436,25 +4500,57 @@ void RenderBlocks::renderWestFace(Block *block, tess_coord_t d, tess_coord_t d1,
 	tess_coord_t d16 = (tess_coord_t)d2 + (tess_coord_t)block->maxZ;
 	if (enableAO)
 	{
-		tessellator->setColorOpaque_F(colorRedTopLeft, colorGreenTopLeft, colorBlueTopLeft);
-		tessellator->setBrightness(brightnessTopLeft);
-		tessellator->addVertexWithUV(d12, d15, d16, d3, d5);
-		tessellator->setColorOpaque_F(colorRedBottomLeft, colorGreenBottomLeft, colorBlueBottomLeft);
-		tessellator->setBrightness(brightnessBottomLeft);
-		tessellator->addVertexWithUV(d12, d14, d16, d9, d11);
-		tessellator->setColorOpaque_F(colorRedBottomRight, colorGreenBottomRight, colorBlueBottomRight);
-		tessellator->setBrightness(brightnessBottomRight);
-		tessellator->addVertexWithUV(d13, d14, d16, d4, d6);
-		tessellator->setColorOpaque_F(colorRedTopRight, colorGreenTopRight, colorBlueTopRight);
-		tessellator->setBrightness(brightnessTopRight);
-		tessellator->addVertexWithUV(d13, d15, d16, d8, d10);
+		if (i != -1) { // If should use texture
+			tessellator->setColorOpaque_F(colorRedTopLeft, colorGreenTopLeft, colorBlueTopLeft);
+			tessellator->setBrightness(brightnessTopLeft);
+			tessellator->addVertexWithUV(d11, d13, d15, d8, d10);
+			tessellator->setColorOpaque_F(colorRedBottomLeft, colorGreenBottomLeft, colorBlueBottomLeft);
+			tessellator->setBrightness(brightnessBottomLeft);
+			tessellator->addVertexWithUV(d11, d13, d14, d3, d5);
+			tessellator->setColorOpaque_F(colorRedBottomRight, colorGreenBottomRight, colorBlueBottomRight);
+			tessellator->setBrightness(brightnessBottomRight);
+			tessellator->addVertexWithUV(d12, d13, d14, d7, d9);
+			tessellator->setColorOpaque_F(colorRedTopRight, colorGreenTopRight, colorBlueTopRight);
+			tessellator->setBrightness(brightnessTopRight);
+			tessellator->addVertexWithUV(d12, d13, d15, d4, d6);
+		}
+		else {
+			int_t color = block->blockMaterial->materialMapColor->colorValue;
+			float r = ((color >> 16) & 0xFF) / 255.0f;
+			float g = ((color >> 8)  & 0xFF) / 255.0f;
+			float b = (color & 0xFF) / 255.0f;
+
+			tessellator->setColorOpaque_F(r, g, b);
+
+
+			tessellator->addVertex(d11, d13, d15);
+			tessellator->addVertex(d11, d13, d14);
+			tessellator->addVertex(d12, d13, d14);
+			tessellator->addVertex(d12, d13, d15);
+		}
 	}
 	else
 	{
-		tessellator->addVertexWithUV(d12, d15, d16, d3, d5);
-		tessellator->addVertexWithUV(d12, d14, d16, d9, d11);
-		tessellator->addVertexWithUV(d13, d14, d16, d4, d6);
-		tessellator->addVertexWithUV(d13, d15, d16, d8, d10);
+		if (i != -1) {
+			tessellator->addVertexWithUV(d11, d13, d15, d8, d10);
+			tessellator->addVertexWithUV(d11, d13, d14, d3, d5);
+			tessellator->addVertexWithUV(d12, d13, d14, d7, d9);
+			tessellator->addVertexWithUV(d12, d13, d15, d4, d6);
+		}
+		else {
+			int_t color = block->blockMaterial->materialMapColor->colorValue;
+			float r = ((color >> 16) & 0xFF) / 255.0f;
+			float g = ((color >> 8)  & 0xFF) / 255.0f;
+			float b = (color & 0xFF) / 255.0f;
+
+			tessellator->setColorOpaque_F(r, g, b);
+
+
+			tessellator->addVertex(d11, d13, d15);
+			tessellator->addVertex(d11, d13, d14);
+			tessellator->addVertex(d12, d13, d14);
+			tessellator->addVertex(d12, d13, d15);
+		}
 	}
 	restoreNaturalTextureTransform();
 }
@@ -4544,25 +4640,57 @@ void RenderBlocks::renderNorthFace(Block *block, tess_coord_t d, tess_coord_t d1
 	tess_coord_t d16 = (tess_coord_t)d2 + (tess_coord_t)block->maxZ;
 	if (enableAO)
 	{
-		tessellator->setColorOpaque_F(colorRedTopLeft, colorGreenTopLeft, colorBlueTopLeft);
-		tessellator->setBrightness(brightnessTopLeft);
-		tessellator->addVertexWithUV(d12, d14, d16, d8, d10);
-		tessellator->setColorOpaque_F(colorRedBottomLeft, colorGreenBottomLeft, colorBlueBottomLeft);
-		tessellator->setBrightness(brightnessBottomLeft);
-		tessellator->addVertexWithUV(d12, d14, d15, d3, d5);
-		tessellator->setColorOpaque_F(colorRedBottomRight, colorGreenBottomRight, colorBlueBottomRight);
-		tessellator->setBrightness(brightnessBottomRight);
-		tessellator->addVertexWithUV(d12, d13, d15, d9, d11);
-		tessellator->setColorOpaque_F(colorRedTopRight, colorGreenTopRight, colorBlueTopRight);
-		tessellator->setBrightness(brightnessTopRight);
-		tessellator->addVertexWithUV(d12, d13, d16, d4, d6);
+		if (i != -1) { // If should use texture
+			tessellator->setColorOpaque_F(colorRedTopLeft, colorGreenTopLeft, colorBlueTopLeft);
+			tessellator->setBrightness(brightnessTopLeft);
+			tessellator->addVertexWithUV(d11, d13, d15, d8, d10);
+			tessellator->setColorOpaque_F(colorRedBottomLeft, colorGreenBottomLeft, colorBlueBottomLeft);
+			tessellator->setBrightness(brightnessBottomLeft);
+			tessellator->addVertexWithUV(d11, d13, d14, d3, d5);
+			tessellator->setColorOpaque_F(colorRedBottomRight, colorGreenBottomRight, colorBlueBottomRight);
+			tessellator->setBrightness(brightnessBottomRight);
+			tessellator->addVertexWithUV(d12, d13, d14, d7, d9);
+			tessellator->setColorOpaque_F(colorRedTopRight, colorGreenTopRight, colorBlueTopRight);
+			tessellator->setBrightness(brightnessTopRight);
+			tessellator->addVertexWithUV(d12, d13, d15, d4, d6);
+		}
+		else {
+			int_t color = block->blockMaterial->materialMapColor->colorValue;
+			float r = ((color >> 16) & 0xFF) / 255.0f;
+			float g = ((color >> 8)  & 0xFF) / 255.0f;
+			float b = (color & 0xFF) / 255.0f;
+
+			tessellator->setColorOpaque_F(r, g, b);
+
+
+			tessellator->addVertex(d11, d13, d15);
+			tessellator->addVertex(d11, d13, d14);
+			tessellator->addVertex(d12, d13, d14);
+			tessellator->addVertex(d12, d13, d15);
+		}
 	}
 	else
 	{
-		tessellator->addVertexWithUV(d12, d14, d16, d8, d10);
-		tessellator->addVertexWithUV(d12, d14, d15, d3, d5);
-		tessellator->addVertexWithUV(d12, d13, d15, d9, d11);
-		tessellator->addVertexWithUV(d12, d13, d16, d4, d6);
+		if (i != -1) {
+			tessellator->addVertexWithUV(d11, d13, d15, d8, d10);
+			tessellator->addVertexWithUV(d11, d13, d14, d3, d5);
+			tessellator->addVertexWithUV(d12, d13, d14, d7, d9);
+			tessellator->addVertexWithUV(d12, d13, d15, d4, d6);
+		}
+		else {
+			int_t color = block->blockMaterial->materialMapColor->colorValue;
+			float r = ((color >> 16) & 0xFF) / 255.0f;
+			float g = ((color >> 8)  & 0xFF) / 255.0f;
+			float b = (color & 0xFF) / 255.0f;
+
+			tessellator->setColorOpaque_F(r, g, b);
+
+
+			tessellator->addVertex(d11, d13, d15);
+			tessellator->addVertex(d11, d13, d14);
+			tessellator->addVertex(d12, d13, d14);
+			tessellator->addVertex(d12, d13, d15);
+		}
 	}
 	restoreNaturalTextureTransform();
 }
@@ -4652,25 +4780,57 @@ void RenderBlocks::renderSouthFace(Block *block, tess_coord_t d, tess_coord_t d1
 	tess_coord_t d16 = (tess_coord_t)d2 + (tess_coord_t)block->maxZ;
 	if (enableAO)
 	{
-		tessellator->setColorOpaque_F(colorRedTopLeft, colorGreenTopLeft, colorBlueTopLeft);
-		tessellator->setBrightness(brightnessTopLeft);
-		tessellator->addVertexWithUV(d12, d13, d16, d9, d11);
-		tessellator->setColorOpaque_F(colorRedBottomLeft, colorGreenBottomLeft, colorBlueBottomLeft);
-		tessellator->setBrightness(brightnessBottomLeft);
-		tessellator->addVertexWithUV(d12, d13, d15, d4, d6);
-		tessellator->setColorOpaque_F(colorRedBottomRight, colorGreenBottomRight, colorBlueBottomRight);
-		tessellator->setBrightness(brightnessBottomRight);
-		tessellator->addVertexWithUV(d12, d14, d15, d8, d10);
-		tessellator->setColorOpaque_F(colorRedTopRight, colorGreenTopRight, colorBlueTopRight);
-		tessellator->setBrightness(brightnessTopRight);
-		tessellator->addVertexWithUV(d12, d14, d16, d3, d5);
+		if (i != -1) { // If should use texture
+			tessellator->setColorOpaque_F(colorRedTopLeft, colorGreenTopLeft, colorBlueTopLeft);
+			tessellator->setBrightness(brightnessTopLeft);
+			tessellator->addVertexWithUV(d11, d13, d15, d8, d10);
+			tessellator->setColorOpaque_F(colorRedBottomLeft, colorGreenBottomLeft, colorBlueBottomLeft);
+			tessellator->setBrightness(brightnessBottomLeft);
+			tessellator->addVertexWithUV(d11, d13, d14, d3, d5);
+			tessellator->setColorOpaque_F(colorRedBottomRight, colorGreenBottomRight, colorBlueBottomRight);
+			tessellator->setBrightness(brightnessBottomRight);
+			tessellator->addVertexWithUV(d12, d13, d14, d7, d9);
+			tessellator->setColorOpaque_F(colorRedTopRight, colorGreenTopRight, colorBlueTopRight);
+			tessellator->setBrightness(brightnessTopRight);
+			tessellator->addVertexWithUV(d12, d13, d15, d4, d6);
+		}
+		else {
+			int_t color = block->blockMaterial->materialMapColor->colorValue;
+			float r = ((color >> 16) & 0xFF) / 255.0f;
+			float g = ((color >> 8)  & 0xFF) / 255.0f;
+			float b = (color & 0xFF) / 255.0f;
+
+			tessellator->setColorOpaque_F(r, g, b);
+
+
+			tessellator->addVertex(d11, d13, d15);
+			tessellator->addVertex(d11, d13, d14);
+			tessellator->addVertex(d12, d13, d14);
+			tessellator->addVertex(d12, d13, d15);
+		}
 	}
 	else
 	{
-		tessellator->addVertexWithUV(d12, d13, d16, d9, d11);
-		tessellator->addVertexWithUV(d12, d13, d15, d4, d6);
-		tessellator->addVertexWithUV(d12, d14, d15, d8, d10);
-		tessellator->addVertexWithUV(d12, d14, d16, d3, d5);
+		if (i != -1) {
+			tessellator->addVertexWithUV(d11, d13, d15, d8, d10);
+			tessellator->addVertexWithUV(d11, d13, d14, d3, d5);
+			tessellator->addVertexWithUV(d12, d13, d14, d7, d9);
+			tessellator->addVertexWithUV(d12, d13, d15, d4, d6);
+		}
+		else {
+			int_t color = block->blockMaterial->materialMapColor->colorValue;
+			float r = ((color >> 16) & 0xFF) / 255.0f;
+			float g = ((color >> 8)  & 0xFF) / 255.0f;
+			float b = (color & 0xFF) / 255.0f;
+
+			tessellator->setColorOpaque_F(r, g, b);
+
+
+			tessellator->addVertex(d11, d13, d15);
+			tessellator->addVertex(d11, d13, d14);
+			tessellator->addVertex(d12, d13, d14);
+			tessellator->addVertex(d12, d13, d15);
+		}
 	}
 	restoreNaturalTextureTransform();
 }
