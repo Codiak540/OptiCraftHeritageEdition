@@ -250,16 +250,16 @@ bool RenderBlocks::renderBlockFenceGate(Block *block, int_t x, int_t y, int_t z)
     if (direction != 3 && direction != 1)
     {
         minA = 0.0f; maxA = 2.0f / 16.0f; minB = 7.0f / 16.0f; maxB = 9.0f / 16.0f;
-        gate->setBlockBounds(minA, 5.0f / 16.0f, minB, maxA, 1.0f, maxB); renderStandardBlock(gate, x, y, z);
+        gate->setBlockBounds(minA, 5.0f / 16.0f, minB, maxA, 1.0f, maxB); renderStandardBlock(gate, x, y, z, true);
         minA = 14.0f / 16.0f; maxA = 1.0f;
-        gate->setBlockBounds(minA, 5.0f / 16.0f, minB, maxA, 1.0f, maxB); renderStandardBlock(gate, x, y, z);
+        gate->setBlockBounds(minA, 5.0f / 16.0f, minB, maxA, 1.0f, maxB); renderStandardBlock(gate, x, y, z, true);
     }
     else
     {
         minA = 7.0f / 16.0f; maxA = 9.0f / 16.0f; minB = 0.0f; maxB = 2.0f / 16.0f;
-        gate->setBlockBounds(minA, 5.0f / 16.0f, minB, maxA, 1.0f, maxB); renderStandardBlock(gate, x, y, z);
+        gate->setBlockBounds(minA, 5.0f / 16.0f, minB, maxA, 1.0f, maxB); renderStandardBlock(gate, x, y, z, true);
         minB = 14.0f / 16.0f; maxB = 1.0f;
-        gate->setBlockBounds(minA, 5.0f / 16.0f, minB, maxA, 1.0f, maxB); renderStandardBlock(gate, x, y, z);
+        gate->setBlockBounds(minA, 5.0f / 16.0f, minB, maxA, 1.0f, maxB); renderStandardBlock(gate, x, y, z, true);
     }
 
     if (!open)
@@ -267,65 +267,65 @@ bool RenderBlocks::renderBlockFenceGate(Block *block, int_t x, int_t y, int_t z)
         if (direction != 3 && direction != 1)
         {
             minA = 6.0f / 16.0f; maxA = 0.5f; minB = 7.0f / 16.0f; maxB = 9.0f / 16.0f;
-            gate->setBlockBounds(minA, 6.0f / 16.0f, minB, maxA, 15.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z);
+            gate->setBlockBounds(minA, 6.0f / 16.0f, minB, maxA, 15.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z, true);
             minA = 0.5f; maxA = 10.0f / 16.0f;
-            gate->setBlockBounds(minA, 6.0f / 16.0f, minB, maxA, 15.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z);
+            gate->setBlockBounds(minA, 6.0f / 16.0f, minB, maxA, 15.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z, true);
             minA = 10.0f / 16.0f; maxA = 14.0f / 16.0f;
-            gate->setBlockBounds(minA, 6.0f / 16.0f, minB, maxA, 9.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z);
-            gate->setBlockBounds(minA, 12.0f / 16.0f, minB, maxA, 15.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z);
+            gate->setBlockBounds(minA, 6.0f / 16.0f, minB, maxA, 9.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z, true);
+            gate->setBlockBounds(minA, 12.0f / 16.0f, minB, maxA, 15.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z, true);
             minA = 2.0f / 16.0f; maxA = 6.0f / 16.0f;
-            gate->setBlockBounds(minA, 6.0f / 16.0f, minB, maxA, 9.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z);
-            gate->setBlockBounds(minA, 12.0f / 16.0f, minB, maxA, 15.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z);
+            gate->setBlockBounds(minA, 6.0f / 16.0f, minB, maxA, 9.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z, true);
+            gate->setBlockBounds(minA, 12.0f / 16.0f, minB, maxA, 15.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z, true);
         }
         else
         {
             minA = 7.0f / 16.0f; maxA = 9.0f / 16.0f; minB = 6.0f / 16.0f; maxB = 0.5f;
-            gate->setBlockBounds(minA, 6.0f / 16.0f, minB, maxA, 15.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z);
+            gate->setBlockBounds(minA, 6.0f / 16.0f, minB, maxA, 15.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z, true);
             minB = 0.5f; maxB = 10.0f / 16.0f;
-            gate->setBlockBounds(minA, 6.0f / 16.0f, minB, maxA, 15.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z);
+            gate->setBlockBounds(minA, 6.0f / 16.0f, minB, maxA, 15.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z, true);
             minB = 10.0f / 16.0f; maxB = 14.0f / 16.0f;
-            gate->setBlockBounds(minA, 6.0f / 16.0f, minB, maxA, 9.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z);
-            gate->setBlockBounds(minA, 12.0f / 16.0f, minB, maxA, 15.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z);
+            gate->setBlockBounds(minA, 6.0f / 16.0f, minB, maxA, 9.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z, true);
+            gate->setBlockBounds(minA, 12.0f / 16.0f, minB, maxA, 15.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z, true);
             minB = 2.0f / 16.0f; maxB = 6.0f / 16.0f;
-            gate->setBlockBounds(minA, 6.0f / 16.0f, minB, maxA, 9.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z);
-            gate->setBlockBounds(minA, 12.0f / 16.0f, minB, maxA, 15.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z);
+            gate->setBlockBounds(minA, 6.0f / 16.0f, minB, maxA, 9.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z, true);
+            gate->setBlockBounds(minA, 12.0f / 16.0f, minB, maxA, 15.0f / 16.0f, maxB); renderStandardBlock(gate, x, y, z, true);
         }
     }
     else if (direction == 3)
     {
-        gate->setBlockBounds(13.0f/16,6.0f/16,0,15.0f/16,15.0f/16,2.0f/16); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(13.0f/16,6.0f/16,14.0f/16,15.0f/16,15.0f/16,1); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(9.0f/16,6.0f/16,0,13.0f/16,9.0f/16,2.0f/16); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(9.0f/16,6.0f/16,14.0f/16,13.0f/16,9.0f/16,1); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(9.0f/16,12.0f/16,0,13.0f/16,15.0f/16,2.0f/16); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(9.0f/16,12.0f/16,14.0f/16,13.0f/16,15.0f/16,1); renderStandardBlock(gate,x,y,z);
+        gate->setBlockBounds(13.0f/16,6.0f/16,0,15.0f/16,15.0f/16,2.0f/16); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(13.0f/16,6.0f/16,14.0f/16,15.0f/16,15.0f/16,1); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(9.0f/16,6.0f/16,0,13.0f/16,9.0f/16,2.0f/16); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(9.0f/16,6.0f/16,14.0f/16,13.0f/16,9.0f/16,1); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(9.0f/16,12.0f/16,0,13.0f/16,15.0f/16,2.0f/16); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(9.0f/16,12.0f/16,14.0f/16,13.0f/16,15.0f/16,1); renderStandardBlock(gate,x,y,z, true);
     }
     else if (direction == 1)
     {
-        gate->setBlockBounds(1.0f/16,6.0f/16,0,3.0f/16,15.0f/16,2.0f/16); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(1.0f/16,6.0f/16,14.0f/16,3.0f/16,15.0f/16,1); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(3.0f/16,6.0f/16,0,7.0f/16,9.0f/16,2.0f/16); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(3.0f/16,6.0f/16,14.0f/16,7.0f/16,9.0f/16,1); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(3.0f/16,12.0f/16,0,7.0f/16,15.0f/16,2.0f/16); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(3.0f/16,12.0f/16,14.0f/16,7.0f/16,15.0f/16,1); renderStandardBlock(gate,x,y,z);
+        gate->setBlockBounds(1.0f/16,6.0f/16,0,3.0f/16,15.0f/16,2.0f/16); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(1.0f/16,6.0f/16,14.0f/16,3.0f/16,15.0f/16,1); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(3.0f/16,6.0f/16,0,7.0f/16,9.0f/16,2.0f/16); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(3.0f/16,6.0f/16,14.0f/16,7.0f/16,9.0f/16,1); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(3.0f/16,12.0f/16,0,7.0f/16,15.0f/16,2.0f/16); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(3.0f/16,12.0f/16,14.0f/16,7.0f/16,15.0f/16,1); renderStandardBlock(gate,x,y,z, true);
     }
     else if (direction == 0)
     {
-        gate->setBlockBounds(0,6.0f/16,13.0f/16,2.0f/16,15.0f/16,15.0f/16); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(14.0f/16,6.0f/16,13.0f/16,1,15.0f/16,15.0f/16); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(0,6.0f/16,9.0f/16,2.0f/16,9.0f/16,13.0f/16); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(14.0f/16,6.0f/16,9.0f/16,1,9.0f/16,13.0f/16); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(0,12.0f/16,9.0f/16,2.0f/16,15.0f/16,13.0f/16); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(14.0f/16,12.0f/16,9.0f/16,1,15.0f/16,13.0f/16); renderStandardBlock(gate,x,y,z);
+        gate->setBlockBounds(0,6.0f/16,13.0f/16,2.0f/16,15.0f/16,15.0f/16); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(14.0f/16,6.0f/16,13.0f/16,1,15.0f/16,15.0f/16); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(0,6.0f/16,9.0f/16,2.0f/16,9.0f/16,13.0f/16); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(14.0f/16,6.0f/16,9.0f/16,1,9.0f/16,13.0f/16); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(0,12.0f/16,9.0f/16,2.0f/16,15.0f/16,13.0f/16); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(14.0f/16,12.0f/16,9.0f/16,1,15.0f/16,13.0f/16); renderStandardBlock(gate,x,y,z, true);
     }
     else if (direction == 2)
     {
-        gate->setBlockBounds(0,6.0f/16,1.0f/16,2.0f/16,15.0f/16,3.0f/16); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(14.0f/16,6.0f/16,1.0f/16,1,15.0f/16,3.0f/16); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(0,6.0f/16,3.0f/16,2.0f/16,9.0f/16,7.0f/16); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(14.0f/16,6.0f/16,3.0f/16,1,9.0f/16,7.0f/16); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(0,12.0f/16,3.0f/16,2.0f/16,15.0f/16,7.0f/16); renderStandardBlock(gate,x,y,z);
-        gate->setBlockBounds(14.0f/16,12.0f/16,3.0f/16,1,15.0f/16,7.0f/16); renderStandardBlock(gate,x,y,z);
+        gate->setBlockBounds(0,6.0f/16,1.0f/16,2.0f/16,15.0f/16,3.0f/16); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(14.0f/16,6.0f/16,1.0f/16,1,15.0f/16,3.0f/16); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(0,6.0f/16,3.0f/16,2.0f/16,9.0f/16,7.0f/16); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(14.0f/16,6.0f/16,3.0f/16,1,9.0f/16,7.0f/16); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(0,12.0f/16,3.0f/16,2.0f/16,15.0f/16,7.0f/16); renderStandardBlock(gate,x,y,z, true);
+        gate->setBlockBounds(14.0f/16,12.0f/16,3.0f/16,1,15.0f/16,7.0f/16); renderStandardBlock(gate,x,y,z, true);
     }
 
     gate->setBlockBounds(0, 0, 0, 1, 1, 1);
@@ -379,7 +379,7 @@ bool RenderBlocks::renderBlockLilyPad(Block *block, int_t x, int_t y, int_t z)
 
 bool RenderBlocks::renderBlockCauldron(Block *block, int_t x, int_t y, int_t z)
 {
-    renderStandardBlock(block, x, y, z);
+    renderStandardBlock(block, x, y, z, true);
     Tessellator &tessellator = Tessellator::instance;
     tessellator.setBrightness(block->getMixedBrightnessForBlock(blockAccess, x, y, z));
     setBlockColor(tessellator, block, blockAccess, x, y, z);
@@ -404,11 +404,11 @@ bool RenderBlocks::renderBlockCauldron(Block *block, int_t x, int_t y, int_t z)
 
 bool RenderBlocks::renderBlockBrewingStand(Block *block, int_t x, int_t y, int_t z)
 {
-    block->setBlockBounds(7.0f/16,0,7.0f/16,9.0f/16,14.0f/16,9.0f/16); renderStandardBlock(block,x,y,z);
+    block->setBlockBounds(7.0f/16,0,7.0f/16,9.0f/16,14.0f/16,9.0f/16); renderStandardBlock(block,x,y,z, true);
     overrideBlockTexture = 156;
-    block->setBlockBounds(9.0f/16,0,5.0f/16,15.0f/16,2.0f/16,11.0f/16); renderStandardBlock(block,x,y,z);
-    block->setBlockBounds(2.0f/16,0,1.0f/16,0.5f,2.0f/16,7.0f/16); renderStandardBlock(block,x,y,z);
-    block->setBlockBounds(2.0f/16,0,9.0f/16,0.5f,2.0f/16,15.0f/16); renderStandardBlock(block,x,y,z);
+    block->setBlockBounds(9.0f/16,0,5.0f/16,15.0f/16,2.0f/16,11.0f/16); renderStandardBlock(block,x,y,z, true);
+    block->setBlockBounds(2.0f/16,0,1.0f/16,0.5f,2.0f/16,7.0f/16); renderStandardBlock(block,x,y,z, true);
+    block->setBlockBounds(2.0f/16,0,9.0f/16,0.5f,2.0f/16,15.0f/16); renderStandardBlock(block,x,y,z, true);
     clearOverrideBlockTexture();
 
     Tessellator &tessellator = Tessellator::instance;
@@ -463,12 +463,12 @@ bool RenderBlocks::renderBlockEndPortalFrame(Block *block, int_t x, int_t y, int
     else if (direction == 1) topFaceRotation = 2;
 
     block->setBlockBounds(0, 0, 0, 1, 13.0f / 16.0f, 1);
-    renderStandardBlock(block, x, y, z);
+    renderStandardBlock(block, x, y, z, true);
     if (BlockEndPortalFrame::isEnderEyeInserted(metadata))
     {
         overrideBlockTexture = 174;
         block->setBlockBounds(0.25f, 13.0f/16, 0.25f, 12.0f/16, 1, 12.0f/16);
-        renderStandardBlock(block, x, y, z);
+        renderStandardBlock(block, x, y, z, true);
         clearOverrideBlockTexture();
     }
     block->setBlockBoundsForItemRender();
@@ -499,7 +499,7 @@ bool RenderBlocks::renderBlockDragonEgg(Block *block, int_t x, int_t y, int_t z)
         const float bottom = 1.0f - static_cast<float>(accumulatedHeight + heightUnits) / 16.0f;
         accumulatedHeight += heightUnits;
         block->setBlockBounds(0.5f-radius,bottom,0.5f-radius,0.5f+radius,top,0.5f+radius);
-        renderStandardBlock(block,x,y,z);
+        renderStandardBlock(block,x,y,z, true);
     }
     block->setBlockBounds(0,0,0,1,1,1);
     return true;

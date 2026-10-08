@@ -8,7 +8,7 @@ class MapColor;
 class Material
 {
 public:
-	Material(MapColor *mapcolor);
+	explicit Material(MapColor *mapcolor);
 	virtual ~Material() = default;
 
 	virtual bool getIsLiquid();

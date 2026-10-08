@@ -18,13 +18,16 @@ class Vec3D;
 class RenderBlocks
 {
 public:
-	RenderBlocks(IBlockAccess *iblockaccess);
+	explicit RenderBlocks(IBlockAccess *iblockaccess);
 	RenderBlocks();
 
 	void renderBlockUsingTexture(Block *block, int_t i, int_t j, int_t k, int_t l);
+
+	void renderBlockFakeMipped(Block *block, int_t i, int_t j, int_t k);
+
 	void clearOverrideBlockTexture() { overrideBlockTexture = -1; }
 	void renderBlockAllFaces(Block *block, int_t i, int_t j, int_t k); // func_31075_a
-	bool renderBlockByRenderType(Block *block, int_t i, int_t j, int_t k);
+	bool renderBlockByRenderType(Block *block, int_t i, int_t j, int_t k, bool useTexture);
 #if PLATFORM_PC_LEGACY
 	bool renderSimpleOpaqueCubeLegacy(Block *block, int_t i, int_t j, int_t k, unsigned char faceMask);
 	bool renderSimpleOpaqueCubeWithColorMultiplierLegacy(Block *block, int_t i, int_t j, int_t k, unsigned char faceMask, int_t metadata, float red, float green, float blue, bool usePackedWhiteFaceState);
@@ -146,9 +149,9 @@ public:
 	// Renombrado de func_1224_a: calcula altura de fluido
 	float getFluidHeight(int_t i, int_t j, int_t k, Material *material);
 	void renderBlockFallingSand(Block *block, World *world, int_t i, int_t j, int_t k);
-	bool renderStandardBlock(Block *block, int_t i, int_t j, int_t k);
-	bool renderStandardBlockWithAmbientOcclusion(Block *block, int_t i, int_t j, int_t k, float f, float f1, float f2);
-	bool renderStandardBlockWithColorMultiplier(Block *block, int_t i, int_t j, int_t k, float f, float f1, float f2);
+	bool renderStandardBlock(Block *block, int_t i, int_t j, int_t k, bool useTexture);
+	bool renderStandardBlockWithAmbientOcclusion(Block *block, int_t i, int_t j, int_t k, float f, float f1, float f2, bool useTexture);
+	bool renderStandardBlockWithColorMultiplier(Block *block, int_t i, int_t j, int_t k, float f, float f1, float f2, bool useTexture);
 	bool renderBlockCactus(Block *block, int_t i, int_t j, int_t k);
 	// Renombrado de func_1230_b: renderiza cactus con multiplicador de color
 	bool renderCactusWithColorMultiplier(Block *block, int_t i, int_t j, int_t k, float f, float f1, float f2);

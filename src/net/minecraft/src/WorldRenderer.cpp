@@ -554,9 +554,9 @@ void WorldRenderer::updateRenderer()
 					if (simpleCube)
 						drewAnything |= renderblocks.renderSimpleOpaqueCube3ds(block, x, y, z, exposedFaceMask);
 					else
-						drewAnything |= renderblocks.renderBlockByRenderType(block, x, y, z);
+						drewAnything |= renderblocks.renderBlockByRenderType(block, x, y, z, true);
 #else
-					drewAnything |= renderblocks.renderBlockByRenderType(block, x, y, z);
+					drewAnything |= renderblocks.renderBlockByRenderType(block, x, y, z, true);
 #endif
 				}
 			}

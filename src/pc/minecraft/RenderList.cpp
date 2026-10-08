@@ -1,6 +1,6 @@
-#include "net/minecraft/src/RenderList.h"
+#include "RenderList.h"
 
-#include "net/minecraft/src/WorldRenderer.h"
+#include "WorldRenderer.h"
 #include "platform/RenderAPI.h"
 
 RenderList::RenderList()
@@ -27,7 +27,7 @@ void RenderList::setup(int i, int j, int k, double d, double d1, double d2)
     viewerZ = d2;
 }
 
-bool RenderList::matchesPos(int i, int j, int k)
+bool RenderList::matchesPos(int i, int j, int k) const
 {
     return initialized && i == originX && j == originY && k == originZ;
 }
@@ -46,7 +46,7 @@ void RenderList::addTerrainRenderer(WorldRenderer *renderer, int_t pass)
         render();
 }
 
-void RenderList::render()
+void RenderList::render() const
 {
     if (!initialized)
         return;

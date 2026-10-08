@@ -21,4 +21,6 @@ public:
 	int_t sideHit = 0;
 	Vec3D *hitVec = nullptr;
 	Entity *entityHit = nullptr;
+
+	[[nodiscard]] bool closerThan(double x, double y, double z, int radius) const;
 };

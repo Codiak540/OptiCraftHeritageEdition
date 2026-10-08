@@ -1,7 +1,8 @@
 #pragma once
 
-#include "GuiScreen.h"
 #include <string>
+
+#include "GuiScreen.h"
 
 class GuiSlotMods;
 class GuiButton;

@@ -14,9 +14,10 @@ public:
     RenderList();
 
     void setup(int i, int j, int k, double d, double d1, double d2);
-    bool matchesPos(int i, int j, int k);
+
+    [[nodiscard]] bool matchesPos(int i, int j, int k) const;
     void addTerrainRenderer(WorldRenderer *renderer, int_t pass);
-    void render();
+    void render() const;
     void reset();
 
 private:

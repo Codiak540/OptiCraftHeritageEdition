@@ -16,6 +16,7 @@
 #include "BlockRedstoneWire.h"
 #include "BlockTallGrass.h"
 #include "ChunkCache.h"
+#include "MapColor.h"
 #if PLATFORM_PC_LEGACY
 #include "pc/render/PcLegacySectionCache.h"
 #include "pc/render/PcLegacyBlockRenderInfo.h"
@@ -375,14 +376,14 @@ bool RenderBlocks::renderSimpleOpaqueCubePs2(Block *block, int_t i, int_t j, int
 	const bool unitBounds = block->minX == 0.0 && block->minY == 0.0 && block->minZ == 0.0 &&
 		block->maxX == 1.0 && block->maxY == 1.0 && block->maxZ == 1.0;
 	if (!unitBounds)
-		return renderBlockByRenderType(block, i, j, k);
+		return renderBlockByRenderType(block, i, j, k, true);
 
 	ps2FaceMask = faceMask;
 	ps2FaceMaskActive = true;
 	ps2FaceX = i;
 	ps2FaceY = j;
 	ps2FaceZ = k;
-	const bool rendered = renderStandardBlock(block, i, j, k);
+	const bool rendered = renderStandardBlock(block, i, j, k, true);
 	ps2FaceMaskActive = false;
 	return rendered;
 }
@@ -398,14 +399,14 @@ bool RenderBlocks::renderSimpleOpaqueCubeWii(Block *block, int_t i, int_t j, int
 	const bool unitBounds = block->minX == 0.0 && block->minY == 0.0 && block->minZ == 0.0 &&
 		block->maxX == 1.0 && block->maxY == 1.0 && block->maxZ == 1.0;
 	if (!unitBounds)
-		return renderBlockByRenderType(block, i, j, k);
+		return renderBlockByRenderType(block, i, j, k, true);
 
 	wiiFaceMask = faceMask;
 	wiiFaceMaskActive = true;
 	wiiFaceX = i;
 	wiiFaceY = j;
 	wiiFaceZ = k;
-	const bool rendered = renderStandardBlock(block, i, j, k);
+	const bool rendered = renderStandardBlock(block, i, j, k, true);
 	wiiFaceMaskActive = false;
 	return rendered;
 }
@@ -423,14 +424,14 @@ bool RenderBlocks::renderSimpleOpaqueCube3ds(Block *block, int_t i, int_t j, int
 	const bool unitBounds = block->minX == 0.0 && block->minY == 0.0 && block->minZ == 0.0 &&
 		block->maxX == 1.0 && block->maxY == 1.0 && block->maxZ == 1.0;
 	if (!unitBounds)
-		return renderBlockByRenderType(block, i, j, k);
+		return renderBlockByRenderType(block, i, j, k, true);
 
 	dsFaceMask = faceMask;
 	dsFaceMaskActive = true;
 	dsFaceX = i;
 	dsFaceY = j;
 	dsFaceZ = k;
-	const bool rendered = renderStandardBlock(block, i, j, k);
+	const bool rendered = renderStandardBlock(block, i, j, k, true);
 	dsFaceMaskActive = false;
 	return rendered;
 }
@@ -487,7 +488,7 @@ bool RenderBlocks::renderSimpleOpaqueCubeLegacy(Block *block, int_t i, int_t j, 
 	pcLegacyFaceX = i;
 	pcLegacyFaceY = j;
 	pcLegacyFaceZ = k;
-	const bool rendered = renderStandardBlock(block, i, j, k);
+	const bool rendered = renderStandardBlock(block, i, j, k, true);
 	pcLegacyFaceMaskActive = false;
 	return rendered;
 }
@@ -730,18 +731,25 @@ bool RenderBlocks::renderSimpleOpaqueCubeWithColorMultiplierLegacy(Block *block,
 void RenderBlocks::renderBlockUsingTexture(Block *block, int_t i, int_t j, int_t k, int_t l)
 {
 	overrideBlockTexture = l;
-	renderBlockByRenderType(block, i, j, k);
+	renderBlockByRenderType(block, i, j, k, true);
+	clearOverrideBlockTexture();
+}
+
+void RenderBlocks::renderBlockFakeMipped(Block *block, int_t i, int_t j, int_t k)
+{
+	overrideBlockTexture = 0;
+	renderBlockByRenderType(block, i, j, k, false);
 	clearOverrideBlockTexture();
 }
 
 void RenderBlocks::renderBlockAllFaces(Block *block, int_t i, int_t j, int_t k)
 {
 	renderAllFaces = true;
-	renderBlockByRenderType(block, i, j, k);
+	renderBlockByRenderType(block, i, j, k, true);
 	renderAllFaces = false;
 }
 
-bool RenderBlocks::renderBlockByRenderType(Block *block, int_t i, int_t j, int_t k)
+bool RenderBlocks::renderBlockByRenderType(Block *block, int_t i, int_t j, int_t k, bool useTexture)
 {
 #if PLATFORM_PC_LEGACY
 	const PcLegacyBlockRenderInfo &legacyInfo = pcLegacyGetBlockRenderInfo(block->blockID);
@@ -763,7 +771,7 @@ bool RenderBlocks::renderBlockByRenderType(Block *block, int_t i, int_t j, int_t
 	block->setBlockBoundsBasedOnState(blockAccess, i, j, k);
 	if (l == 0)
 	{
-		return renderStandardBlock(block, i, j, k);
+		return renderStandardBlock(block, i, j, k, useTexture);
 	}
 	if (l == 4)
 	{
@@ -803,7 +811,7 @@ bool RenderBlocks::renderBlockByRenderType(Block *block, int_t i, int_t j, int_t
 	}
 	if (l == 9)
 	{
-		return renderBlockMinecartTrack((BlockRail *)block, i, j, k);
+		return renderBlockMinecartTrack(dynamic_cast<BlockRail *>(block), i, j, k);
 	}
 	if (l == 10)
 	{
@@ -1046,13 +1054,13 @@ void RenderBlocks::renderBetterSnow(int_t x, int_t y, int_t z, double maxY)
 
 	if (maxY < 0.0)
 	{
-		renderStandardBlock(Block::snow, x, y, z);
+		renderStandardBlock(Block::snow, x, y, z, true);
 		return;
 	}
 
 	const double oldMaxY = Block::snow->maxY;
 	Block::snow->maxY = maxY;
-	renderStandardBlock(Block::snow, x, y, z);
+	renderStandardBlock(Block::snow, x, y, z, true);
 	Block::snow->maxY = oldMaxY;
 }
 
@@ -1094,7 +1102,7 @@ bool RenderBlocks::renderBlockRepeater(Block *block, int_t i, int_t j, int_t k)
 	int_t l = accessGetBlockMetadata(i, j, k);
 	int_t i1 = l & 3;
 	int_t j1 = (l & 0xc) >> 2;
-	renderStandardBlock(block, i, j, k);
+	renderStandardBlock(block, i, j, k, true);
 	Tessellator *tessellator = &Tessellator::instance;
 	tessellator->setBrightness(block->getMixedBrightnessForBlock(blockAccess, i, j, k));
 	tessellator->setColorOpaque_F(1.0f, 1.0f, 1.0f);
@@ -1222,7 +1230,7 @@ bool RenderBlocks::renderPistonBase(Block *block, int_t i, int_t j, int_t k, boo
 			block->setBlockBounds(0.0f, 0.0f, 0.0f, 0.75f, 1.0f, 1.0f);
 			break;
 		}
-		renderStandardBlock(block, i, j, k);
+		renderStandardBlock(block, i, j, k, true);
 		eastFaceRotation = 0;
 		westFaceRotation = 0;
 		southFaceRotation = 0;
@@ -1264,7 +1272,7 @@ bool RenderBlocks::renderPistonBase(Block *block, int_t i, int_t j, int_t k, boo
 			bottomFaceRotation = 2;
 			break;
 		}
-		renderStandardBlock(block, i, j, k);
+		renderStandardBlock(block, i, j, k, true);
 		eastFaceRotation = 0;
 		westFaceRotation = 0;
 		southFaceRotation = 0;
@@ -1360,7 +1368,7 @@ bool RenderBlocks::renderPistonExtension(Block *block, int_t i, int_t j, int_t k
 		southFaceRotation = 3;
 		northFaceRotation = 3;
 		block->setBlockBounds(0.0f, 0.0f, 0.0f, 1.0f, 0.25f, 1.0f);
-		renderStandardBlock(block, i, j, k);
+		renderStandardBlock(block, i, j, k, true);
 		renderPistonArmX((float)i + 0.375f, (float)i + 0.625f, (float)j + 0.25f, (float)j + 0.25f + f1, (float)k + 0.625f, (float)k + 0.625f, f * 0.8f, d);
 		renderPistonArmX((float)i + 0.625f, (float)i + 0.375f, (float)j + 0.25f, (float)j + 0.25f + f1, (float)k + 0.375f, (float)k + 0.375f, f * 0.8f, d);
 		renderPistonArmX((float)i + 0.375f, (float)i + 0.375f, (float)j + 0.25f, (float)j + 0.25f + f1, (float)k + 0.375f, (float)k + 0.625f, f * 0.6f, d);
@@ -1368,7 +1376,7 @@ bool RenderBlocks::renderPistonExtension(Block *block, int_t i, int_t j, int_t k
 		break;
 	case 1:
 		block->setBlockBounds(0.0f, 0.75f, 0.0f, 1.0f, 1.0f, 1.0f);
-		renderStandardBlock(block, i, j, k);
+		renderStandardBlock(block, i, j, k, true);
 		renderPistonArmX((float)i + 0.375f, (float)i + 0.625f, (((float)j - 0.25f) + 1.0f) - f1, ((float)j - 0.25f) + 1.0f, (float)k + 0.625f, (float)k + 0.625f, f * 0.8f, d);
 		renderPistonArmX((float)i + 0.625f, (float)i + 0.375f, (((float)j - 0.25f) + 1.0f) - f1, ((float)j - 0.25f) + 1.0f, (float)k + 0.375f, (float)k + 0.375f, f * 0.8f, d);
 		renderPistonArmX((float)i + 0.375f, (float)i + 0.375f, (((float)j - 0.25f) + 1.0f) - f1, ((float)j - 0.25f) + 1.0f, (float)k + 0.375f, (float)k + 0.625f, f * 0.6f, d);
@@ -1378,7 +1386,7 @@ bool RenderBlocks::renderPistonExtension(Block *block, int_t i, int_t j, int_t k
 		southFaceRotation = 1;
 		northFaceRotation = 2;
 		block->setBlockBounds(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.25f);
-		renderStandardBlock(block, i, j, k);
+		renderStandardBlock(block, i, j, k, true);
 		renderPistonArmY((float)i + 0.375f, (float)i + 0.375f, (float)j + 0.625f, (float)j + 0.375f, (float)k + 0.25f, (float)k + 0.25f + f1, f * 0.6f, d);
 		renderPistonArmY((float)i + 0.625f, (float)i + 0.625f, (float)j + 0.375f, (float)j + 0.625f, (float)k + 0.25f, (float)k + 0.25f + f1, f * 0.6f, d);
 		renderPistonArmY((float)i + 0.375f, (float)i + 0.625f, (float)j + 0.375f, (float)j + 0.375f, (float)k + 0.25f, (float)k + 0.25f + f1, f * 0.5f, d);
@@ -1390,7 +1398,7 @@ bool RenderBlocks::renderPistonExtension(Block *block, int_t i, int_t j, int_t k
 		topFaceRotation = 3;
 		bottomFaceRotation = 3;
 		block->setBlockBounds(0.0f, 0.0f, 0.75f, 1.0f, 1.0f, 1.0f);
-		renderStandardBlock(block, i, j, k);
+		renderStandardBlock(block, i, j, k, true);
 		renderPistonArmY((float)i + 0.375f, (float)i + 0.375f, (float)j + 0.625f, (float)j + 0.375f, (((float)k - 0.25f) + 1.0f) - f1, ((float)k - 0.25f) + 1.0f, f * 0.6f, d);
 		renderPistonArmY((float)i + 0.625f, (float)i + 0.625f, (float)j + 0.375f, (float)j + 0.625f, (((float)k - 0.25f) + 1.0f) - f1, ((float)k - 0.25f) + 1.0f, f * 0.6f, d);
 		renderPistonArmY((float)i + 0.375f, (float)i + 0.625f, (float)j + 0.375f, (float)j + 0.375f, (((float)k - 0.25f) + 1.0f) - f1, ((float)k - 0.25f) + 1.0f, f * 0.5f, d);
@@ -1402,7 +1410,7 @@ bool RenderBlocks::renderPistonExtension(Block *block, int_t i, int_t j, int_t k
 		topFaceRotation = 2;
 		bottomFaceRotation = 1;
 		block->setBlockBounds(0.0f, 0.0f, 0.0f, 0.25f, 1.0f, 1.0f);
-		renderStandardBlock(block, i, j, k);
+		renderStandardBlock(block, i, j, k, true);
 		renderPistonArmZ((float)i + 0.25f, (float)i + 0.25f + f1, (float)j + 0.375f, (float)j + 0.375f, (float)k + 0.625f, (float)k + 0.375f, f * 0.5f, d);
 		renderPistonArmZ((float)i + 0.25f, (float)i + 0.25f + f1, (float)j + 0.625f, (float)j + 0.625f, (float)k + 0.375f, (float)k + 0.625f, f, d);
 		renderPistonArmZ((float)i + 0.25f, (float)i + 0.25f + f1, (float)j + 0.375f, (float)j + 0.625f, (float)k + 0.375f, (float)k + 0.375f, f * 0.6f, d);
@@ -1414,7 +1422,7 @@ bool RenderBlocks::renderPistonExtension(Block *block, int_t i, int_t j, int_t k
 		topFaceRotation = 1;
 		bottomFaceRotation = 2;
 		block->setBlockBounds(0.75f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
-		renderStandardBlock(block, i, j, k);
+		renderStandardBlock(block, i, j, k, true);
 		renderPistonArmZ((((float)i - 0.25f) + 1.0f) - f1, ((float)i - 0.25f) + 1.0f, (float)j + 0.375f, (float)j + 0.375f, (float)k + 0.625f, (float)k + 0.375f, f * 0.5f, d);
 		renderPistonArmZ((((float)i - 0.25f) + 1.0f) - f1, ((float)i - 0.25f) + 1.0f, (float)j + 0.625f, (float)j + 0.625f, (float)k + 0.375f, (float)k + 0.625f, f, d);
 		renderPistonArmZ((((float)i - 0.25f) + 1.0f) - f1, ((float)i - 0.25f) + 1.0f, (float)j + 0.375f, (float)j + 0.625f, (float)k + 0.375f, (float)k + 0.375f, f * 0.6f, d);
@@ -1469,7 +1477,7 @@ bool RenderBlocks::renderBlockLever(Block *block, int_t i, int_t j, int_t k)
 	{
 		block->setBlockBounds(0.0f, 0.5f - f, 0.5f - f1, f2, 0.5f + f, 0.5f + f1);
 	}
-	renderStandardBlock(block, i, j, k);
+	renderStandardBlock(block, i, j, k, true);
 	if (!flag1)
 	{
 		clearOverrideBlockTexture();
@@ -2616,7 +2624,7 @@ void RenderBlocks::renderBlockFallingSand(Block *block, World *world, int_t i, i
 	tessellator->draw();
 }
 
-bool RenderBlocks::renderStandardBlock(Block *block, int_t i, int_t j, int_t k)
+bool RenderBlocks::renderStandardBlock(Block *block, int_t i, int_t j, int_t k, bool useTexture)
 {
 	int_t l = CustomColorizer::getColorMultiplier(block, blockAccess, i, j, k);
 	float f = (float)(l >> 16 & 0xff) / 255.0f;
@@ -2633,11 +2641,11 @@ bool RenderBlocks::renderStandardBlock(Block *block, int_t i, int_t j, int_t k)
 	}
 	if (Minecraft::isAmbientOcclusionEnabled() && Block::lightValue[block->blockID] == 0)
 	{
-		return renderStandardBlockWithAmbientOcclusion(block, i, j, k, f, f1, f2);
+		return renderStandardBlockWithAmbientOcclusion(block, i, j, k, f, f1, f2, useTexture);
 	}
 	else
 	{
-		return renderStandardBlockWithColorMultiplier(block, i, j, k, f, f1, f2);
+		return renderStandardBlockWithColorMultiplier(block, i, j, k, f, f1, f2, useTexture);
 	}
 }
 
@@ -2670,7 +2678,7 @@ int_t RenderBlocks::fixAoSideGrassTexture(int_t texture, int_t x, int_t y, int_t
 	return texture;
 }
 
-bool RenderBlocks::renderStandardBlockWithAmbientOcclusion(Block *block, int_t i, int_t j, int_t k, float f, float f1, float f2)
+bool RenderBlocks::renderStandardBlockWithAmbientOcclusion(Block *block, int_t i, int_t j, int_t k, float f, float f1, float f2, bool useTexture)
 {
 	const int_t aoBaseI = i;
 	const int_t aoBaseJ = j;
@@ -2916,7 +2924,7 @@ bool RenderBlocks::renderStandardBlockWithAmbientOcclusion(Block *block, int_t i
 		colorRedTopRight *= f25;
 		colorGreenTopRight *= f25;
 		colorBlueTopRight *= f25;
-		renderBottomFace(block, i, j, k, block->getBlockTexture(blockAccess, i, j, k, 0));
+		renderBottomFace(block, i, j, k, useTexture ? block->getBlockTexture(blockAccess, i, j, k, 0) : -1);
 		flag = true;
 	}
 	if (renderAllFaces || aoSideVisible(i, j + 1, k, 1))
@@ -3008,7 +3016,7 @@ bool RenderBlocks::renderStandardBlockWithAmbientOcclusion(Block *block, int_t i
 		colorRedTopRight *= f26;
 		colorGreenTopRight *= f26;
 		colorBlueTopRight *= f26;
-		renderTopFace(block, i, j, k, block->getBlockTexture(blockAccess, i, j, k, 1));
+		renderTopFace(block, i, j, k, useTexture ? block->getBlockTexture(blockAccess, i, j, k, 1) : -1);
 		flag = true;
 	}
 	if (renderAllFaces || aoSideVisible(i, j, k - 1, 2))
@@ -3214,7 +3222,7 @@ bool RenderBlocks::renderStandardBlockWithAmbientOcclusion(Block *block, int_t i
 		colorRedTopRight *= f28;
 		colorGreenTopRight *= f28;
 		colorBlueTopRight *= f28;
-		int_t i1 = block->getBlockTexture(blockAccess, i, j, k, 3);
+		int_t i1 = useTexture ? block->getBlockTexture(blockAccess, i, j, k, 3) : -1;
 		i1 = fixAoSideGrassTexture(i1, i, j, k, 3, f, f1, f2);
 		renderWestFace(block, i, j, k, i1);
 		if (fancyGrass && i1 == 3 && overrideBlockTexture < 0)
@@ -3328,7 +3336,7 @@ bool RenderBlocks::renderStandardBlockWithAmbientOcclusion(Block *block, int_t i
 		colorRedTopRight *= f29;
 		colorGreenTopRight *= f29;
 		colorBlueTopRight *= f29;
-		int_t j1 = block->getBlockTexture(blockAccess, i, j, k, 4);
+		int_t j1 = useTexture ? block->getBlockTexture(blockAccess, i, j, k, 4) : -1;
 		j1 = fixAoSideGrassTexture(j1, i, j, k, 4, f, f1, f2);
 		renderNorthFace(block, i, j, k, j1);
 		if (fancyGrass && j1 == 3 && overrideBlockTexture < 0)
@@ -3442,7 +3450,7 @@ bool RenderBlocks::renderStandardBlockWithAmbientOcclusion(Block *block, int_t i
 		colorRedTopRight *= f30;
 		colorGreenTopRight *= f30;
 		colorBlueTopRight *= f30;
-		int_t k1 = block->getBlockTexture(blockAccess, i, j, k, 5);
+		int_t k1 = useTexture ? block->getBlockTexture(blockAccess, i, j, k, 5) : -1;
 		k1 = fixAoSideGrassTexture(k1, i, j, k, 5, f, f1, f2);
 		renderSouthFace(block, i, j, k, k1);
 		if (fancyGrass && k1 == 3 && overrideBlockTexture < 0)
@@ -3479,7 +3487,7 @@ int_t RenderBlocks::getAoBrightness(int_t a, int_t b, int_t c, int_t base) const
 	return ((a + b + c + base) >> 2) & 0x00ff00ff;
 }
 
-bool RenderBlocks::renderStandardBlockWithColorMultiplier(Block *block, int_t i, int_t j, int_t k, float f, float f1, float f2)
+bool RenderBlocks::renderStandardBlockWithColorMultiplier(Block *block, int_t i, int_t j, int_t k, float f, float f1, float f2, bool useTexture)
 {
 	enableAO = false;
 	Tessellator *tessellator = &Tessellator::instance;
@@ -3517,21 +3525,21 @@ bool RenderBlocks::renderStandardBlockWithColorMultiplier(Block *block, int_t i,
 	{
 		tessellator->setBrightness(block->minY > 0.0 ? packedBrightness : block->getMixedBrightnessForBlock(blockAccess, i, j - 1, k));
 		tessellator->setColorOpaque_F(f10, f13, f16);
-		renderBottomFace(block, i, j, k, block->getBlockTexture(blockAccess, i, j, k, 0));
+		renderBottomFace(block, i, j, k, useTexture ? block->getBlockTexture(blockAccess, i, j, k, 0) : -1);
 		flag = true;
 	}
 	if (renderAllFaces || shouldRenderFace(block, i, j + 1, k, 1))
 	{
 		tessellator->setBrightness(block->maxY < 1.0 ? packedBrightness : block->getMixedBrightnessForBlock(blockAccess, i, j + 1, k));
 		tessellator->setColorOpaque_F(f7, f8, f9);
-		renderTopFace(block, i, j, k, block->getBlockTexture(blockAccess, i, j, k, 1));
+		renderTopFace(block, i, j, k, useTexture ? block->getBlockTexture(blockAccess, i, j, k, 0) : -1);
 		flag = true;
 	}
 	if (renderAllFaces || shouldRenderFace(block, i, j, k - 1, 2))
 	{
 		tessellator->setBrightness(block->minZ > 0.0 ? packedBrightness : block->getMixedBrightnessForBlock(blockAccess, i, j, k - 1));
 		tessellator->setColorOpaque_F(f11, f14, f17);
-		int_t l = block->getBlockTexture(blockAccess, i, j, k, 2);
+		int_t l = useTexture ? block->getBlockTexture(blockAccess, i, j, k, 2) : -1;
 		if (overrideBlockTexture < 0 && Config::isBetterGrass())
 		{
 			if (l == 3 || l == 77)
@@ -3559,7 +3567,7 @@ bool RenderBlocks::renderStandardBlockWithColorMultiplier(Block *block, int_t i,
 	{
 		tessellator->setBrightness(block->maxZ < 1.0 ? packedBrightness : block->getMixedBrightnessForBlock(blockAccess, i, j, k + 1));
 		tessellator->setColorOpaque_F(f11, f14, f17);
-		int_t i1 = block->getBlockTexture(blockAccess, i, j, k, 3);
+		int_t i1 = useTexture ? block->getBlockTexture(blockAccess, i, j, k, 3) : -1;
 		if (overrideBlockTexture < 0 && Config::isBetterGrass())
 		{
 			if (i1 == 3 || i1 == 77)
@@ -3587,7 +3595,7 @@ bool RenderBlocks::renderStandardBlockWithColorMultiplier(Block *block, int_t i,
 	{
 		tessellator->setBrightness(block->minX > 0.0 ? packedBrightness : block->getMixedBrightnessForBlock(blockAccess, i - 1, j, k));
 		tessellator->setColorOpaque_F(f12, f15, f18);
-		int_t j1 = block->getBlockTexture(blockAccess, i, j, k, 4);
+		int_t j1 = useTexture ? block->getBlockTexture(blockAccess, i, j, k, 4) : -1;
 		if (overrideBlockTexture < 0 && Config::isBetterGrass())
 		{
 			if (j1 == 3 || j1 == 77)
@@ -3615,7 +3623,7 @@ bool RenderBlocks::renderStandardBlockWithColorMultiplier(Block *block, int_t i,
 	{
 		tessellator->setBrightness(block->maxX < 1.0 ? packedBrightness : block->getMixedBrightnessForBlock(blockAccess, i + 1, j, k));
 		tessellator->setColorOpaque_F(f12, f15, f18);
-		int_t k1 = block->getBlockTexture(blockAccess, i, j, k, 5);
+		int_t k1 = useTexture ? block->getBlockTexture(blockAccess, i, j, k, 5) : -1;
 		if (overrideBlockTexture < 0 && Config::isBetterGrass())
 		{
 			if (k1 == 3 || k1 == 77)
@@ -3742,7 +3750,7 @@ bool RenderBlocks::renderBlockFence(Block *block, int_t i, int_t j, int_t k)
 	float minRail = 6.0f / 16.0f;
 	float maxRail = 10.0f / 16.0f;
 	block->setBlockBounds(minRail, 0.0f, minRail, maxRail, 1.0f, maxRail);
-	renderStandardBlock(block, i, j, k);
+	renderStandardBlock(block, i, j, k, true);
 	rendered = true;
 
 	const bool west = blockFence->canConnectFenceTo(blockAccess, i - 1, j, k);
@@ -3765,13 +3773,13 @@ bool RenderBlocks::renderBlockFence(Block *block, int_t i, int_t j, int_t k)
 	if (connectX)
 	{
 		block->setBlockBounds(minX, railMinY, minRail, maxX, railMaxY, maxRail);
-		renderStandardBlock(block, i, j, k);
+		renderStandardBlock(block, i, j, k, true);
 		rendered = true;
 	}
 	if (connectZ)
 	{
 		block->setBlockBounds(minRail, railMinY, minZ, maxRail, railMaxY, maxZ);
-		renderStandardBlock(block, i, j, k);
+		renderStandardBlock(block, i, j, k, true);
 		rendered = true;
 	}
 
@@ -3780,13 +3788,13 @@ bool RenderBlocks::renderBlockFence(Block *block, int_t i, int_t j, int_t k)
 	if (connectX)
 	{
 		block->setBlockBounds(minX, railMinY, minRail, maxX, railMaxY, maxRail);
-		renderStandardBlock(block, i, j, k);
+		renderStandardBlock(block, i, j, k, true);
 		rendered = true;
 	}
 	if (connectZ)
 	{
 		block->setBlockBounds(minRail, railMinY, minZ, maxRail, railMaxY, maxZ);
-		renderStandardBlock(block, i, j, k);
+		renderStandardBlock(block, i, j, k, true);
 		rendered = true;
 	}
 
@@ -3812,26 +3820,26 @@ bool RenderBlocks::renderBlockStairs(Block *block, int_t i, int_t j, int_t k)
 	}
 
 	block->setBlockBounds(0.0f, slabMinY, 0.0f, 1.0f, slabMaxY, 1.0f);
-	renderStandardBlock(block, i, j, k);
+	renderStandardBlock(block, i, j, k, true);
 	if (direction == 0)
 	{
 		block->setBlockBounds(0.5f, stepMinY, 0.0f, 1.0f, stepMaxY, 1.0f);
-		renderStandardBlock(block, i, j, k);
+		renderStandardBlock(block, i, j, k, true);
 	}
 	else if (direction == 1)
 	{
 		block->setBlockBounds(0.0f, stepMinY, 0.0f, 0.5f, stepMaxY, 1.0f);
-		renderStandardBlock(block, i, j, k);
+		renderStandardBlock(block, i, j, k, true);
 	}
 	else if (direction == 2)
 	{
 		block->setBlockBounds(0.0f, stepMinY, 0.5f, 1.0f, stepMaxY, 1.0f);
-		renderStandardBlock(block, i, j, k);
+		renderStandardBlock(block, i, j, k, true);
 	}
 	else if (direction == 3)
 	{
 		block->setBlockBounds(0.0f, stepMinY, 0.0f, 1.0f, stepMaxY, 0.5f);
-		renderStandardBlock(block, i, j, k);
+		renderStandardBlock(block, i, j, k, true);
 	}
 
 	block->setBlockBounds(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
@@ -4074,25 +4082,57 @@ void RenderBlocks::renderBottomFace(Block *block, tess_coord_t d, tess_coord_t d
 	tess_coord_t d15 = (tess_coord_t)d2 + (tess_coord_t)block->maxZ;
 	if (enableAO)
 	{
-		tessellator->setColorOpaque_F(colorRedTopLeft, colorGreenTopLeft, colorBlueTopLeft);
-		tessellator->setBrightness(brightnessTopLeft);
-		tessellator->addVertexWithUV(d11, d13, d15, d8, d10);
-		tessellator->setColorOpaque_F(colorRedBottomLeft, colorGreenBottomLeft, colorBlueBottomLeft);
-		tessellator->setBrightness(brightnessBottomLeft);
-		tessellator->addVertexWithUV(d11, d13, d14, d3, d5);
-		tessellator->setColorOpaque_F(colorRedBottomRight, colorGreenBottomRight, colorBlueBottomRight);
-		tessellator->setBrightness(brightnessBottomRight);
-		tessellator->addVertexWithUV(d12, d13, d14, d7, d9);
-		tessellator->setColorOpaque_F(colorRedTopRight, colorGreenTopRight, colorBlueTopRight);
-		tessellator->setBrightness(brightnessTopRight);
-		tessellator->addVertexWithUV(d12, d13, d15, d4, d6);
+		if (i != -1) { // If should use texture
+			tessellator->setColorOpaque_F(colorRedTopLeft, colorGreenTopLeft, colorBlueTopLeft);
+			tessellator->setBrightness(brightnessTopLeft);
+			tessellator->addVertexWithUV(d11, d13, d15, d8, d10);
+			tessellator->setColorOpaque_F(colorRedBottomLeft, colorGreenBottomLeft, colorBlueBottomLeft);
+			tessellator->setBrightness(brightnessBottomLeft);
+			tessellator->addVertexWithUV(d11, d13, d14, d3, d5);
+			tessellator->setColorOpaque_F(colorRedBottomRight, colorGreenBottomRight, colorBlueBottomRight);
+			tessellator->setBrightness(brightnessBottomRight);
+			tessellator->addVertexWithUV(d12, d13, d14, d7, d9);
+			tessellator->setColorOpaque_F(colorRedTopRight, colorGreenTopRight, colorBlueTopRight);
+			tessellator->setBrightness(brightnessTopRight);
+			tessellator->addVertexWithUV(d12, d13, d15, d4, d6);
+		}
+		else {
+			int_t color = block->blockMaterial->materialMapColor->colorValue;
+			float r = ((color >> 16) & 0xFF) / 255.0f;
+			float g = ((color >> 8)  & 0xFF) / 255.0f;
+			float b = (color & 0xFF) / 255.0f;
+
+			tessellator->setColorOpaque_F(r, g, b);
+
+
+			tessellator->addVertex(d11, d13, d15);
+			tessellator->addVertex(d11, d13, d14);
+			tessellator->addVertex(d12, d13, d14);
+			tessellator->addVertex(d12, d13, d15);
+		}
 	}
 	else
 	{
-		tessellator->addVertexWithUV(d11, d13, d15, d8, d10);
-		tessellator->addVertexWithUV(d11, d13, d14, d3, d5);
-		tessellator->addVertexWithUV(d12, d13, d14, d7, d9);
-		tessellator->addVertexWithUV(d12, d13, d15, d4, d6);
+		if (i != -1) {
+			tessellator->addVertexWithUV(d11, d13, d15, d8, d10);
+			tessellator->addVertexWithUV(d11, d13, d14, d3, d5);
+			tessellator->addVertexWithUV(d12, d13, d14, d7, d9);
+			tessellator->addVertexWithUV(d12, d13, d15, d4, d6);
+		}
+		else {
+			int_t color = block->blockMaterial->materialMapColor->colorValue;
+			float r = ((color >> 16) & 0xFF) / 255.0f;
+			float g = ((color >> 8)  & 0xFF) / 255.0f;
+			float b = (color & 0xFF) / 255.0f;
+
+			tessellator->setColorOpaque_F(r, g, b);
+
+
+			tessellator->addVertex(d11, d13, d15);
+			tessellator->addVertex(d11, d13, d14);
+			tessellator->addVertex(d12, d13, d14);
+			tessellator->addVertex(d12, d13, d15);
+		}
 	}
 	restoreNaturalTextureTransform();
 }
