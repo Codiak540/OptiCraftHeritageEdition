@@ -202,7 +202,7 @@ jobs:
           # dkp-pacman -- plain `pacman` is the Arch name only and is NOT on
           # PATH here (2026-10-02: `pacman: not found`). --needed keeps the
           # step a no-op if a future image bakes the portlibs in.
-          HTTP_USER_AGENT="dkp-apt"
+          export HTTP_USER_AGENT="dkp-apt"
           DKP_PACMAN="$(command -v dkp-pacman || command -v pacman || true)"
           if [ -z "$DKP_PACMAN" ]; then
             echo "::error::the devkitpro/devkitarm image ships neither dkp-pacman nor pacman"
