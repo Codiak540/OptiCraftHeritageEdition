@@ -552,7 +552,7 @@ void WorldRenderer::updateRenderer()
 
 #if PLATFORM_3DS && PLATFORM_FAST_SIMPLE_CUBE_RENDER
 					if (simpleCube)
-						drewAnything |= renderblocks.renderSimpleOpaqueCube3ds(block, x, y, z, exposedFaceMask);
+						drewAnything |= renderblocks.renderSimpleOpaqueCube3ds(block, x, y, z, exposedFaceMask, (posX - x <= 10 && posY - y <=10 && posZ - z <= 10));
 					else
 						drewAnything |= renderblocks.renderBlockByRenderType(block, x, y, z, true);
 #else

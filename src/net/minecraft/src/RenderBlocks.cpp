@@ -417,7 +417,7 @@ bool RenderBlocks::renderSimpleOpaqueCubeWii(Block *block, int_t i, int_t j, int
 #endif
 
 #if PLATFORM_3DS
-bool RenderBlocks::renderSimpleOpaqueCube3ds(Block *block, int_t i, int_t j, int_t k, unsigned char faceMask) {
+bool RenderBlocks::renderSimpleOpaqueCube3ds(Block *block, int_t i, int_t j, int_t k, unsigned char faceMask, bool useTexture) {
     // Same contract as the Wii/PS2 variants: emit only the faces the caller
     // computed as exposed (faceMask), standard lighting path otherwise.
     if (block == nullptr || faceMask == 0)
@@ -427,14 +427,14 @@ bool RenderBlocks::renderSimpleOpaqueCube3ds(Block *block, int_t i, int_t j, int
     const bool unitBounds = block->minX == 0.0 && block->minY == 0.0 && block->minZ == 0.0 &&
                             block->maxX == 1.0 && block->maxY == 1.0 && block->maxZ == 1.0;
     if (!unitBounds)
-        return renderBlockByRenderType(block, i, j, k, true);
+        return renderBlockByRenderType(block, i, j, k, useTexture);
 
     dsFaceMask = faceMask;
     dsFaceMaskActive = true;
     dsFaceX = i;
     dsFaceY = j;
     dsFaceZ = k;
-    const bool rendered = renderStandardBlock(block, i, j, k, true);
+    const bool rendered = renderStandardBlock(block, i, j, k, useTexture);
     dsFaceMaskActive = false;
     return rendered;
 }

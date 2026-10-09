@@ -307,6 +307,7 @@ if (WIN32)
     elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         target_compile_options(OptiCraft PRIVATE
                 -Wa,-mbig-obj
+                $<$<CONFIG:Release>:-O2>
                 $<$<CONFIG:Release>:-Os>
                 $<$<NOT:$<CONFIG:Release>>:-g>
         )
@@ -322,6 +323,7 @@ if (WIN32)
             )
         else ()
             target_compile_options(OptiCraft PRIVATE
+                    $<$<CONFIG:Release>:-O2>
                     -fno-omit-frame-pointer
             )
         endif ()

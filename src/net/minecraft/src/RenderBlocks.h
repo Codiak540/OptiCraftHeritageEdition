@@ -40,7 +40,7 @@ public:
 	bool renderSimpleOpaqueCubeWii(Block *block, int_t i, int_t j, int_t k, unsigned char faceMask);
 #endif
 #if PLATFORM_3DS
-	bool renderSimpleOpaqueCube3ds(Block *block, int_t i, int_t j, int_t k, unsigned char faceMask);
+	bool renderSimpleOpaqueCube3ds(Block *block, int_t i, int_t j, int_t k, unsigned char faceMask, bool useTexture);
 #endif
 
 	// Set as soon as a block rendered through this instance can have put texels
