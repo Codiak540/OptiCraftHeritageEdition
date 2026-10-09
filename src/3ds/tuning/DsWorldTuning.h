@@ -40,7 +40,7 @@
 // (2*32/16+1). Coherent with TINY above: the coarse table maps TINY to
 // 32 << (3 - 3) = 32 blocks.
 #undef  PLATFORM_VISIBLE_CHUNK_RADIUS
-#define PLATFORM_VISIBLE_CHUNK_RADIUS              2
+#define PLATFORM_VISIBLE_CHUNK_RADIUS              3
 
 // Moving vertical renderer window, the PS2's 5x3x5 idea at TINY proportions.
 // The desktop branch of RenderGlobal::markRenderersForNewPosition() centers
@@ -48,7 +48,7 @@
 // PS2/WII one), so 5 sections = 80 blocks tall against TINY's 32-block
 // horizontal reach and the grid drops from 5 x 8 x 5 = 200 slots to 125.
 #undef  PLATFORM_VERTICAL_CHUNK_COUNT
-#define PLATFORM_VERTICAL_CHUNK_COUNT              5
+#define PLATFORM_VERTICAL_CHUNK_COUNT              8
 #undef  PLATFORM_CENTER_VERTICAL_RENDERERS
 #define PLATFORM_CENTER_VERTICAL_RENDERERS         1
 
@@ -116,7 +116,7 @@
 // and mob radii stay pinned to the visible radius above, so shrinking the
 // streaming window does not grow per-tick simulation cost.
 #undef  PLATFORM_CHUNK_CACHE_RADIUS
-#define PLATFORM_CHUNK_CACHE_RADIUS                2
+#define PLATFORM_CHUNK_CACHE_RADIUS                3
 #undef  PLATFORM_CHUNK_UNLOAD_RADIUS
 #define PLATFORM_CHUNK_UNLOAD_RADIUS               3
 #undef  PLATFORM_CHUNK_MAP_RESERVE
