@@ -218,9 +218,9 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.cache/ccache
-          key: ccache-3ds-${{ github.run_id }}
+          key: ccache-singleplayer-3ds-${{ github.run_id }}
           restore-keys: |
-            ccache-3ds-
+            ccache-singleplayer-3ds-
 
       - name: Configure ccache
         run: ccache --max-size=2G && ccache --set-config=compression=true
