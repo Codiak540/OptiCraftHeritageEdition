@@ -40,7 +40,7 @@
 // (2*32/16+1). Coherent with TINY above: the coarse table maps TINY to
 // 32 << (3 - 3) = 32 blocks.
 #undef  PLATFORM_VISIBLE_CHUNK_RADIUS
-#define PLATFORM_VISIBLE_CHUNK_RADIUS              3
+#define PLATFORM_VISIBLE_CHUNK_RADIUS              4
 
 // Moving vertical renderer window, the PS2's 5x3x5 idea at TINY proportions.
 // The desktop branch of RenderGlobal::markRenderersForNewPosition() centers
@@ -48,7 +48,7 @@
 // PS2/WII one), so 5 sections = 80 blocks tall against TINY's 32-block
 // horizontal reach and the grid drops from 5 x 8 x 5 = 200 slots to 125.
 #undef  PLATFORM_VERTICAL_CHUNK_COUNT
-#define PLATFORM_VERTICAL_CHUNK_COUNT              8
+#define PLATFORM_VERTICAL_CHUNK_COUNT              16
 #undef  PLATFORM_CENTER_VERTICAL_RENDERERS
 #define PLATFORM_CENTER_VERTICAL_RENDERERS         1
 
@@ -120,7 +120,7 @@
 #undef  PLATFORM_CHUNK_UNLOAD_RADIUS
 #define PLATFORM_CHUNK_UNLOAD_RADIUS               3
 #undef  PLATFORM_CHUNK_MAP_RESERVE
-#define PLATFORM_CHUNK_MAP_RESERVE                 64
+#define PLATFORM_CHUNK_MAP_RESERVE                 32
 
 // Eviction rate, the PS2's: a chunk leaves only once it is BOTH outside the
 // unload ring and untouched for 60 world ticks, and the per-tick budgets
@@ -242,7 +242,7 @@
 #undef  PLATFORM_ENTITY_PUSH_COLLISION_RADIUS_BLOCKS
 #define PLATFORM_ENTITY_PUSH_COLLISION_RADIUS_BLOCKS 32.0f
 #undef  PLATFORM_MAX_LIVE_MOBS
-#define PLATFORM_MAX_LIVE_MOBS                     8
+#define PLATFORM_MAX_LIVE_MOBS                     20
 #undef  PLATFORM_PATHFIND_BUDGET_PER_TICK
 #define PLATFORM_PATHFIND_BUDGET_PER_TICK          2
 #undef  PLATFORM_PATHFIND_MAX_NODES
