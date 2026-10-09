@@ -116,9 +116,9 @@
 // and mob radii stay pinned to the visible radius above, so shrinking the
 // streaming window does not grow per-tick simulation cost.
 #undef  PLATFORM_CHUNK_CACHE_RADIUS
-#define PLATFORM_CHUNK_CACHE_RADIUS                3
+#define PLATFORM_CHUNK_CACHE_RADIUS                4
 #undef  PLATFORM_CHUNK_UNLOAD_RADIUS
-#define PLATFORM_CHUNK_UNLOAD_RADIUS               3
+#define PLATFORM_CHUNK_UNLOAD_RADIUS               4
 #undef  PLATFORM_CHUNK_MAP_RESERVE
 #define PLATFORM_CHUNK_MAP_RESERVE                 32
 
