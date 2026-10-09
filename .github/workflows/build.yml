@@ -222,7 +222,7 @@ jobs:
       - name: Cache ccache
         uses: actions/cache@v6
         with:
-          path: ~/.ccache
+          path: ~/.cache/ccache
           key: ccache-3ds-${{ github.run_id }}
           restore-keys: |
             ccache-3ds-
@@ -380,7 +380,7 @@ jobs:
       - name: Cache ccache
         uses: actions/cache@v6
         with:
-          path: ~/.ccache
+          path: ~/.cache/ccache
           key: ccache-3ds-${{ github.run_id }}
           restore-keys: |
             ccache-3ds-
@@ -525,13 +525,13 @@ jobs:
         shell: pwsh
 
       - name: Configure ccache dir
-        run: echo "CCACHE_DIR=${{ github.workspace }}\.ccache" >> $env:GITHUB_ENV
+        run: echo "CCACHE_DIR=${{ github.workspace }}\.cache/ccache" >> $env:GITHUB_ENV
         shell: pwsh
 
       - name: Cache ccache
         uses: actions/cache@v6
         with:
-          path: ${{ github.workspace }}\.ccache
+          path: ${{ github.workspace }}\.cache/ccache
           key: ccache-windows-${{ github.run_id }}
           restore-keys: |
             ccache-windows-
@@ -617,13 +617,13 @@ jobs:
         shell: pwsh
 
       - name: Configure ccache dir
-        run: echo "CCACHE_DIR=${{ github.workspace }}\.ccache" >> $env:GITHUB_ENV
+        run: echo "CCACHE_DIR=${{ github.workspace }}\.cache\ccache" >> $env:GITHUB_ENV
         shell: pwsh
 
       - name: Cache ccache
         uses: actions/cache@v6
         with:
-          path: ${{ github.workspace }}\.ccache
+          path: ${{ github.workspace }}\.cache\ccache
           key: ccache-windows-${{ matrix.suffix }}-${{ github.run_id }}
           restore-keys: |
             ccache-windows-${{ matrix.suffix }}-
