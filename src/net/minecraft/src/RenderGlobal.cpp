@@ -2886,11 +2886,7 @@ void RenderGlobal::drawBlockBreaking(EntityPlayer *entityplayer, MovingObjectPos
 			tessellator->startDrawingQuads();
 			tessellator->setTranslationD(-d, -d1, -d2);
 			tessellator->disableColor();
-			if (movingobjectposition->closerThan(entityplayer->posX, entityplayer->posY, entityplayer->posZ, 24))
-				globalRenderBlocks->renderBlockUsingTexture(block, movingobjectposition->blockX, movingobjectposition->blockY, movingobjectposition->blockZ, 240 + (int_t)(damagePartialTime * 10.0f));
-			else
-				globalRenderBlocks->renderBlockFakeMipped(block, movingobjectposition->blockX, movingobjectposition->blockY, movingobjectposition->blockZ);
-
+			globalRenderBlocks->renderBlockUsingTexture(block, movingobjectposition->blockX, movingobjectposition->blockY, movingobjectposition->blockZ, 240 + (int_t)(damagePartialTime * 10.0f));
 			tessellator->draw();
 			tessellator->setTranslationD(0.0, 0.0, 0.0);
 

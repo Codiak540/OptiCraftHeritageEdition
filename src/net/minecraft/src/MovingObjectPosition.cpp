@@ -19,7 +19,3 @@ MovingObjectPosition::MovingObjectPosition(Entity *entity)
 	entityHit = entity;
 	hitVec = Vec3D::createVector(entity->posX, entity->posY, entity->posZ);
 }
-
-bool MovingObjectPosition::closerThan(const double x, const double y, const double z, const int radius) const {
-	return this->blockX - x < radius && this->blockY - y < radius && this->blockZ - z < radius;
-}

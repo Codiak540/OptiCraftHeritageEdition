@@ -4447,10 +4447,11 @@ bool World::updatingLighting()
                     const uint64_t nowUs = PlatformCompat::getMonotonicMicros();
                     const double elapsedMs = (nowUs > floodfillStartUs) ? (double)(nowUs - floodfillStartUs) / 1000.0 : 0.0;
                     const int affectedSubsections = world->lightingDirtyRegions.getFlushedCount();
-                    if (affectedSubsections > 0 || elapsedMs >= 0.1)
-                    {
-                        printf("[PERF] Skylight floodfill time: %.2f ms (subsecciones afectadas: %d)\n", elapsedMs, affectedSubsections);
-                    }
+                    // TODO: Welp this was alr set to debug so ig imma debug it at some point in the future.
+                    // if (affectedSubsections > 0 || elapsedMs >= 0.1)
+                    // {
+                    //     printf("[PERF] Skylight floodfill time: %.2f ms (subsecciones afectadas: %d)\n", elapsedMs, affectedSubsections);
+                    // }
                 }
 #endif
             }

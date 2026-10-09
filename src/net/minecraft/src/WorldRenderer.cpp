@@ -456,7 +456,7 @@ void WorldRenderer::updateRenderer()
 	int_t x1 = posX + sizeWidth, y1 = posY + sizeHeight, z1 = posZ + sizeDepth;
 
 
-	
+
 	std::vector<TessellatorTextureMesh> stagedExtraTextureMeshes[2];
 	for (int_t k1 = 0; k1 < 2; k1++)
 		_skipRenderPass[k1] = true;
@@ -552,11 +552,11 @@ void WorldRenderer::updateRenderer()
 
 #if PLATFORM_3DS && PLATFORM_FAST_SIMPLE_CUBE_RENDER
 					if (simpleCube)
-						drewAnything |= renderblocks.renderSimpleOpaqueCube3ds(block, x, y, z, exposedFaceMask, (posX - x <= 10 && posY - y <=10 && posZ - z <= 10));
+						drewAnything |= renderblocks.renderSimpleOpaqueCube3ds(block, x, y, z, exposedFaceMask);
 					else
-						drewAnything |= renderblocks.renderBlockByRenderType(block, x, y, z, true);
+						drewAnything |= renderblocks.renderBlockByRenderType(block, x, y, z);
 #else
-					drewAnything |= renderblocks.renderBlockByRenderType(block, x, y, z, true);
+					drewAnything |= renderblocks.renderBlockByRenderType(block, x, y, z);
 #endif
 				}
 			}

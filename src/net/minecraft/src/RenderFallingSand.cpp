@@ -28,7 +28,7 @@ void RenderFallingSand::doRenderFallingSand(EntityFallingSand* entityfallingsand
         tessellator->setTranslationF(static_cast<float>(JavaArithmetic::intSub(0, blockX)) - 0.5f,
                                      static_cast<float>(JavaArithmetic::intSub(0, blockY)) - 0.5f,
                                      static_cast<float>(JavaArithmetic::intSub(0, blockZ)) - 0.5f);
-        renderBlocks->renderBlockByRenderType(block, blockX, blockY, blockZ, true);
+        renderBlocks->renderBlockByRenderType(block, blockX, blockY, blockZ);
         tessellator->setTranslationF(0.0f, 0.0f, 0.0f);
         tessellator->draw();
     }

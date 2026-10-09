@@ -63,7 +63,8 @@ public:
     };
 
     Minecraft(int_t width, int_t height, bool flag);
-    ~Minecraft();
+
+    virtual ~Minecraft();
 
     static void start(const jstring *username, const jstring *sessionId);
     static Minecraft *getMinecraft();
