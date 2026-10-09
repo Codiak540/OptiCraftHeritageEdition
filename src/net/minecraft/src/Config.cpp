@@ -207,7 +207,7 @@ int_t Config::getRenderDistanceFine()
 {
 	return gameSettings != nullptr
 		? limit(gameSettings->ofRenderDistanceFine, 32, getMaxRenderDistanceFine())
-		: 128;
+		: 256;
 }
 
 int_t Config::getIconWidthTerrain() { return iconWidthTerrain; }
