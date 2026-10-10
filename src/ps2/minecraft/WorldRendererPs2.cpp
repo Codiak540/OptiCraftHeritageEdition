@@ -311,7 +311,7 @@ std::uint8_t WorldRenderer::ps2VisibleFacesFrom(int_t face) const
 
 void WorldRenderer::updateRenderer()
 {
-    if (!needsUpdate)
+    if (!rebuildChunks)
         return;
 
     ps2BuildRendererStep(PLATFORM_CHUNK_BUILD_BLOCKS_PER_STEP);
@@ -445,7 +445,7 @@ size_t WorldRenderer::releasePs2PublishedMeshForBudget()
 		ps2PublishedVisibility[face] = 0x3f;
 	ps2CpuVisible = true;
 	isInitialized = false;
-	needsUpdate = true;
+	rebuildChunks = true;
 
 	const size_t after = terrainMeshRamBytes();
 	return before > after ? before - after : 0;
@@ -554,7 +554,7 @@ bool WorldRenderer::ps2BuildRendererStep(int_t blockBudget)
 	if (worldObj == nullptr)
 	{
 		ps2ResetBuildState();
-		needsUpdate = false;
+		rebuildChunks = false;
 		return true;
 	}
 
@@ -1368,7 +1368,7 @@ bool WorldRenderer::ps2BuildRendererStep(int_t blockBudget)
 		ps2PublishedVisibility[face] = 0x3f;
 #endif
 	isInitialized = true;
-	needsUpdate = dirtyDuringBuild;
+	rebuildChunks = dirtyDuringBuild;
 	// The player edit is now visible. Mutations recorded while building still
 	// need a follow-up, but must not inherit the edit's 32 ms urgent lane on
 	// every frame until lighting propagation settles.

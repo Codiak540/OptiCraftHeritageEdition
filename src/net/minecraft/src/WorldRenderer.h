@@ -89,7 +89,7 @@ public:
 #if PLATFORM_3DS
 	// The shared updateRenderer() meshes a whole section inside one call, so
 	// "did work" is "the call completed a rebuild" -- what the RenderGlobal
-	// mesh budget charges. Set at the completion point (needsUpdate = false),
+	// mesh budget charges. Set at the completion point (rebuildChunks = false),
 	// cleared at entry so an early-out (no world, sources pending) reports no
 	// work.
 	bool terrainStepDidWork = false;
@@ -185,7 +185,7 @@ public:
 
 	// Public fields matching Java
 	World *worldObj;
-	volatile bool shouldRebuild;
+	volatile bool rebuildChunks;
 	bool queuedForUpdate = false;
 	bool isChunkLit;
 #if PLATFORM_PC

@@ -114,7 +114,7 @@ WorldRenderer::WorldRenderer(World *world, std::vector<TileEntity *> *tileEntiti
 	wiiBuildDirtyDuringBuild = false;
 	wiiStepDidWork = false;
 #endif
-	shouldRebuild    = false;
+	rebuildChunks    = false;
 	isChunkLit     = false;
 #if PLATFORM_PC
 	isWaitingOnOcclusionQuery = false;
@@ -154,7 +154,7 @@ WorldRenderer::WorldRenderer(World *world, std::vector<TileEntity *> *tileEntiti
 
 	this->posX = -999;
 	setPosition(posX, posY, posZ);
-	shouldRebuild = false;
+	rebuildChunks = false;
 	queuedForUpdate = false;
 
 #ifdef PS2_PLATFORM
@@ -415,7 +415,7 @@ namespace
 
 void WorldRenderer::updateRenderer()
 {
-	if (!shouldRebuild)
+	if (!rebuildChunks)
 		return;
 
 #if PLATFORM_3DS
@@ -615,7 +615,7 @@ void WorldRenderer::updateRenderer()
 	isChunkLit  = Chunk::isLit;
 	isInitialized = true;
 	tileEntityRenderers = rebuiltTileEntityRenderers;
-	shouldRebuild = false;
+	rebuildChunks = false;
 
 #if PLATFORM_3DS
 	terrainStepDidWork = true;
@@ -711,7 +711,7 @@ void WorldRenderer::markDirty()
 	renderTerrainChunkHandlesClearStaging(terrainChunkHandles);
 #endif
 #endif
-	shouldRebuild = true;
+	rebuildChunks = true;
 }
 
 #if WII_PLATFORM || PS2_PLATFORM || PLATFORM_PC_LEGACY || PLATFORM_3DS
@@ -722,7 +722,7 @@ void WorldRenderer::markDirtyFromLighting()
 	if (pcLegacyBuildActive)
 	{
 		pcLegacyBuildDirtyDuringBuild = true;
-		needsUpdate = true;
+		rebuildChunks = true;
 		return;
 	}
 #endif
@@ -733,7 +733,7 @@ void WorldRenderer::markDirtyFromLighting()
 #ifdef PS2_OPTIMIZATION_VALIDATION
 		Ps2OptimizationValidation::meshDirtyCoalesced();
 #endif
-		needsUpdate = true;
+		rebuildChunks = true;
 		return;
 	}
 #endif
@@ -741,7 +741,7 @@ void WorldRenderer::markDirtyFromLighting()
 	if (wiiBuildActive)
 	{
 		wiiBuildDirtyDuringBuild = true;
-		needsUpdate = true;
+		rebuildChunks = true;
 		return;
 	}
 #endif

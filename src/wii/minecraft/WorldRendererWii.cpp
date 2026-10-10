@@ -72,7 +72,7 @@ namespace
 
 void WorldRenderer::updateRenderer()
 {
-    if (!needsUpdate)
+    if (!rebuildChunks)
         return;
 
     wiiBuildRendererStep(PLATFORM_WII_CHUNK_BUILD_BLOCKS_PER_STEP);
@@ -126,7 +126,7 @@ bool WorldRenderer::wiiBuildRendererStep(int_t blockBudget)
 	if (worldObj == nullptr)
 	{
 		wiiResetBuildState();
-		needsUpdate = false;
+		rebuildChunks = false;
 		return true;
 	}
 
@@ -391,7 +391,7 @@ bool WorldRenderer::wiiBuildRendererStep(int_t blockBudget)
 #endif
 			if (!renderCompileTerrainMesh(terrainChunkHandles.staging[wiiBuildPass], mesh, compileInfo))
 			{
-				needsUpdate = true;
+				rebuildChunks = true;
 				return false;
 			}
 		}
@@ -438,7 +438,7 @@ bool WorldRenderer::wiiBuildRendererStep(int_t blockBudget)
 	const bool dirtyDuringBuild = wiiBuildDirtyDuringBuild;
 	isChunkLit = wiiBuildChunkLit;
 	isInitialized = true;
-	needsUpdate = dirtyDuringBuild;
+	rebuildChunks = dirtyDuringBuild;
 	chunksUpdated++;
 	wiiResetBuildState();
 	return true;
@@ -461,7 +461,7 @@ bool WorldRenderer::releaseDisplayListsForCache()
 	renderTerrainChunkHandlesClearLive(terrainChunkHandles);
 	_skipRenderPass[0] = true;
 	_skipRenderPass[1] = true;
-	needsUpdate = true;
+	rebuildChunks = true;
 	isInitialized = false;
 	return true;
 }

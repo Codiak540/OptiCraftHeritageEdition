@@ -26,7 +26,7 @@ void RenderGlobal::evictWiiMeshCache(EntityLiving *entityliving)
         for (int_t i = 0; i < total; ++i)
         {
             WorldRenderer *candidate = worldRenderers[i];
-            if (candidate == nullptr || candidate->needsUpdate || candidate->isInFrustum)
+            if (candidate == nullptr || candidate->rebuildChunks || candidate->isInFrustum)
                 continue;
 
             // A section with nothing recorded cannot be a victim, and admitting

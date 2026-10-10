@@ -80,7 +80,7 @@ namespace
 void WorldRenderer::updateRenderer()
 {
     pcLegacyStepDidWork = false;
-    if (!needsUpdate)
+    if (!rebuildChunks)
     {
         if (pcLegacyBuildActive)
             pcLegacyResetBuildState();
@@ -279,7 +279,7 @@ void WorldRenderer::pcLegacyPublishBuild(PcLegacyTerrainStaging &staging)
     isChunkLit = pcLegacyBuildChunkLit;
     isInitialized = true;
     const bool dirtyDuringBuild = pcLegacyBuildDirtyDuringBuild;
-    needsUpdate = dirtyDuringBuild;
+    rebuildChunks = dirtyDuringBuild;
     ++chunksUpdated;
 
     pcLegacyResetBuildState();
@@ -294,7 +294,7 @@ bool WorldRenderer::pcLegacyBuildRendererStep(int_t blockBudget)
     if (worldObj == nullptr)
     {
         pcLegacyResetBuildState();
-        needsUpdate = false;
+        rebuildChunks = false;
         return true;
     }
 

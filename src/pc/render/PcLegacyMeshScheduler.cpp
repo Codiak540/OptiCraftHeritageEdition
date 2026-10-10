@@ -97,7 +97,7 @@ void pcLegacyRunMeshScheduler(
     s_candidates.clear();
     for (WorldRenderer *candidate : pending)
     {
-        if (candidate == nullptr || !candidate->needsUpdate)
+        if (candidate == nullptr || !candidate->rebuildChunks)
             continue;
 
         const bool active = candidate->isTerrainBuildInProgress();
@@ -168,7 +168,7 @@ void pcLegacyRunMeshScheduler(
             while (candidateIndex < candidateCount)
             {
                 WorldRenderer *nextCandidate = s_candidates[candidateIndex++].renderer;
-                if (nextCandidate != nullptr && nextCandidate->needsUpdate)
+                if (nextCandidate != nullptr && nextCandidate->rebuildChunks)
                 {
                     current = nextCandidate;
                     break;
@@ -180,7 +180,7 @@ void pcLegacyRunMeshScheduler(
 
         budget.run(current);
 
-        if (!current->needsUpdate)
+        if (!current->rebuildChunks)
         {
             current = nullptr;
             continue;
