@@ -1347,7 +1347,7 @@ int_t RenderGlobal::sortAndRender(EntityLiving *entityliving, int_t i, double d)
 					accumulatedZ += translateZ;
 				}
 
-#if !defined(PS2_PLATFORM) && !defined(WII_PLATFORM)
+#if !defined(PS2_PLATFORM) && !defined(WII_PLATFORM) && !defined(CTR_PLATFORM)
 				renderBeginOcclusionQuery(renderer->glOcclusionQuery);
 				renderer->callOcclusionQueryList();
 				renderEndOcclusionQuery();

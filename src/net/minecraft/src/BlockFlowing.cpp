@@ -15,8 +15,8 @@ void BlockFlowing::getFlowDirection(World *world, int_t i, int_t j, int_t k)
 {
     int_t l = world->getBlockMetadata(i, j, k);
     world->setBlockAndMetadata(i, j, k, blockID + 1, l);
-    world->markBlocksDirty(i, j, k, i, j, k);
-    world->markBlockNeedsUpdate(i, j, k);
+    // world->markBlocksDirty(i, j, k, i, j, k);
+    // world->markBlockNeedsUpdate(i, j, k);
 }
 
 void BlockFlowing::updateTick(World *world, int_t i, int_t j, int_t k, Random &random)

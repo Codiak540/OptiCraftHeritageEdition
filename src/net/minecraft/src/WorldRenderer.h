@@ -185,7 +185,7 @@ public:
 
 	// Public fields matching Java
 	World *worldObj;
-	bool needsUpdate;
+	volatile bool needsUpdate;
 	bool queuedForUpdate = false;
 	bool isChunkLit;
 #if PLATFORM_PC

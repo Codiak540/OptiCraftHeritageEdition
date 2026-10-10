@@ -415,6 +415,8 @@ namespace
 
 void WorldRenderer::updateRenderer()
 {
+	printf("NEEDSUPDATE " + needsUpdate);
+
 	if (!needsUpdate)
 		return;
 
@@ -422,9 +424,10 @@ void WorldRenderer::updateRenderer()
 	// See terrainStepDidWork: one call meshes one whole section, and the
 	// RenderGlobal budget wants to know whether this call produced a rebuild.
 	terrainStepDidWork = false;
+#else
+	updateOcclusionBox(); // TODO: This isn't used on 3DS yet, stubbed, gotta implement someday
 #endif
 
-	updateOcclusionBox();
 	isVisibleFromPosition = false;
 
 
@@ -615,6 +618,8 @@ void WorldRenderer::updateRenderer()
 	isInitialized = true;
 	tileEntityRenderers = rebuiltTileEntityRenderers;
 	needsUpdate = false;
+	printf("NEEDSUPDATE2 " + needsUpdate);
+
 #if PLATFORM_3DS
 	terrainStepDidWork = true;
 #endif

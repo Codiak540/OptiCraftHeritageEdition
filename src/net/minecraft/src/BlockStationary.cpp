@@ -27,7 +27,7 @@ void BlockStationary::getLiquidMaterial(World *world, int_t i, int_t j, int_t k)
 	int_t l = world->getBlockMetadata(i, j, k);
 	world->editingBlocks = true;
 	world->setBlockAndMetadata(i, j, k, blockID - 1, l);
-	world->markBlocksDirty(i, j, k, i, j, k);
+	// world->markBlocksDirty(i, j, k, i, j, k);
 	world->scheduleBlockUpdate(i, j, k, blockID - 1, tickRate());
 	world->editingBlocks = false;
 }

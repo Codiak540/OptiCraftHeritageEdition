@@ -580,11 +580,21 @@ void Chunk::onChunkLoadData()
 {
 }
 
+
 void Chunk::propagateSkylightOcclusion(int_t i, int_t j)
 {
-	updateSkylightColumns[i + j * 16] = true;
+	if (i < 0 || i >= 16 || j < 0 || j >= 16)
+		return;
+
+	const int_t columnIndex = i + j * 16;
+
+	if (updateSkylightColumns[columnIndex])
+		return;
+
+	updateSkylightColumns[columnIndex] = true;
 	isGapLightingUpdated = true;
 }
+
 
 int_t Chunk::skylightNeighbourHeight(int_t worldX, int_t worldZ) const
 {
@@ -713,73 +723,104 @@ void Chunk::updateSkylightNeighborHeight(int_t i, int_t j, int_t minY, int_t max
 	isModified = true;
 }
 
+
 void Chunk::relightBlock(int_t i, int_t j, int_t k)
 {
-	const int_t columnIndex = k << 4 | i;
-	const int_t oldHeight = heightMap[columnIndex];
-	int_t newHeight = std::max(j, oldHeight);
-	while (newHeight > 0 && getBlockLightOpacity(i, newHeight - 1, k) == 0)
-		--newHeight;
-	if (newHeight == oldHeight)
-		return;
+    const int_t columnIndex = (k << 4) | i;
+    const int_t oldHeight = heightMap[columnIndex];
 
-	if (worldObj != nullptr)
-		worldObj->markBlocksDirtyVertical(i, k, newHeight, oldHeight);
-	heightMap[columnIndex] = newHeight;
+    int_t newHeight = std::max(j, oldHeight);
 
-	const int_t worldX = JavaArithmetic::intAdd(JavaArithmetic::intMul(xPosition, 16), i);
-	const int_t worldZ = JavaArithmetic::intAdd(JavaArithmetic::intMul(zPosition, 16), k);
-	if (worldObj != nullptr && worldObj->worldProvider != nullptr && !worldObj->worldProvider->hasNoSky)
-	{
-		if (newHeight < oldHeight)
-		{
-			for (int_t y = newHeight; y < oldHeight; ++y)
-			{
-				ExtendedBlockStorage *section = storageArrays[y >> 4];
-				if (section != nullptr)
-				{
-					section->setExtSkylightValue(i, y & 15, k, 15);
-					worldObj->markBlockAsNeedsUpdate(worldX, y, worldZ);
-				}
-			}
-		}
-		else
-		{
-			for (int_t y = oldHeight; y < newHeight; ++y)
-			{
-				ExtendedBlockStorage *section = storageArrays[y >> 4];
-				if (section != nullptr)
-				{
-					section->setExtSkylightValue(i, y & 15, k, 0);
-					worldObj->markBlockAsNeedsUpdate(worldX, y, worldZ);
-				}
-			}
-		}
+    while (newHeight > 0 &&
+           getBlockLightOpacity(i, newHeight - 1, k) == 0)
+    {
+        --newHeight;
+    }
 
-		int_t light = 15;
-		int_t scanY = newHeight;
-		while (scanY > 0 && light > 0)
-		{
-			--scanY;
-			int_t opacity = getBlockLightOpacity(i, scanY, k);
-			if (opacity == 0)
-				opacity = 1;
-			light = std::max(0, light - opacity);
-			ExtendedBlockStorage *section = storageArrays[scanY >> 4];
-			if (section != nullptr)
-				section->setExtSkylightValue(i, scanY & 15, k, light);
-		}
+    // No heightmap change means no further skylight work is required.
+    if (newHeight == oldHeight)
+        return;
 
-		const int_t low = std::min(oldHeight, newHeight);
-		const int_t high = std::max(oldHeight, newHeight);
-		updateSkylightNeighborHeight(worldX - 1, worldZ, low, high, nullptr);
-		updateSkylightNeighborHeight(worldX + 1, worldZ, low, high, nullptr);
-		updateSkylightNeighborHeight(worldX, worldZ - 1, low, high, nullptr);
-		updateSkylightNeighborHeight(worldX, worldZ + 1, low, high, nullptr);
-		updateSkylightNeighborHeight(worldX, worldZ, low, high, nullptr);
-	}
-	isModified = true;
+    if (worldObj != nullptr)
+        worldObj->markBlocksDirtyVertical(i, k, newHeight, oldHeight);
+
+    heightMap[columnIndex] = newHeight;
+    isModified = true;
+
+    // Heightmap changes still apply in dimensions without a sky.
+    if (worldObj == nullptr ||
+        worldObj->worldProvider == nullptr ||
+        worldObj->worldProvider->hasNoSky)
+    {
+        return;
+    }
+
+    const int_t worldX =
+        JavaArithmetic::intAdd(JavaArithmetic::intMul(xPosition, 16), i);
+    const int_t worldZ =
+        JavaArithmetic::intAdd(JavaArithmetic::intMul(zPosition, 16), k);
+
+    if (newHeight < oldHeight)
+    {
+        for (int_t y = newHeight; y < oldHeight; ++y)
+        {
+            ExtendedBlockStorage* section = storageArrays[y >> 4];
+
+            if (section == nullptr)
+                continue;
+
+            section->setExtSkylightValue(i, y & 15, k, 15);
+            worldObj->markBlockAsNeedsUpdate(worldX, y, worldZ);
+        }
+    }
+    else
+    {
+        for (int_t y = oldHeight; y < newHeight; ++y)
+        {
+            ExtendedBlockStorage* section = storageArrays[y >> 4];
+
+            if (section == nullptr)
+                continue;
+
+            section->setExtSkylightValue(i, y & 15, k, 0);
+            worldObj->markBlockAsNeedsUpdate(worldX, y, worldZ);
+        }
+    }
+
+    int_t light = 15;
+
+    for (int_t scanY = newHeight - 1;
+         scanY >= 0 && light > 0;
+         --scanY)
+    {
+        int_t opacity = getBlockLightOpacity(i, scanY, k);
+
+        if (opacity == 0)
+            opacity = 1;
+
+        light = std::max(0, light - opacity);
+
+        ExtendedBlockStorage* section = storageArrays[scanY >> 4];
+
+        if (section != nullptr)
+            section->setExtSkylightValue(i, scanY & 15, k, light);
+    }
+
+    const int_t low = std::min(oldHeight, newHeight);
+    const int_t high = std::max(oldHeight, newHeight);
+
+    updateSkylightNeighborHeight(
+        worldX - 1, worldZ, low, high, nullptr);
+    updateSkylightNeighborHeight(
+        worldX + 1, worldZ, low, high, nullptr);
+    updateSkylightNeighborHeight(
+        worldX, worldZ - 1, low, high, nullptr);
+    updateSkylightNeighborHeight(
+        worldX, worldZ + 1, low, high, nullptr);
+    updateSkylightNeighborHeight(
+        worldX, worldZ, low, high, nullptr);
 }
+
 
 int_t Chunk::getBlockLightOpacity(int_t i, int_t j, int_t k)
 {
@@ -808,126 +849,177 @@ bool Chunk::setBlockID(int_t i, int_t j, int_t k, int_t l)
 	return setBlockIDWithMetadata(i, j, k, l, 0);
 }
 
+
 bool Chunk::setBlockIDWithMetadata(int_t i, int_t j, int_t k, int_t l, int_t i1)
 {
-	if (!isValidLocalPosition(i, j, k) || !validBlockId(l))
-		return false;
+    if (!isValidLocalPosition(i, j, k) || !validBlockId(l))
+        return false;
 
-	const int_t columnIndex = localColumnIndex(i, k);
-	if (j >= precipitationHeightMap[columnIndex] - 1)
-		precipitationHeightMap[columnIndex] = -999;
+    const int_t columnIndex = localColumnIndex(i, k);
 
-	const int_t oldHeight = heightMap[columnIndex];
-	const int_t oldId = getBlockID(i, j, k);
-	if (oldId == l && getBlockMetadata(i, j, k) == i1)
-		return false;
+    if (j >= precipitationHeightMap[columnIndex] - 1)
+        precipitationHeightMap[columnIndex] = -999;
 
-	ExtendedBlockStorage *section = storageArrays[j >> 4];
-	bool createdAboveHeight = false;
-	if (section == nullptr)
-	{
-		if (l == 0)
-			return false;
-		section = ensureBlockStorage(j >> 4);
-		createdAboveHeight = j >= oldHeight;
-	}
+    const int_t oldHeight = heightMap[columnIndex];
+    const int_t oldId = getBlockID(i, j, k);
 
-	section->setExtBlockID(i, j & 15, k, l);
-	const int_t worldX = JavaArithmetic::intAdd(JavaArithmetic::intMul(xPosition, 16), i);
-	const int_t worldZ = JavaArithmetic::intAdd(JavaArithmetic::intMul(zPosition, 16), k);
+    if (oldId == l && getBlockMetadata(i, j, k) == i1)
+        return false;
 
-	if (oldId != 0 && validBlockId(oldId) && Block::blocksList[oldId] != nullptr)
-	{
-		if (worldObj != nullptr && !worldObj->multiplayerWorld)
-			Block::blocksList[oldId]->onBlockRemoval(worldObj, worldX, j, worldZ);
-		else if (oldId != l && Block::isBlockContainer[oldId] && worldObj != nullptr)
-			worldObj->removeBlockTileEntity(worldX, j, worldZ);
-	}
+    const int_t oldOpacity =
+        validBlockId(oldId) ? Block::lightOpacity[oldId] : 0;
+    const int_t newOpacity = Block::lightOpacity[l];
 
-	if (section->getExtBlockID(i, j & 15, k) != l)
-		return false;
+    const bool opacityChanged = oldOpacity != newOpacity;
 
-	section->setExtBlockMetadata(i, j & 15, k, i1);
-	if (createdAboveHeight)
-	{
-		// Deferred to endPopulationFastPath() when this write is part of the
-		// active population step: see Chunk.h's skylightRegenPending for why.
-		if (worldObj != nullptr && worldObj->isPopulationFastPathChunk(this))
-			skylightRegenPending = true;
-		else
-			generateSkylightMap();
-	}
-	else
-	{
-		if (Block::lightOpacity[l] > 0)
-		{
-			if (j >= oldHeight)
-				relightBlock(i, j + 1, k);
-		}
-		else if (j == oldHeight - 1)
-		{
-			relightBlock(i, j, k);
-		}
-		propagateSkylightOcclusion(i, k);
-	}
+    // Replace lightValue with the actual emission array name if needed.
+    const int_t oldEmission =
+        validBlockId(oldId) ? Block::lightValue[oldId] : 0;
+    const int_t newEmission = Block::lightValue[l];
 
-	if (worldObj != nullptr)
-	{
-		worldObj->scheduleLightingUpdate(EnumSkyBlock::Block, worldX, j, worldZ, worldX, j, worldZ);
-		// Sky light only changes when the opacity of the cell changed -- the
-		// column work above already handled heightmap moves. Without this
-		// gate every block write queued a Sky job even when it could not move
-		// any sky value (a redstone torch going idle/active, metadata-only
-		// swaps), and on the consoles those no-op jobs consumed the
-		// per-frame lighting budget of the queue while a circuit ran.
-		if (!worldObj->worldProvider->hasNoSky &&
-		    (!validBlockId(oldId) || Block::lightOpacity[oldId] != Block::lightOpacity[l]))
-		{
-			worldObj->scheduleLightingUpdate(EnumSkyBlock::Sky, worldX, j, worldZ, worldX, j, worldZ);
-		}
-	}
+    const bool emissionChanged = oldEmission != newEmission;
 
-	if (l != 0 && Block::blocksList[l] != nullptr)
-	{
-		if (worldObj != nullptr && !worldObj->multiplayerWorld)
-			Block::blocksList[l]->onBlockAdded(worldObj, worldX, j, worldZ);
+    ExtendedBlockStorage* section = storageArrays[j >> 4];
+    bool createdAboveHeight = false;
 
-		if (Block::isBlockContainer[l] && worldObj != nullptr)
-		{
-			TileEntity *tileEntity = getChunkBlockTileEntity(i, j, k);
-			if (tileEntity == nullptr)
-			{
-				BlockContainer *container = dynamic_cast<BlockContainer *>(Block::blocksList[l]);
-				if (container != nullptr)
-				{
-					tileEntity = container->getBlockEntity();
-					worldObj->setBlockTileEntity(worldX, j, worldZ, tileEntity);
-				}
-			}
+    if (section == nullptr)
+    {
+        if (l == 0)
+            return false;
 
-			if (tileEntity != nullptr)
-				tileEntity->updateContainingBlockInfo();
-		}
-	}
-	else if (oldId > 0 && validBlockId(oldId) && Block::isBlockContainer[oldId])
-	{
-		TileEntity *tileEntity = getChunkBlockTileEntity(i, j, k);
-		if (tileEntity != nullptr)
-			tileEntity->updateContainingBlockInfo();
-	}
+        section = ensureBlockStorage(j >> 4);
+        createdAboveHeight = j >= oldHeight;
+    }
 
-	++blockSectionRevision[j >> 4];
-	isModified = true;
-	if (l == 0 && section != nullptr && section->getIsEmpty())
-	{
-		clearBlockStorage(j >> 4);
-	}
+    section->setExtBlockID(i, j & 15, k, l);
+
+    const int_t worldX =
+        JavaArithmetic::intAdd(JavaArithmetic::intMul(xPosition, 16), i);
+    const int_t worldZ =
+        JavaArithmetic::intAdd(JavaArithmetic::intMul(zPosition, 16), k);
+
+    if (oldId != 0 && validBlockId(oldId) && Block::blocksList[oldId] != nullptr)
+    {
+        if (worldObj != nullptr && !worldObj->multiplayerWorld)
+        {
+            Block::blocksList[oldId]->onBlockRemoval(
+                worldObj, worldX, j, worldZ);
+        }
+        else if (oldId != l && Block::isBlockContainer[oldId] &&
+                 worldObj != nullptr)
+        {
+            worldObj->removeBlockTileEntity(worldX, j, worldZ);
+        }
+    }
+
+    if (section->getExtBlockID(i, j & 15, k) != l)
+        return false;
+
+    section->setExtBlockMetadata(i, j & 15, k, i1);
+
+    if (createdAboveHeight)
+    {
+        // Defer skylight regeneration during fast-path population.
+        if (worldObj != nullptr &&
+            worldObj->isPopulationFastPathChunk(this))
+        {
+            skylightRegenPending = true;
+        }
+        else
+        {
+            generateSkylightMap();
+        }
+    }
+    else if (opacityChanged)
+    {
+        if (newOpacity > 0)
+        {
+            if (j >= oldHeight)
+                relightBlock(i, j + 1, k);
+        }
+        else if (j == oldHeight - 1)
+        {
+            relightBlock(i, j, k);
+        }
+
+        propagateSkylightOcclusion(i, k);
+    }
+
+    if (worldObj != nullptr)
+    {
+        if (opacityChanged || emissionChanged)
+        {
+            worldObj->scheduleLightingUpdate(
+                EnumSkyBlock::Block,
+                worldX, j, worldZ,
+                worldX, j, worldZ);
+        }
+
+        if (worldObj->worldProvider != nullptr &&
+            !worldObj->worldProvider->hasNoSky &&
+            opacityChanged)
+        {
+            worldObj->scheduleLightingUpdate(
+                EnumSkyBlock::Sky,
+                worldX, j, worldZ,
+                worldX, j, worldZ);
+        }
+    }
+
+    if (l != 0 && Block::blocksList[l] != nullptr)
+    {
+        if (worldObj != nullptr && !worldObj->multiplayerWorld)
+        {
+            Block::blocksList[l]->onBlockAdded(
+                worldObj, worldX, j, worldZ);
+        }
+
+        if (Block::isBlockContainer[l] && worldObj != nullptr)
+        {
+            TileEntity* tileEntity =
+                getChunkBlockTileEntity(i, j, k);
+
+            if (tileEntity == nullptr)
+            {
+                BlockContainer* container =
+                    dynamic_cast<BlockContainer*>(Block::blocksList[l]);
+
+                if (container != nullptr)
+                {
+                    tileEntity = container->getBlockEntity();
+                    worldObj->setBlockTileEntity(
+                        worldX, j, worldZ, tileEntity);
+                }
+            }
+
+            if (tileEntity != nullptr)
+                tileEntity->updateContainingBlockInfo();
+        }
+    }
+    else if (oldId > 0 && validBlockId(oldId) &&
+             Block::isBlockContainer[oldId])
+    {
+        TileEntity* tileEntity =
+            getChunkBlockTileEntity(i, j, k);
+
+        if (tileEntity != nullptr)
+            tileEntity->updateContainingBlockInfo();
+    }
+
+    ++blockSectionRevision[j >> 4];
+    isModified = true;
+
+    if (l == 0 && section != nullptr && section->getIsEmpty())
+        clearBlockStorage(j >> 4);
+
 #if PLATFORM_SAVE_RUNTIME_CHUNK_EDITS_ON_UNLOAD
-	if (worldObj == nullptr || !worldObj->isPopulationFastPathChunk(this))
-		markRuntimeSaveRequired();
+    if (worldObj == nullptr || !worldObj->isPopulationFastPathChunk(this))
+        markRuntimeSaveRequired();
 #endif
-	return true;
+
+    return true;
 }
+
 
 bool Chunk::setVegetationBlockIDWithMetadataForPopulation(int_t i, int_t j, int_t k,
 	                                                       int_t blockId, int_t metadata)
