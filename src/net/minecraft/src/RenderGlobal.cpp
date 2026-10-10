@@ -1028,10 +1028,10 @@ void RenderGlobal::markRenderersForNewPosition(int_t i, int_t j, int_t k)
 					maxBlockY = i3;
 
 				WorldRenderer *worldrenderer = worldRenderers[(i2 * renderChunksTall + l2) * renderChunksWide + j1];
-				bool flag = worldrenderer->needsUpdate;
+				bool flag = worldrenderer->shouldRebuild;
 				worldrenderer->setPosition(k1, i3, j2);
 
-				if (!flag && worldrenderer->needsUpdate)
+				if (!flag && worldrenderer->shouldRebuild)
 					enqueueRendererUpdate(worldrenderer);
 			}
 		}
@@ -1104,7 +1104,7 @@ void RenderGlobal::compactRendererUpdateQueue()
 	{
 		if (renderer == nullptr)
 			continue;
-		if (!renderer->needsUpdate)
+		if (!renderer->shouldRebuild)
 		{
 			dequeueRendererUpdate(renderer);
 			continue;
@@ -1162,7 +1162,7 @@ int_t RenderGlobal::sortAndRender(EntityLiving *entityliving, int_t i, double d)
 		worldRenderersCheckIndex = (worldRenderersCheckIndex + 1) % (renderChunksWide * renderChunksTall * renderChunksDeep);
 		WorldRenderer *worldrenderer = worldRenderers[worldRenderersCheckIndex];
 
-		if (worldrenderer->needsUpdate)
+		if (worldrenderer->shouldRebuild)
 			enqueueRendererUpdate(worldrenderer);
 	}
 
@@ -1639,7 +1639,7 @@ int_t RenderGlobal::renderSortedRenderers(int_t i, int_t j, int_t k, double d)
 			for (int_t s = i; s < j; ++s)
 			{
 				WorldRenderer *renderer = sortedWorldRenderers[s];
-				if (renderer == nullptr || !renderer->needsUpdate ||
+				if (renderer == nullptr || !renderer->shouldRebuild ||
 					!renderer->skipRenderPass(0))
 					continue;
 				pendingSkip++;
@@ -2419,7 +2419,7 @@ bool RenderGlobal::updateRenderers(EntityLiving *entityliving, bool flag)
 	rendererUpdateCandidates.clear();
 	for (WorldRenderer *candidate : worldRenderersToUpdate)
 	{
-		if (candidate == nullptr || !candidate->needsUpdate)
+		if (candidate == nullptr || !candidate->shouldRebuild)
 			continue;
 #if PLATFORM_PS2
 		if ((flag || ps2MeshPressure) && !candidate->isInFrustum && !candidate->isTerrainBuildInProgress())
@@ -2522,7 +2522,7 @@ bool RenderGlobal::updateRenderers(EntityLiving *entityliving, bool flag)
 	const bool urgentPending = sortedCandidateCount > 0 &&
 		rendererUpdateCandidates[0] != nullptr &&
 		rendererUpdateCandidates[0]->urgentRebuild &&
-		rendererUpdateCandidates[0]->needsUpdate;
+		rendererUpdateCandidates[0]->shouldRebuild;
 
 	// Urgent lane: a section the player just edited is run to completion on
 	// its own wall-clock budget, before the shared per-frame budget is spent on
@@ -2540,7 +2540,7 @@ bool RenderGlobal::updateRenderers(EntityLiving *entityliving, bool flag)
 			WorldRenderer *candidate = rendererUpdateCandidates[i];
 			if (candidate == nullptr || !candidate->urgentRebuild)
 				break;
-			if (!candidate->needsUpdate)
+			if (!candidate->shouldRebuild)
 			{
 				candidate->urgentRebuild = false;
 				continue;
@@ -2686,7 +2686,7 @@ bool RenderGlobal::updateRenderers(EntityLiving *entityliving, bool flag)
 				break;
 
 			WorldRenderer *candidate = rendererUpdateCandidates[i];
-			if (candidate == nullptr || !candidate->needsUpdate)
+			if (candidate == nullptr || !candidate->shouldRebuild)
 				continue;
 
 			// When all leases are occupied, only the active builders can make
@@ -2780,7 +2780,7 @@ bool RenderGlobal::updateRenderers(EntityLiving *entityliving, bool flag)
 	{
 		if (renderer == nullptr)
 			continue;
-		if (!renderer->needsUpdate)
+		if (!renderer->shouldRebuild)
 		{
 			dequeueRendererUpdate(renderer);
 			continue;
@@ -2792,7 +2792,7 @@ bool RenderGlobal::updateRenderers(EntityLiving *entityliving, bool flag)
 		if (acting && distance <= 256.0f)
 		{
 			renderer->updateRenderer();
-			if (!renderer->needsUpdate)
+			if (!renderer->shouldRebuild)
 				dequeueRendererUpdate(renderer);
 			updated++;
 			continue;
@@ -2815,7 +2815,7 @@ bool RenderGlobal::updateRenderers(EntityLiving *entityliving, bool flag)
 	if (best != nullptr && updated < requestedUpdateLimit)
 	{
 		best->updateRenderer();
-		if (!best->needsUpdate)
+		if (!best->shouldRebuild)
 			dequeueRendererUpdate(best);
 		updated++;
 
@@ -2826,13 +2826,13 @@ bool RenderGlobal::updateRenderers(EntityLiving *entityliving, bool flag)
 		{
 			if (updated >= requestedUpdateLimit)
 				break;
-			if (renderer == best || !renderer->needsUpdate)
+			if (renderer == best || !renderer->shouldRebuild)
 				continue;
 			const float distance = weightedDistance(renderer);
 			if (std::fabs(distance - bestDistance) >= maxDistanceDifference)
 				continue;
 			renderer->updateRenderer();
-			if (!renderer->needsUpdate)
+			if (!renderer->shouldRebuild)
 				dequeueRendererUpdate(renderer);
 			updated++;
 		}
@@ -3029,7 +3029,7 @@ void RenderGlobal::onChunkPublished(int_t chunkX, int_t chunkZ)
 			continue;
 
 		enqueueRendererUpdatePriority(renderer);
-		if (!renderer->needsUpdate)
+		if (!renderer->shouldRebuild)
 			renderer->markDirty();
 	}
 #else
@@ -3141,7 +3141,7 @@ void RenderGlobal::markRenderersInRange(int_t i, int_t j, int_t k, int_t l, int_
 				enqueueRendererUpdate(worldrenderer);
 				worldrenderer->markDirty();
 #else
-				if (!worldrenderer->needsUpdate)
+				if (!worldrenderer->shouldRebuild)
 				{
 					enqueueRendererUpdate(worldrenderer);
 					worldrenderer->markDirty();
@@ -3362,7 +3362,7 @@ void RenderGlobal::updateAllRenderers()
 	int_t total = renderChunksWide * renderChunksTall * renderChunksDeep;
 	for (int_t i = 0; i < total; i++)
 	{
-		if (worldRenderers[i]->isChunkLit && !worldRenderers[i]->needsUpdate)
+		if (worldRenderers[i]->isChunkLit && !worldRenderers[i]->shouldRebuild)
 		{
 			enqueueRendererUpdate(worldRenderers[i]);
 			worldRenderers[i]->markDirty();
