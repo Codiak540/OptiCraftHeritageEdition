@@ -554,6 +554,7 @@ void GameSettings::setOptionValue(const EnumOptions *enumoptions, int_t i)
         renderDistance = platformGameSettingsCycleRenderDistance(renderDistance, i);
         ofRenderDistanceFine = JavaArithmetic::intShl(32, JavaArithmetic::intSub(3, renderDistance));
         ofRenderDistanceFine = platformGameSettingsClampFineRenderDistance(ofRenderDistanceFine);
+        reloadChunkRenderers();
     }
     if (enumoptions == EnumOptions::GUI_SCALE)
     {

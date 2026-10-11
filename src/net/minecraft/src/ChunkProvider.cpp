@@ -275,8 +275,17 @@ void ChunkProvider::setChunkLoadRadius(int_t radius)
 	ISaveHandler *saveHandler = worldObj != nullptr ? worldObj->getSaveHandler() : nullptr;
 	const ChunkMemoryPolicy::RetentionPolicy policy =
 		ChunkMemoryPolicy::retentionPolicy(saveHandler != nullptr && saveHandler->isReadOnly());
+#if PLATFORM_3DS
+	// The 3DS view distance is user-selectable past the pinned default; track
+	// the live fine distance so the resident window still covers the visible
+	// ring. This runs every frame via setChunkLoadRadiusFromRenderDistance().
+	const int_t liveRadius = std::max<int_t>(policy.loadRadius, Config::getRenderDistanceFine() / 16);
+	chunkLoadRadius = liveRadius;
+	chunkUnloadRadius = liveRadius + (policy.unloadRadius - policy.loadRadius);
+#else
 	chunkLoadRadius = policy.loadRadius;
 	chunkUnloadRadius = policy.unloadRadius;
+#endif
 #elif PLATFORM_PC_LEGACY
 	(void)radius;
 	chunkLoadRadius = PLATFORM_CHUNK_CACHE_RADIUS;

@@ -625,7 +625,7 @@ void RenderGlobal::renderEntities(Vec3D *vec3d, ICamera *icamera, float f)
 	TileEntityRenderer::staticPlayerY = entityliving->lastTickPosY + (entityliving->posY - entityliving->lastTickPosY) * (double)f;
 	TileEntityRenderer::staticPlayerZ = entityliving->lastTickPosZ + (entityliving->posZ - entityliving->lastTickPosZ) * (double)f;
 
-#if PLATFORM_PC
+#if PLATFORM_PC || PLATFORM_3DS
 	// Vanilla 1.2.5 keeps the lightmap active for the complete entity pass.
 	// Entity meshes use the current secondary texture coordinate rather than
 	// carrying a lightmap UV per vertex, so the stage must be active before
@@ -829,7 +829,7 @@ void RenderGlobal::renderEntities(Vec3D *vec3d, ICamera *icamera, float f)
 	platformProfileRenderPhaseEnd(cycTileDraw, PlatformRenderPhase::TileEntityDraw);
 #endif
 
-#if PLATFORM_PC
+#if PLATFORM_PC || PLATFORM_3DS
 	if (mc != nullptr && mc->entityRenderer != nullptr)
 		mc->entityRenderer->disableLightmap(static_cast<double>(f));
 #endif

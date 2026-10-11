@@ -96,6 +96,30 @@ bool Config::isOcclusionFancy()
 	return gameSettings->ofOcclusionFancy;
 }
 
+int_t Config::getActiveChunkCacheRadius()
+{
+#if PLATFORM_3DS
+	// The 3DS render distance is user-selectable (TINY by default, up to the
+	// visibility cap); the resident window must track it or the visible ring
+	// would evict itself behind the hysteresis check below.
+	const int_t liveRadius = getRenderDistanceFine() / 16;
+	return liveRadius > PLATFORM_CHUNK_CACHE_RADIUS ? liveRadius : PLATFORM_CHUNK_CACHE_RADIUS;
+#else
+	return PLATFORM_CHUNK_CACHE_RADIUS;
+#endif
+}
+
+int_t Config::getActiveChunkUnloadRadius()
+{
+#if PLATFORM_3DS
+	// Preserve the tuning table's one-chunk hysteresis margin over the cache.
+	return getActiveChunkCacheRadius() + (PLATFORM_CHUNK_UNLOAD_RADIUS - PLATFORM_CHUNK_CACHE_RADIUS);
+#else
+	return PLATFORM_CHUNK_UNLOAD_RADIUS;
+#endif
+}
+
+
 bool Config::isLoadChunksFar()
 {
 	if (gameSettings == nullptr)

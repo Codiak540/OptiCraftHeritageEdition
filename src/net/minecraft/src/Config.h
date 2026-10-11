@@ -46,6 +46,8 @@ public:
 	static bool isOcclusionFancy();
 
 	// Carga de chunks
+	static int_t getActiveChunkCacheRadius();
+	static int_t getActiveChunkUnloadRadius();
 	static bool isLoadChunksFar();
 	static int_t getPreloadedChunks();
 	static int_t getUpdatesPerFrame();
