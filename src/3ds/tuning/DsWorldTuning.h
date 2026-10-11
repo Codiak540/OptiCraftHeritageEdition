@@ -30,7 +30,7 @@
 // both Cycle and Clamp to this value exactly like the PS2 backend, so this is
 // the whole render-distance surface: what boots is what plays.
 #undef  PLATFORM_DEFAULT_RENDER_DISTANCE
-#define PLATFORM_DEFAULT_RENDER_DISTANCE          3
+#define PLATFORM_DEFAULT_RENDER_DISTANCE          8
 
 // The lever the renderer grid actually reads on this path. RenderGlobal sizes
 // its grid from Config::getRenderDistanceFine(), GameSettings clamps that
@@ -40,7 +40,7 @@
 // (2*32/16+1). Coherent with TINY above: the coarse table maps TINY to
 // 32 << (3 - 3) = 32 blocks.
 #undef  PLATFORM_VISIBLE_CHUNK_RADIUS
-#define PLATFORM_VISIBLE_CHUNK_RADIUS              8
+#define PLATFORM_VISIBLE_CHUNK_RADIUS              16
 
 // Moving vertical renderer window, the PS2's 5x3x5 idea at TINY proportions.
 // The desktop branch of RenderGlobal::markRenderersForNewPosition() centers
@@ -118,7 +118,7 @@
 #undef  PLATFORM_CHUNK_CACHE_RADIUS
 #define PLATFORM_CHUNK_CACHE_RADIUS                8
 #undef  PLATFORM_CHUNK_UNLOAD_RADIUS
-#define PLATFORM_CHUNK_UNLOAD_RADIUS               8
+#define PLATFORM_CHUNK_UNLOAD_RADIUS               16
 #undef  PLATFORM_CHUNK_MAP_RESERVE
 #define PLATFORM_CHUNK_MAP_RESERVE                 32
 
