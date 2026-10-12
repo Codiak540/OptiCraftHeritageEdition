@@ -12,6 +12,7 @@
 #include "legacy/LegacyLanguageOptions.h"
 #include "GuiSelectWorld.h"
 #include "GuiMultiplayer.h"
+#include "GuiMultiplayerLoading.h"
 #include "GuiTexturePacks.h"
 #include "mods/GuiMods.h"
 #include "StringTranslate.h"
@@ -166,13 +167,13 @@ void GuiMainMenu::updateScreen()
         return;
 
     syncLegacySelection();
-#if PLATFORM_PS2 || PLATFORM_WII
+#if PLATFORM_PS2 || PLATFORM_WII || PLATFORM_PSP
     const PlatformTextInputSnapshot pad = platformTextInputSnapshot(platformMenuPad());
     if ((pad.pressed & PLATFORM_TEXT_UP) != 0)
         moveLegacySelection(-1);
     else if ((pad.pressed & PLATFORM_TEXT_DOWN) != 0)
         moveLegacySelection(1);
-#if PLATFORM_PS2
+#if PLATFORM_PS2 || PLATFORM_PSP
     if ((pad.pressed & PLATFORM_TEXT_TYPE) != 0)
         activateLegacySelection();
 #elif PLATFORM_WII
@@ -196,7 +197,7 @@ void GuiMainMenu::keyTyped(char_t, int_t key)
 {
     if (mc == nullptr || mc->gameSettings == nullptr || !mc->gameSettings->legacyUI)
         return;
-#if !PLATFORM_PS2 && !PLATFORM_WII
+#if !PLATFORM_PS2 && !PLATFORM_WII && !PLATFORM_PSP
     if (key == lwjgl::Keyboard::KEY_UP)
     {
         moveLegacySelection(-1);
@@ -258,7 +259,7 @@ void GuiMainMenu::initGui()
     viewportTexture = -1;
     legacyPanoramaAvailable = mc->gameSettings != nullptr && mc->gameSettings->legacyUI &&
         mc->renderEngine != nullptr && mc->renderEngine->hasResource(legacyPanoramaResourcePath());
-#if !PLATFORM_PS2 && !PLATFORM_WII
+#if !PLATFORM_PS2 && !PLATFORM_WII && !PLATFORM_PSP
     if (!legacyPanoramaAvailable)
     {
         BufferedImage viewportImage(256, 256);
@@ -297,7 +298,9 @@ void GuiMainMenu::initGui()
 
     const int_t y = height / 4 + 40;
     controlList.push_back(new GuiButton(1, width / 2 - 100, y, tr->translateKey("menu.singleplayer")));
+#if !PLATFORM_PSP
     controlList.push_back(multiplayerButton = new GuiButton(2, width / 2 - 100, y + 24, tr->translateKey("menu.multiplayer")));
+#endif
     controlList.push_back(new GuiButton(3, width / 2 - 100, y + 48, uiText("Mods")));
     controlList.push_back(new GuiButton(6, width / 2 - 100, y + 72, "Skins"));
 
@@ -313,7 +316,7 @@ void GuiMainMenu::initGui()
 
     controlList.push_back(new GuiButtonLanguage(5, width / 2 - 124, y + 96));
 #if !PLATFORM_PS2
-    if (mc->session == nullptr)
+    if (mc->session == nullptr && multiplayerButton != nullptr)
         multiplayerButton->enabled = false;
 #endif
 }
@@ -341,7 +344,9 @@ void GuiMainMenu::actionPerformed(GuiButton *button)
         else
             mc->displayGuiScreen(new GuiSelectWorld(this));
     }
-    if (button->id == 2) mc->displayGuiScreen(new GuiMultiplayer(this));
+#if !PLATFORM_PSP
+    if (button->id == 2) mc->displayGuiScreen(new GuiMultiplayerLoading(this));
+#endif
     if (button->id == 3) mc->displayGuiScreen(new GuiMods(this));
     if (button->id == 6) mc->displayGuiScreen(new GuiSkinSelector(this));
     if (button->id == 4) mc->shutdown();

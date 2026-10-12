@@ -287,7 +287,8 @@ void ChunkProvider::setChunkLoadRadiusFromRenderDistance(int_t renderDistance)
 
 bool ChunkProvider::canChunkExist(int_t i, int_t j) const
 {
-	if (worldObj != nullptr && worldObj->isLimitedWorld())
+	if (worldObj != nullptr && worldObj->isLimitedWorld() &&
+	    worldObj->worldProvider != nullptr && worldObj->worldProvider->worldType == 0)
 	{
 		const int_t minChunk = worldObj->getWorldInfo() != nullptr ? worldObj->getWorldInfo()->getLimitedWorldMinChunk() : -8;
 		const int_t maxChunk = worldObj->getWorldInfo() != nullptr ? worldObj->getWorldInfo()->getLimitedWorldMaxChunk() : 7;
@@ -874,7 +875,8 @@ bool ChunkProvider::isChunkGenerationPending(int_t i, int_t j) const
 
 Chunk *ChunkProvider::provideChunk(int_t i, int_t j)
 {
-	if (worldObj != nullptr && worldObj->isLimitedWorld())
+	if (worldObj != nullptr && worldObj->isLimitedWorld() &&
+	    worldObj->worldProvider != nullptr && worldObj->worldProvider->worldType == 0)
 	{
 		const int_t minChunk = worldObj->getWorldInfo() != nullptr ? worldObj->getWorldInfo()->getLimitedWorldMinChunk() : -8;
 		const int_t maxChunk = worldObj->getWorldInfo() != nullptr ? worldObj->getWorldInfo()->getLimitedWorldMaxChunk() : 7;
@@ -1037,7 +1039,7 @@ void ChunkProvider::unloadChunk(std::uint64_t key, Chunk *chunk)
 #if PLATFORM_SAVE_RUNTIME_CHUNK_EDITS_ON_UNLOAD
 	// PS2 serializes only gameplay-edited chunks here. Generated/lighting-only
 	// dirtiness stays memory-only so walking does not create continuous writes.
-	if (!chunk->neverSave && chunk->isRuntimeSaveRequired())
+	if (!chunk->neverSave && (chunk->isRuntimeSaveRequired() || (chunk->hasEntities && chunk->isModified)))
 	{
 #if PLATFORM_PROFILE_STREAMING
 		const long_t unloadSaveStartNs = System::nanoTime();
