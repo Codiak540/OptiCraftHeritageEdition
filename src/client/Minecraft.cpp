@@ -1037,8 +1037,27 @@ void Minecraft::run()
                 if (thePlayer != nullptr && thePlayer->isEntityInsideOpaqueBlock())
                     gameSettings->thirdPersonView = 0;
 
-                if (!skipRenderWorld)
-                {
+#if PLATFORM_UNFOCUSED_RENDER_FRAME_INTERVAL > 1
+                // Dynamic-FPS-style unfocused render throttle (a clean-room
+                // port of the technique behind juliand665/Dynamic-FPS): while
+                // the window is unfocused the world render is the expensive
+                // half of the frame and nobody is looking at it, so only one
+                // frame in every PLATFORM_UNFOCUSED_RENDER_FRAME_INTERVAL
+                // actually renders. The game keeps ticking at full rate
+                // (vanilla never pauses on focus loss; only the explicit
+                // pause menu does), and Display::update() above still runs
+                // every frame so window events -- including the focus-return
+                // that ends this throttle -- keep flowing. The vanilla
+                // delay(10) below stays: it caps the loop at ~100 fps
+                // unfocused, this knob caps the *render* at a tenth of that.
+                static int_t unfocusedRenderFrame = 0;
+                const bool renderWorldThisFrame = lwjgl::Display::isActive()
+                    || (++unfocusedRenderFrame % PLATFORM_UNFOCUSED_RENDER_FRAME_INTERVAL) == 0;
+#else
+                const bool renderWorldThisFrame = true;
+#endif
+
+                if (!skipRenderWorld && renderWorldThisFrame)                {
                     if (playerController != nullptr)
                         playerController->setPartialTime(timer->renderPartialTicks);
 

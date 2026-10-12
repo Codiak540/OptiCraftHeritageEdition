@@ -684,6 +684,7 @@ void setFullscreen(bool) {}
 bool isCloseRequested() { return s_closeRequested; }
 bool isVisible()        { return true; }
 bool isActive()         { return true; }
+bool isMinimized()      { return false; }
 void create()
 {
     // GS is already up from main_ps2.cpp. Just sync the display mode.

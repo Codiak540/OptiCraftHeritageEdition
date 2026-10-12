@@ -1,6 +1,7 @@
 #include "platform/WorkProfiler.h"
 #include "platform/ExtendedProfiler.h"
 #include "RenderGlobal.h"
+#include "BlockPistonExtension.h"
 #include "platform/Log.h"
 #include "java/Arithmetic.h"
 #include "java/Math.h"
@@ -608,6 +609,12 @@ void RenderGlobal::renderEntities(Vec3D *vec3d, ICamera *icamera, float f)
 		return;
 	}
 
+#if PLATFORM_ENTITY_OCCLUSION_CULLING
+	// One frame on the occlusion cache's clock and a fresh ray-cast budget
+	// for it (see platform/world/EntityOcclusionCache.h).
+	entityOcclusionCache.beginFrame();
+#endif
+
 	TileEntityRenderer::instance.cacheActiveRenderInfo(worldObj, renderEngine, mc->fontRenderer, mc->renderViewEntity, f);
 	RenderManager::instance->cacheActiveRenderInfo(worldObj, renderEngine, mc->fontRenderer, mc->renderViewEntity, mc->gameSettings, f);
 
@@ -748,6 +755,24 @@ void RenderGlobal::renderEntities(Vec3D *vec3d, ICamera *icamera, float f)
 			}
 		}
 #endif
+#if PLATFORM_ENTITY_OCCLUSION_CULLING
+		// EntityCulling-style occlusion culling: a budgeted voxel ray cast
+		// from the camera to the entity's bounding box decides whether
+		// opaque terrain fully hides it (see platform/world/
+		// EntityOcclusionCache.h). Runs after the frustum test so only
+		// frustum survivors pay for a cast, and never touches the F3
+		// counters -- vanilla counts neither frustum-rejected entities
+		// nor these.
+		if (entityOcclusionCache.isEntityOccluded(worldObj, entity1,
+			vec3d->xCoord, vec3d->yCoord, vec3d->zCoord))
+		{
+#if PLATFORM_PS2 && MC_LOG_LEVEL > 2
+			platformProfileEntityCull(PlatformEntityCullReason::Occluded);
+#endif
+			reportEntity(entity1, "occluded");
+			continue;
+		}
+#endif
 		if (entity1 == mc->renderViewEntity && !mc->gameSettings->thirdPersonView && !mc->renderViewEntity->isPlayerSleeping())
 		{
 #if PLATFORM_PS2 && MC_LOG_LEVEL > 2
@@ -821,6 +846,30 @@ void RenderGlobal::renderEntities(Vec3D *vec3d, ICamera *icamera, float f)
 			tileEntities.erase(tileEntities.begin() + k);
 			continue;
 		}
+
+#if PLATFORM_ENTITY_OCCLUSION_CULLING
+		// The moreculling half of the occlusion culling: the same budgeted
+		// ray cast that skips hidden mobs also answers for a chest or sign
+		// behind a wall. Pistons are exempt -- their moving arm is drawn by
+		// the tile entity OUTSIDE the base block, so a centre-of-block ray
+		// can report an occluded core while the arm pokes through the very
+		// wall that blocked the cast.
+		{
+			const int_t tileBlockId = worldObj->getBlockId(
+				tileEntity->xCoord, tileEntity->yCoord, tileEntity->zCoord);
+			const bool isPistonTile =
+				(Block::pistonBase != nullptr && tileBlockId == Block::pistonBase->blockID)
+				|| (Block::pistonStickyBase != nullptr && tileBlockId == Block::pistonStickyBase->blockID)
+				|| (Block::pistonExtension != nullptr && tileBlockId == Block::pistonExtension->blockID);
+			if (!isPistonTile && entityOcclusionCache.isTileEntityOccluded(worldObj,
+					tileEntity->xCoord, tileEntity->yCoord, tileEntity->zCoord,
+					vec3d->xCoord, vec3d->yCoord, vec3d->zCoord))
+			{
+				++k;
+				continue;
+			}
+		}
+#endif
 
 		TileEntityRenderer::instance.renderTileEntity(tileEntity, f);
 		++k;
@@ -3693,6 +3742,9 @@ void RenderGlobal::clearWorldRenderers() // func_28137_f
 #endif
 	std::vector<TileEntity *>().swap(tileEntities);
 	std::vector<WorldRenderer *>().swap(renderBatchRenderers);
+	// Entity ids are per-world: drop the occlusion cache's answers along
+	// with the renderers so a new world starts with a clean table.
+	entityOcclusionCache.clear();
 	renderChunksWide = 0;
 	renderChunksTall = 0;
 	renderChunksDeep = 0;

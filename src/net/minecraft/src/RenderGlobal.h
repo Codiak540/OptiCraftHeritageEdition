@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 
+#include "platform/world/EntityOcclusionCache.h"
 #include "platform/PlatformConfig.h" // PLATFORM_PS2, for the RAM reporter below
 #include "platform/PlatformTuning.h"
 #include "platform/RenderTerrainAPI.h" // RenderTerrainMeshRam, likewise
@@ -168,6 +169,10 @@ private:
 #endif
 	Minecraft *mc = nullptr;
 	RenderBlocks *globalRenderBlocks = nullptr;
+	// EntityCulling-style occlusion answers for the entity pass. Lives here
+	// because its lifetime is the rendered world's: cleared alongside the
+	// renderers on every world change (entity ids are per-world).
+	EntityOcclusionCache entityOcclusionCache;
 #if PLATFORM_PC
 	std::vector<int_t> glOcclusionQueryBase;
 	bool occlusionEnabled = false;

@@ -237,6 +237,20 @@
 #define PLATFORM_LIMIT_ENTITY_RENDER_DISTANCE      1
 #undef  PLATFORM_ENTITY_RENDER_RADIUS_BLOCKS
 #define PLATFORM_ENTITY_RENDER_RADIUS_BLOCKS       32.0f
+// Occlusion-culled entity pass: the Old 3DS CPU is the tightest of the
+// console targets, so spend even fewer casts per frame and lean on the
+// cache a little longer -- the skinned-mesh submission it skips costs far
+// more than the stale answers cost accuracy.
+#undef  PLATFORM_ENTITY_OCCLUSION_RAYCASTS_PER_FRAME
+#define PLATFORM_ENTITY_OCCLUSION_RAYCASTS_PER_FRAME   6
+#undef  PLATFORM_ENTITY_OCCLUSION_RECHECK_FRAMES
+#define PLATFORM_ENTITY_OCCLUSION_RECHECK_FRAMES      20
+
+// moreculling/Sodium-style leaves culling: same console trade as the Wii --
+// the interior leaf-against-leaf quads are invisible through the shell and
+// the Old 3DS would rather spend that mesh memory elsewhere.
+#undef  PLATFORM_FANCY_LEAVES_FACE_CULLING
+#define PLATFORM_FANCY_LEAVES_FACE_CULLING             1
 #undef  PLATFORM_LIMIT_ENTITY_PUSH_COLLISIONS
 #define PLATFORM_LIMIT_ENTITY_PUSH_COLLISIONS      1
 #undef  PLATFORM_ENTITY_PUSH_COLLISION_RADIUS_BLOCKS

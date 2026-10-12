@@ -437,10 +437,10 @@ void platformLogExtendedProfileAndReset(int frame)
 {
     if (s_entityFrames > 0)
     {
-        MC_LOG_TRACE("prof3", "frame=%d entities loadedAvg=%.1f candidates=%lu rendered=%lu special=%lu cull distance=%lu range=%lu frustum=%lu self=%lu missing=%lu\n",
+        MC_LOG_TRACE("prof3", "frame=%d entities loadedAvg=%.1f candidates=%lu rendered=%lu special=%lu cull distance=%lu range=%lu frustum=%lu self=%lu missing=%lu occl=%lu\n",
                      frame, static_cast<double>(s_entityLoaded) / static_cast<double>(s_entityFrames),
                      s_entityCandidates, s_entityRendered, s_entitySpecialBypass,
-                     s_entityCull[0], s_entityCull[1], s_entityCull[2], s_entityCull[3], s_entityCull[4]);
+                     s_entityCull[0], s_entityCull[1], s_entityCull[2], s_entityCull[3], s_entityCull[4], s_entityCull[5]);
     }
 
     int order[kEntitySlots];

@@ -55,6 +55,10 @@
 #  define PLATFORM_CHUNK_BUILD_BLOCKS_PER_STEP          PS2_CHUNK_BUILD_BLOCKS_PER_STEP
 #  define PLATFORM_RENDERER_UPDATE_CANDIDATES_PER_FRAME PS2_RENDERER_UPDATE_CANDIDATES_PER_FRAME
 #  define PLATFORM_CULL_MISSING_CHUNK_BOUNDARY_FACES     PS2_CULL_MISSING_CHUNK_BOUNDARY_FACES
+// moreculling/Sodium-style leaves culling (see RenderBlocks::shouldRenderFace):
+// fancy foliage stops emitting its interior leaf-against-leaf faces. On
+// consoles those invisible quads are pure mesh memory and draw cost.
+#  define PLATFORM_FANCY_LEAVES_FACE_CULLING             1
 #  define PLATFORM_SKIP_ENCLOSED_OPAQUE_CUBES            PS2_SKIP_ENCLOSED_OPAQUE_CUBES
 #  define PLATFORM_FAST_SIMPLE_CUBE_RENDER                PS2_FAST_SIMPLE_CUBE_RENDER
 #  define PLATFORM_CPU_SECTION_OCCLUSION                  PS2_CPU_SECTION_OCCLUSION
@@ -109,6 +113,13 @@
 #  define PLATFORM_LIMIT_ENTITY_RENDER_DISTANCE           1
 #  define PLATFORM_ENTITY_RENDER_RADIUS_BLOCKS            PS2_ENTITY_RENDER_RADIUS_BLOCKS
 #  define PLATFORM_SHEEP_WOOL_LOD_DISTANCE_SQ            PS2_SHEEP_WOOL_LOD_DISTANCE_SQ
+// EntityCulling-style occlusion culling for the entity pass (see
+// platform/world/EntityOcclusionCache.h). The PS2's animated-model
+// submission is expensive enough that skipping mobs hidden behind
+// terrain pays for a budgeted ray cast several times over.
+#  define PLATFORM_ENTITY_OCCLUSION_CULLING              1
+#  define PLATFORM_ENTITY_OCCLUSION_RAYCASTS_PER_FRAME   8
+#  define PLATFORM_ENTITY_OCCLUSION_RECHECK_FRAMES       15
 #  define PLATFORM_LIMIT_ENTITY_PUSH_COLLISIONS           1
 #  define PLATFORM_ENTITY_PUSH_COLLISION_RADIUS_BLOCKS   PS2_ENTITY_PUSH_COLLISION_RADIUS_BLOCKS
 #  define PLATFORM_FAST_BLOCK_COLLISIONS                 PS2_FAST_BLOCK_COLLISIONS
@@ -298,6 +309,11 @@
 #  define PLATFORM_FAST_SIMPLE_CUBE_RENDER                0
 #  define PLATFORM_CPU_SECTION_OCCLUSION                  0
 #  define PLATFORM_CULL_MISSING_CHUNK_BOUNDARY_FACES     0
+// moreculling/Sodium-style leaves culling (see RenderBlocks::
+// shouldRenderFace). Modern desktop keeps the exact beta-fancy look (every
+// interior foliage face emitted); the low-end PC profile takes the console
+// trade instead, same as it does for the other geometry knobs above.
+#  define PLATFORM_FANCY_LEAVES_FACE_CULLING             (PLATFORM_PC_LEGACY ? 1 : 0)
 #  define PLATFORM_CHUNK_BUILD_BUDGET_MS                (PLATFORM_PC_LEGACY ? PC_LEGACY_CHUNK_BUILD_BUDGET_MS : 0)
 #  define PLATFORM_CHUNK_BUILD_STEP_US                  (PLATFORM_PC_LEGACY ? PC_LEGACY_CHUNK_BUILD_STEP_US : 0)
 #  define PLATFORM_CHUNK_BUILD_TIME_CHECK_BLOCKS        32
@@ -357,6 +373,13 @@
 #  define PLATFORM_MULTIPLAYER_REMOTE_LIVING_PHYSICS_TICK_DIVISOR 1
 #  define PLATFORM_LIMIT_ENTITY_RENDER_DISTANCE           (PLATFORM_PC_LEGACY ? PC_LEGACY_LIMIT_ENTITY_RENDER_DISTANCE : 0)
 #  define PLATFORM_ENTITY_RENDER_RADIUS_BLOCKS            (PLATFORM_PC_LEGACY ? PC_LEGACY_ENTITY_RENDER_RADIUS_BLOCKS : 1.0e9f)
+// EntityCulling-style occlusion culling for the entity pass (see
+// platform/world/EntityOcclusionCache.h). Modern desktop ships it on; the
+// legacy PC profile keeps it off until it gets its own hardware pass, so
+// the knob exists there but defaults to zero.
+#  define PLATFORM_ENTITY_OCCLUSION_CULLING              (PLATFORM_PC_LEGACY ? 0 : 1)
+#  define PLATFORM_ENTITY_OCCLUSION_RAYCASTS_PER_FRAME   (PLATFORM_PC_LEGACY ? 8 : 16)
+#  define PLATFORM_ENTITY_OCCLUSION_RECHECK_FRAMES       (PLATFORM_PC_LEGACY ? 15 : 10)
 // Sheep wool pass cut-off (console only, see the PS2 table). 0 off.
 #  define PLATFORM_SHEEP_WOOL_LOD_DISTANCE_SQ            0.0f
 #  define PLATFORM_LIMIT_ENTITY_PUSH_COLLISIONS           (PLATFORM_PC_LEGACY ? PC_LEGACY_LIMIT_ENTITY_PUSH_COLLISIONS : 0)

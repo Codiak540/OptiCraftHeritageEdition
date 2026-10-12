@@ -197,6 +197,8 @@ opticraft_collect_platform_sources(OPTICRAFT_COMMON_SOURCES pc)
 set(OPTICRAFT_MINIZIP_SOURCES
         "${CMAKE_CURRENT_SOURCE_DIR}/external/zlib/contrib/minizip/ioapi.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/external/zlib/contrib/minizip/unzip.c"
+        src/platform/world/EntityOcclusionCache.cpp
+        src/platform/world/EntityOcclusionCache.h
 )
 file(GLOB_RECURSE OPTICRAFT_HEADERS CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/src/*.h"

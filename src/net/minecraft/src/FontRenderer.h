@@ -1,18 +1,20 @@
 #pragma once
 
+#include <map>
+#include <tuple>
 #include <string>
 #include <vector>
 
 #include "java/Type.h"
 #include "java/Random.h"
+#include "platform/PlatformConfig.h"
 
 class GameSettings;
 class RenderEngine;
 struct RenderCapturedMesh;
 
 // net.minecraft.src.FontRenderer
-class FontRenderer
-{
+class FontRenderer {
 public:
 	FontRenderer(GameSettings *gamesettings, const std::string &s, RenderEngine *renderengine);
 	~FontRenderer();
@@ -77,4 +79,36 @@ private:
 	bool bidiFlag;
 	std::vector<int_t> buffer;
 	std::vector<DecorationRect> pendingDecorations;
+
+	void clearStringCache();
+	static bool hasVolatileFormatCode(const std::vector<char_t> &units);
+
+#if !PLATFORM_FONT_IMMEDIATE
+	// ImmediatelyFast-style string cache for the display-list text path
+	// (desktop only; the immediate backends batch whole HUD groups through
+	// beginTextBatch and need no per-string lists). A string drawn more
+	// than once with the same (text, color, shadow) replays one compiled
+	// display list instead of walking its glyphs -- chat lines, GUI labels
+	// and item counts are drawn every frame, and each replayed list turns
+	// one glCallList into what used to be one per glyph.
+	//
+	// Strings carrying volatile format codes are never cached: obfuscated
+	// (section-k) re-randomizes its glyph every frame, and strikethrough /
+	// underline (section-m/n) queue screen-space decorations outside the
+	// captured list. Everything else -- color codes, bold, italic, reset --
+	// is captured verbatim, including the base-color restore of section-r,
+	// which is why the base color is part of the key.
+	//
+	// Invalidated wholesale when the font texture reloads (textCacheRevision
+	// bumps on every readFontTexture) and flushed when the table reaches
+	// kStringCacheMaxEntries, so rotating chat cannot grow it unbounded.
+	struct StringCacheEntry
+	{
+		int_t displayList = 0;
+		float_t width = 0.0f;
+	};
+
+	std::map<std::tuple<std::string, int_t, bool>, StringCacheEntry> stringCache;
+	unsigned int stringCacheRevision = 0;
+#endif
 };

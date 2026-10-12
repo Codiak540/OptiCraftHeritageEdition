@@ -304,6 +304,19 @@
 #define PLATFORM_LIMIT_ENTITY_RENDER_DISTANCE    1
 #undef  PLATFORM_ENTITY_RENDER_RADIUS_BLOCKS
 #define PLATFORM_ENTITY_RENDER_RADIUS_BLOCKS     48.0f
+// Occlusion-culled entity pass: the Wii's animated-model submission is one
+// of the expensive halves of the frame, so cast fewer rays per frame than
+// desktop and keep each cached answer a little longer.
+#undef  PLATFORM_ENTITY_OCCLUSION_RAYCASTS_PER_FRAME
+#define PLATFORM_ENTITY_OCCLUSION_RAYCASTS_PER_FRAME   8
+#undef  PLATFORM_ENTITY_OCCLUSION_RECHECK_FRAMES
+#define PLATFORM_ENTITY_OCCLUSION_RECHECK_FRAMES      15
+
+// moreculling/Sodium-style leaves culling: fancy foliage interior faces are
+// invisible through the transparent shell but cost mesh memory and draw time
+// the Wii cannot waste on forests.
+#undef  PLATFORM_FANCY_LEAVES_FACE_CULLING
+#define PLATFORM_FANCY_LEAVES_FACE_CULLING             1
 
 // Entity-entity push resolution is only observable near the player; beyond
 // the render radius skip the chunk/AABB scan and keep everything else.

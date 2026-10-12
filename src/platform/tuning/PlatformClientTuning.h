@@ -11,12 +11,16 @@
 #  define PLATFORM_PRELOAD_LIGHTING_STEPS          4
 #  define PLATFORM_UNLOAD_AFTER_PRELOAD             0
 #  define PLATFORM_DEFER_PORTAL_TRANSITION          0
+#  define PLATFORM_UNFOCUSED_RENDER_FRAME_INTERVAL  1
+#  define PLATFORM_MUTE_AUDIO_WHEN_MINIMIZED         0
 #elif PLATFORM_WII
 #  define PLATFORM_LOAD_TERRAIN_MIN_MS             PLATFORM_WII_LOAD_MIN_MS
 #  define PLATFORM_LOAD_TERRAIN_WARMUP_MS          PLATFORM_WII_LOAD_WARMUP_MS
 #  define PLATFORM_PRELOAD_LIGHTING_STEPS          0
 #  define PLATFORM_UNLOAD_AFTER_PRELOAD             0
 #  define PLATFORM_DEFER_PORTAL_TRANSITION          1
+#  define PLATFORM_UNFOCUSED_RENDER_FRAME_INTERVAL  1
+#  define PLATFORM_MUTE_AUDIO_WHEN_MINIMIZED         0
 #elif PLATFORM_3DS
 // Phase 1: the neutral pacing (no minimum load time, no warmup), but the
 // console lifecycle around it. There is no Platform3dsTuning override yet, so
@@ -30,12 +34,22 @@
 #  define PLATFORM_PRELOAD_LIGHTING_STEPS          0
 #  define PLATFORM_UNLOAD_AFTER_PRELOAD             0
 #  define PLATFORM_DEFER_PORTAL_TRANSITION          1
+#  define PLATFORM_UNFOCUSED_RENDER_FRAME_INTERVAL  1
+#  define PLATFORM_MUTE_AUDIO_WHEN_MINIMIZED         0
 #else
 #  define PLATFORM_LOAD_TERRAIN_MIN_MS             0
 #  define PLATFORM_LOAD_TERRAIN_WARMUP_MS          0
 #  define PLATFORM_PRELOAD_LIGHTING_STEPS          0
 #  define PLATFORM_UNLOAD_AFTER_PRELOAD             1
 #  define PLATFORM_DEFER_PORTAL_TRANSITION          0
+// Dynamic-FPS-style unfocused render throttle (see Minecraft.cpp's render
+// gate). Only meaningful on desktop: the console Display backends report
+// isActive() == true forever, so 1 (render every frame) keeps their loop
+// exactly as it was.
+#  define PLATFORM_UNFOCUSED_RENDER_FRAME_INTERVAL  10
+// Dynamic-FPS-style audio mute while minimized (see SoundManager_PC's
+// listener gate): a taskbar-docked window is not being listened to either.
+#  define PLATFORM_MUTE_AUDIO_WHEN_MINIMIZED         1
 #endif
 
 #if PLATFORM_PS2

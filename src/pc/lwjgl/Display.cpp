@@ -101,8 +101,7 @@ bool isActive()
 	return (flags & SDL_WINDOW_INPUT_FOCUS) != 0;
 }
 
-void processMessages()
-{
+void processMessages() {
 	SDL_Event e;
 	while (SDL_PollEvent(&e))
 	{

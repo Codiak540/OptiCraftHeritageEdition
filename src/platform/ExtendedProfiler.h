@@ -16,6 +16,7 @@ enum class PlatformEntityCullReason
     Frustum,
     SelfHidden,
     MissingChunk,
+    Occluded,
     Count
 };
 

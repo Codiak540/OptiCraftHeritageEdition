@@ -7,6 +7,7 @@
 #include "BlockDoor.h"
 #include "BlockFire.h"
 #include "BlockFence.h"
+#include "BlockLeaves.h"
 #include "BlockFluid.h"
 #include "BlockGrass.h"
 #include "BlockPistonBase.h"
@@ -361,6 +362,25 @@ bool RenderBlocks::shouldRenderFace(Block *block, int_t i, int_t j, int_t k, int
 	if (blockAccessCache != nullptr && Block::opaqueCubeLookup[block->blockID] &&
 		!blockAccessCache->hasResidentChunkAtBlock(i, k))
 		return false;
+#endif
+#if PLATFORM_FANCY_LEAVES_FACE_CULLING
+	// moreculling/Sodium-style leaves culling: a leaf block never shows its
+	// face to another leaf block. Fancy leaves are deliberately non-opaque
+	// (BlockLeaves::isOpaqueCube() == !graphicsLevel), so vanilla emits every
+	// interior face of a foliage cluster -- quads nobody can actually see
+	// through the transparent shell, but which the section mesher, the mesh
+	// memory and every console draw path still carry. Cull only
+	// leaf-against-leaf: any other neighbour keeps the vanilla rule below,
+	// and fast graphics never reaches here because leaves are opaque there
+	// and the generic neighbour-opacity test already culls.
+	//
+	// (i, j, k) is the neighbour's position (beta's shouldSideBeRendered
+	// convention), so this is a single block-id read, no offsets needed.
+	if (Block::leaves != nullptr && block->blockID == Block::leaves->blockID
+		&& accessGetBlockId(i, j, k) == Block::leaves->blockID)
+	{
+		return false;
+	}
 #endif
 	return !accessIsBlockOpaqueCube(i, j, k);
 }

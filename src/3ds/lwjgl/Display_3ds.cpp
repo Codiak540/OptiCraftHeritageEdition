@@ -170,6 +170,7 @@ void setFullscreen(bool)       {}
 bool isCloseRequested() { return g_closeRequested; }
 bool isVisible()        { return true; }
 bool isActive()         { return true; }
+bool isMinimized()      { return false; }
 
 void processMessages()
 {

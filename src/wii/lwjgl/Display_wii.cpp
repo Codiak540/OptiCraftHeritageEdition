@@ -76,7 +76,7 @@ void setFullscreen(bool)       {}
 bool isCloseRequested() { return WiiSystemEvents::exitRequested(); }
 bool isVisible()        { return true; }
 bool isActive()         { return true; }
-
+bool isMinimized()      { return false; }
 void processMessages()
 {
 	// The input layer cannot infer this for itself, and used to try: wiiPadPoll()
