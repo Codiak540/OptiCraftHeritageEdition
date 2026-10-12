@@ -209,7 +209,7 @@ public:
 	static bool useNeighborBrightness[BLOCK_REGISTRY_SIZE];
 
 	static Block *stone;
-	static BlockGrass *grass;
+	static Block *grass;
 	static Block *dirt;
 	static Block *cobblestone;
 	static Block *planks;

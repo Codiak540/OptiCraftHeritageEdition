@@ -320,7 +320,7 @@ void BlockVine::updateTick(World *world, int_t x, int_t y, int_t z, Random &rand
     const int_t belowId = world->getBlockId(x, y - 1, z);
     if (belowId == 0)
     {
-        const int_t lowerMetadata = world->rand.nextInt(16) & metadata;
+        const int_t lowerMetadata = world->rand.nextInt(48) & metadata; // Used to be 1/16 chance, bumped up to 1/48 to further minimize chunk updates
         if (lowerMetadata > 0)
             world->setBlockAndMetadataWithNotify(x, y - 1, z, blockID, lowerMetadata);
     }
@@ -344,8 +344,11 @@ void BlockVine::onBlockPlaced(World *world, int_t x, int_t y, int_t z, int_t sid
         case 5: metadata = 2; break;
         default: break;
     }
-    if (metadata != 0)
+    if (metadata != 0 &&
+    world->getBlockMetadata(x, y, z) != metadata)
+    {
         world->setBlockMetadataWithNotify(x, y, z, metadata);
+    }
 }
 
 int_t BlockVine::idDropped(int_t metadata, Random &random)

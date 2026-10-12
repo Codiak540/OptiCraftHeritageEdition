@@ -415,7 +415,7 @@ namespace
 
 void WorldRenderer::updateRenderer()
 {
-	if (!rebuildChunks)
+	if (!rebuildChunks || !needsUpdate)
 		return;
 
 #if PLATFORM_3DS
@@ -616,6 +616,7 @@ void WorldRenderer::updateRenderer()
 	isInitialized = true;
 	tileEntityRenderers = rebuiltTileEntityRenderers;
 	rebuildChunks = false;
+	needsUpdate = false;
 
 #if PLATFORM_3DS
 	terrainStepDidWork = true;
@@ -712,6 +713,7 @@ void WorldRenderer::markDirty()
 #endif
 #endif
 	rebuildChunks = true;
+	needsUpdate = true;
 }
 
 #if WII_PLATFORM || PS2_PLATFORM || PLATFORM_PC_LEGACY || PLATFORM_3DS

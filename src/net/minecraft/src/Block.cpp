@@ -143,7 +143,7 @@ bool Block::requiresSelfNotify[Block::BLOCK_REGISTRY_SIZE] = {false};
 bool Block::useNeighborBrightness[Block::BLOCK_REGISTRY_SIZE] = {false};
 
 Block *Block::stone = nullptr;
-BlockGrass *Block::grass = nullptr;
+Block *Block::grass = nullptr;
 Block *Block::dirt = nullptr;
 Block *Block::cobblestone = nullptr;
 Block *Block::planks = nullptr;
@@ -822,9 +822,9 @@ void Block::initialize()
 	soundClothFootstep = new StepSound("cloth", 1.0f, 1.0f);
 	soundSandFootstep = new StepSoundSand("sand", 1.0f, 1.0f);
 
-	stone = (new BlockStone(1, 1))->setHardness(1.5f)->setResistance(10.0f)->setStepSound(soundStoneFootstep)->setBlockName("stone");
-	grass = static_cast<BlockGrass *>((new BlockGrass(2))->setHardness(0.6f)->setStepSound(soundGrassFootstep)->setBlockName("grass"));
-	dirt = (new BlockDirt(3, 2))->setHardness(0.5f)->setStepSound(soundGravelFootstep)->setBlockName("dirt");
+	stone = (new BlockStone(1, 1))->setHardness(1.5f)->setResistance(10.0f)->setStepSound(soundStoneFootstep)->setBlockName("stone")->setRequiresSelfNotify();
+	grass = dynamic_cast<BlockGrass *>((new BlockGrass(2))->setHardness(0.6f)->setStepSound(soundGrassFootstep)->setBlockName("grass"))->setRequiresSelfNotify();
+	dirt = (new BlockDirt(3, 2))->setHardness(0.5f)->setStepSound(soundGravelFootstep)->setBlockName("dirt")->setRequiresSelfNotify();
 	cobblestone = (new Block(4, 16, Material::rock))->setHardness(2.0f)->setResistance(10.0f)->setStepSound(soundStoneFootstep)->setBlockName("stonebrick");
 	planks = (new BlockWood(5))->setHardness(2.0f)->setResistance(5.0f)->setStepSound(soundWoodFootstep)->setBlockName("wood")->setRequiresSelfNotify();
 	sapling = (new BlockSapling(6, 15))->setHardness(0.0f)->setStepSound(soundGrassFootstep)->setBlockName("sapling")->setRequiresSelfNotify();

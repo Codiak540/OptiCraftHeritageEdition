@@ -111,7 +111,7 @@ void BlockFlowing::flowIntoBlock(World *world, int_t i, int_t j, int_t k, int_t 
             else
                 Block::blocksList[i1]->dropBlockAsItem(world, i, j, k, world->getBlockMetadata(i, j, k));
         }
-        world->setBlockAndMetadataWithNotify(i, j, k, blockID, l);
+        world->setBlockAndMetadata(i, j, k, blockID, l);
     }
 }
 

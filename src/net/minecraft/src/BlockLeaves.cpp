@@ -159,7 +159,7 @@ void BlockLeaves::updateTick(World *world, int_t i, int_t j, int_t k, Random &ra
 void BlockLeaves::removeLeaves(World *world, int_t i, int_t j, int_t k)
 {
 	dropBlockAsItem(world, i, j, k, world->getBlockMetadata(i, j, k));
-	world->setBlockWithNotify(i, j, k, 0);
+	world->setBlock(i, j, k, 0);
 }
 
 int_t BlockLeaves::quantityDropped(Random &random)
