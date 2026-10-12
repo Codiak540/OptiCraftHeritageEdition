@@ -1,0 +1,3 @@
+cmake -B build/3ds-release -G Ninja     -DCMAKE_C_COMPILER=/opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc     -DCMAKE_CXX_COMPILER=/opt/devkitpro/devkitARM/bin/arm-none-eabi-g++     -DCMAKE_MAKE_PROGRAM="/usr/bin/ninja"     -DMC_LOG_LEVEL=2
+cmake --build --preset 3ds-release
+makerom -v -f cia -o "bin/3ds/OptiCraft.cia" -target t -exefslogo -rsf "resources/3ds_cia.rsf" -icon "resources/3ds_smdh.smdh" -elf "bin/3ds/OptiCraft.elf" -banner  "resources/3ds_banner.bnr" -major 1 -minor 2 -micro 0

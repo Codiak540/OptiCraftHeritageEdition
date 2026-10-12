@@ -265,7 +265,7 @@ endif ()
 # linker plugin. The bulk of the codegen win already comes from -O2/-O3 (per-TU
 # inlining); LTO only adds the cross-TU part. Turn this on (and make sure the
 # toolchain uses gcc-ar / gcc-ranlib and -fuse-linker-plugin) to chase the rest.
-option(OPTICRAFT_ENABLE_LTO "Enable Link-Time Optimization for Release builds" OFF)
+option(OPTICRAFT_ENABLE_LTO "Enable Link-Time Optimization for Release builds" ON)
 if (OPTICRAFT_ENABLE_LTO)
     include(CheckIPOSupported)
     check_ipo_supported(RESULT ipo_supported OUTPUT ipo_error LANGUAGES CXX)
@@ -314,7 +314,7 @@ if (WIN32)
         if (PC_LEGACY_BUILD)
             # Tune scheduling for Bonnell without raising the inherited SSE2 ISA baseline.
             target_compile_options(OptiCraft PRIVATE
-                    $<$<CONFIG:Release>:-O2>
+                    $<$<CONFIG:Release>:-O3>
                     -mtune=bonnell
                     $<$<CONFIG:Release>:-fomit-frame-pointer>
                     $<$<NOT:$<CONFIG:Release>>:-fno-omit-frame-pointer>
@@ -323,7 +323,7 @@ if (WIN32)
             )
         else ()
             target_compile_options(OptiCraft PRIVATE
-                    $<$<CONFIG:Release>:-O2>
+                    $<$<CONFIG:Release>:-O3>
                     -fno-omit-frame-pointer
             )
         endif ()
