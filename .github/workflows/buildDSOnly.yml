@@ -158,7 +158,7 @@ jobs:
             -elf bin/3ds/OptiCraft.elf \
             -icon bin/3ds/OptiCraft.smdh \
             -banner resources/3ds_banner.bnr \
-            -major 1 -minor 0 -micro 0
+            -major 1 -minor 2 -micro 0
 
           test -f bin/3ds/OptiCraft.cia
           cp bin/3ds/OptiCraft.cia dist/

@@ -18,6 +18,7 @@
 #include "ChunkProviderGenerate.h"
 #include "McRegionChunkLoader.h"
 #include "AnvilChunkLoader.h"
+#include "Config.h"
 #include "java/Arithmetic.h"
 #include "java/String.h"
 #include "java/System.h"

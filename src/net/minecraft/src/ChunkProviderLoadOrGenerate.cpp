@@ -6,6 +6,7 @@
 
 #include "World.h"
 #include "Chunk.h"
+#include "Config.h"
 #include "IChunkLoader.h"
 #include "IProgressUpdate.h"
 #include "ThreadedFileIOBase.h"
