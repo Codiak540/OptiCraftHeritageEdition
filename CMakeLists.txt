@@ -314,7 +314,7 @@ if (WIN32)
         if (PC_LEGACY_BUILD)
             # Tune scheduling for Bonnell without raising the inherited SSE2 ISA baseline.
             target_compile_options(OptiCraft PRIVATE
-                    $<$<CONFIG:Release>:-O3>
+                    $<$<CONFIG:Release>:-O2>
                     -mtune=bonnell
                     $<$<CONFIG:Release>:-fomit-frame-pointer>
                     $<$<NOT:$<CONFIG:Release>>:-fno-omit-frame-pointer>
@@ -323,7 +323,7 @@ if (WIN32)
             )
         else ()
             target_compile_options(OptiCraft PRIVATE
-                    $<$<CONFIG:Release>:-O3>
+                    $<$<CONFIG:Release>:-O2>
                     -fno-omit-frame-pointer
             )
         endif ()
